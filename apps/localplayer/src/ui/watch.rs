@@ -3,18 +3,48 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
-use eframe::egui::{self, pos2, vec2, Align2, Color32, CursorIcon, FontId, Key, Rect, Sense, Vec2};
+use eframe::egui::{
+    self, pos2, vec2, Align2, Color32, CursorIcon, FontId, Key, Rect, Response, Sense, Vec2,
+};
 
-use super::chrome;
-use super::{bold, gradient, mono, small_button, BG, ERROR, MUTED, TEXT};
+use super::chrome::{self, Icon};
+use super::{gradient, mono, ERROR, MUTED, TEXT};
 use crate::audio::AudioOut;
 use crate::config::{Config, Progress};
 use crate::player::{Player, Source};
 use crate::util::{fmt_time, Task};
 
+const RED: Color32 = Color32::from_rgb(229, 9, 20);
+const TOP_H: f32 = 64.0;
+const BOTTOM_H: f32 = 120.0;
+
+/// An icon button over the video; lights up on hover and names itself.
+fn ctl_button(ui: &mut egui::Ui, r: Rect, icon: Icon, tip: &str) -> Response {
+    let id = ui
+        .id()
+        .with(("ctl", r.center().x as i32, r.center().y as i32));
+    let resp = ui.interact(r, id, Sense::click());
+    if resp.hovered() {
+        ui.painter()
+            .circle_filled(r.center(), r.width() / 2.0, Color32::from_white_alpha(28));
+    }
+    chrome::draw_icon(ui.painter(), r.center(), icon, Color32::WHITE);
+    resp.on_hover_text(tip)
+        .on_hover_cursor(CursorIcon::PointingHand)
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum Menu {
+    Settings,
+    Subtitles,
+}
+
 pub struct PlayItem {
     pub title: String,
+    /// Under the title: "2020 · 2h 0m", "S01E01 · Pilot".
     pub subtitle: String,
+    /// An episode of a series (the next button says "Next Episode").
+    pub episode: bool,
     pub source: Source,
     /// Progress key; None for local files.
     pub key: Option<String>,
@@ -28,6 +58,7 @@ impl PlayItem {
         Self {
             title: source.name(),
             subtitle: String::new(),
+            episode: false,
             source,
             key: None,
             start: 0.0,
@@ -48,6 +79,9 @@ pub struct Watch {
     last_tick: Instant,
     last_motion: Instant,
     last_save: Instant,
+    menu: Option<Menu>,
+    /// Last time the pointer was over the volume button or its slider.
+    vol_hover: Option<Instant>,
 }
 
 impl Watch {
@@ -65,6 +99,8 @@ impl Watch {
             last_tick: Instant::now(),
             last_motion: Instant::now(),
             last_save: Instant::now(),
+            menu: None,
+            vol_hover: None,
         }
     }
 
@@ -235,7 +271,7 @@ impl Watch {
                 }
             }
         });
-        if let Some(d) = skip_by {
+        if let Some(d) = skip_by.take() {
             self.skip(d);
         }
         if ctx.input(|i| !i.modifiers.command && (i.key_pressed(Key::F) || i.key_pressed(Key::F11)))
@@ -293,97 +329,44 @@ impl Watch {
             && self.last_motion.elapsed()
                 > Duration::from_millis(if fullscreen { 2500 } else { 3500 });
 
-        if !hide_ui {
-            egui::TopBottomPanel::bottom("controls")
-                .frame(
-                    egui::Frame::new()
-                        .fill(BG)
-                        .inner_margin(egui::Margin::symmetric(14, 8)),
-                )
+        if self.show_list && self.items.len() > 1 && !hide_ui {
+            egui::SidePanel::right("queue")
+                .default_width(260.0)
                 .show(ctx, |ui| {
+                    ui.add_space(6.0);
                     ui.horizontal(|ui| {
-                        do_prev |= ui.button("⏮").on_hover_text("Previous (P)").clicked();
-                        do_toggle |= ui
-                            .button(if playing { "⏸" } else { "⏵" })
-                            .on_hover_text("Play/Pause (Space)")
-                            .clicked();
-                        do_next |= ui
-                            .add_enabled(self.has_next(), egui::Button::new("⏭"))
-                            .on_hover_text("Next (N)")
-                            .clicked();
-
-                        let (pos, dur) = self
-                            .player
-                            .as_ref()
-                            .map_or((0.0, 0.0), |p| (p.clock(), p.meta.duration));
-                        let mut shown = self.seek_drag.unwrap_or(pos);
-                        ui.label(mono(fmt_time(shown), 11.5));
-                        ui.spacing_mut().slider_width = (ui.available_width() - 250.0).max(80.0);
-                        let r = ui.add_enabled(
-                            dur > 0.0,
-                            egui::Slider::new(&mut shown, 0.0..=dur.max(0.001)).show_value(false),
-                        );
-                        if r.dragged() {
-                            self.seek_drag = Some(shown);
-                        }
-                        if r.drag_stopped() {
-                            seek_to = Some(shown);
-                            self.seek_drag = None;
-                        } else if r.changed() && !r.dragged() {
-                            seek_to = Some(shown);
-                        }
-                        ui.label(mono(fmt_time(dur), 11.5).color(MUTED));
-
-                        if ui.button(if *muted { "🔇" } else { "🔊" }).clicked() {
-                            *muted = !*muted;
-                        }
-                        ui.spacing_mut().slider_width = 80.0;
-                        ui.add(egui::Slider::new(volume, 0.0..=1.0).show_value(false));
-                        if self.items.len() > 1
-                            && ui.button("☰").on_hover_text("Queue (L)").clicked()
+                        ui.label(mono("Up next", 12.0));
+                        if ui
+                            .small_button("Add…")
+                            .on_hover_text("Add files (Ctrl+O)")
+                            .clicked()
                         {
-                            self.show_list = !self.show_list;
+                            do_open = true;
                         }
-                        if ui.button("⛶").on_hover_text("Fullscreen (F)").clicked() {
-                            Self::toggle_fullscreen(ctx);
+                    });
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        for (i, it) in self.items.iter().enumerate() {
+                            let label = if it.subtitle.is_empty() {
+                                it.title.clone()
+                            } else {
+                                it.subtitle.clone()
+                            };
+                            if ui
+                                .selectable_label(self.current == Some(i), label)
+                                .clicked()
+                            {
+                                pick = Some(i);
+                            }
                         }
                     });
                 });
-
-            if self.show_list && self.items.len() > 1 {
-                egui::SidePanel::right("queue")
-                    .default_width(260.0)
-                    .show(ctx, |ui| {
-                        ui.add_space(6.0);
-                        ui.horizontal(|ui| {
-                            ui.label(mono("Up next", 12.0));
-                            if ui
-                                .small_button("📂")
-                                .on_hover_text("Add files (Ctrl+O)")
-                                .clicked()
-                            {
-                                do_open = true;
-                            }
-                        });
-                        egui::ScrollArea::vertical().show(ui, |ui| {
-                            for (i, it) in self.items.iter().enumerate() {
-                                let label = if it.subtitle.is_empty() {
-                                    it.title.clone()
-                                } else {
-                                    it.subtitle.clone()
-                                };
-                                if ui
-                                    .selectable_label(self.current == Some(i), label)
-                                    .clicked()
-                                {
-                                    pick = Some(i);
-                                }
-                            }
-                        });
-                    });
-            }
         }
 
+        let (pos, dur) = self
+            .player
+            .as_ref()
+            .map_or((0.0, 0.0), |p| (p.clock(), p.meta.duration));
+        let has_audio = self.player.as_ref().is_some_and(|p| p.meta.has_audio);
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(Color32::BLACK))
             .show(ctx, |ui| {
@@ -428,55 +411,380 @@ impl Watch {
                     );
                 }
 
-                // title bar overlay
+                let top = Rect::from_min_size(rect.min, vec2(rect.width(), TOP_H));
+                let bottom =
+                    Rect::from_min_max(pos2(rect.left(), rect.bottom() - BOTTOM_H), rect.max);
+                let mut on_controls = false;
                 if !hide_ui {
-                    let bar = Rect::from_min_size(rect.min, vec2(rect.width(), 72.0));
-                    let shade = Color32::from_black_alpha(170);
-                    gradient(
-                        ui.painter(),
-                        bar,
-                        [shade, shade, Color32::TRANSPARENT, Color32::TRANSPARENT],
-                    );
-                    chrome::drag_area(
-                        ui,
-                        Rect::from_min_size(bar.min, vec2(bar.width(), chrome::BAR_H)),
-                    );
-                    let mut child = ui
-                        .new_child(egui::UiBuilder::new().max_rect(bar.shrink2(vec2(14.0, 10.0))));
-                    child.horizontal(|ui| {
-                        close |= small_button(ui, "‹ Back").on_hover_text("Esc").clicked();
-                        ui.add_space(8.0);
-                        if let Some(it) = self.current.and_then(|i| self.items.get(i)) {
-                            ui.vertical(|ui| {
-                                ui.spacing_mut().item_spacing.y = 0.0;
-                                ui.label(bold(&it.title, 16.0).color(Color32::WHITE));
-                                if !it.subtitle.is_empty() {
-                                    ui.label(
-                                        mono(&it.subtitle, 10.5).color(Color32::from_gray(200)),
-                                    );
-                                }
-                            });
+                    let p = ui.painter().clone();
+                    let dark = Color32::from_black_alpha(235);
+                    let fade = Color32::from_black_alpha(0);
+                    let shade_top = Rect::from_min_size(top.min, vec2(top.width(), TOP_H + 30.0));
+                    gradient(&p, shade_top, [dark, dark, fade, fade]);
+                    let shade_bottom =
+                        Rect::from_min_max(pos2(bottom.left(), bottom.top() - 40.0), bottom.max);
+                    gradient(&p, shade_bottom, [fade, fade, dark, dark]);
+                    on_controls = ui.rect_contains_pointer(top) || ui.rect_contains_pointer(bottom);
+
+                    // ---- top bar
+                    chrome::drag_area(ui, top);
+                    let cy = top.top() + 30.0;
+                    let close_r =
+                        Rect::from_center_size(pos2(top.left() + 28.0, cy), vec2(36.0, 36.0));
+                    close |= ctl_button(ui, close_r, Icon::Close, "Close").clicked();
+                    if let Some(it) = self.current.and_then(|i| self.items.get(i)) {
+                        let x = top.left() + 58.0;
+                        p.text(
+                            pos2(x, cy - 2.0),
+                            Align2::LEFT_BOTTOM,
+                            &it.title,
+                            FontId::new(15.0, egui::FontFamily::Name("bold".into())),
+                            Color32::WHITE,
+                        );
+                        if !it.subtitle.is_empty() {
+                            p.text(
+                                pos2(x, cy + 2.0),
+                                Align2::LEFT_TOP,
+                                &it.subtitle,
+                                FontId::proportional(12.5),
+                                Color32::from_gray(160),
+                            );
                         }
-                    });
-                    let buttons = Rect::from_min_size(
-                        pos2(bar.right() - 3.0 * chrome::BAR_H, bar.top()),
-                        vec2(3.0 * chrome::BAR_H, chrome::BAR_H),
+                    }
+                    let mut x = top.right() - 28.0;
+                    let mut next_slot = || {
+                        let r = Rect::from_center_size(pos2(x, cy), vec2(36.0, 36.0));
+                        x -= 40.0;
+                        r
+                    };
+                    let more_r = next_slot();
+                    if ctl_button(ui, more_r, Icon::More, "Settings").clicked() {
+                        self.menu = (self.menu != Some(Menu::Settings)).then_some(Menu::Settings);
+                    }
+                    let fs_icon = if fullscreen {
+                        Icon::FullscreenExit
+                    } else {
+                        Icon::Fullscreen
+                    };
+                    let fs_tip = if fullscreen {
+                        "Exit fullscreen (F)"
+                    } else {
+                        "Fullscreen (F)"
+                    };
+                    if ctl_button(ui, next_slot(), fs_icon, fs_tip).clicked() {
+                        Self::toggle_fullscreen(ctx);
+                    }
+                    let vol_r = next_slot();
+                    let vol_icon = if *muted || *volume <= 0.0 {
+                        Icon::VolumeMuted
+                    } else {
+                        Icon::Volume
+                    };
+                    let vb = ctl_button(ui, vol_r, vol_icon, "Volume (M to mute)");
+                    if vb.clicked() {
+                        *muted = !*muted;
+                    }
+                    if vb.hovered() {
+                        self.vol_hover = Some(now);
+                    }
+                    let sub_r = next_slot();
+                    if ctl_button(ui, sub_r, Icon::Subtitles, "Subtitles").clicked() {
+                        self.menu = (self.menu != Some(Menu::Subtitles)).then_some(Menu::Subtitles);
+                    }
+                    if self.items.len() > 1
+                        && ctl_button(ui, next_slot(), Icon::List, "Queue (L)").clicked()
+                    {
+                        self.show_list = !self.show_list;
+                    }
+
+                    // ---- volume slider, open while the button or the slider is hovered
+                    let pop = Rect::from_min_size(
+                        pos2(vol_r.center().x - 20.0, vol_r.bottom() + 6.0),
+                        vec2(40.0, 130.0),
                     );
-                    let mut child = ui.new_child(
-                        egui::UiBuilder::new()
-                            .max_rect(buttons)
-                            .layout(egui::Layout::right_to_left(egui::Align::Center)),
+                    if ui.rect_contains_pointer(pop.expand(4.0)) && self.vol_hover.is_some() {
+                        self.vol_hover = Some(now);
+                    }
+                    if self
+                        .vol_hover
+                        .is_some_and(|t| now.duration_since(t) < Duration::from_millis(350))
+                    {
+                        on_controls = true;
+                        let lp = ui.ctx().layer_painter(egui::LayerId::new(
+                            egui::Order::Foreground,
+                            egui::Id::new("volume_pop"),
+                        ));
+                        lp.rect_filled(pop, 8.0, Color32::from_rgba_unmultiplied(18, 18, 20, 235));
+                        lp.rect_stroke(
+                            pop,
+                            8.0,
+                            egui::Stroke::new(1.0f32, Color32::from_gray(50)),
+                            egui::StrokeKind::Inside,
+                        );
+                        let track =
+                            Rect::from_center_size(pop.center(), vec2(3.0, pop.height() - 28.0));
+                        lp.rect_filled(track, 2.0, Color32::from_white_alpha(50));
+                        let level = if *muted { 0.0 } else { *volume };
+                        let filled = Rect::from_min_max(
+                            pos2(track.left(), track.bottom() - track.height() * level),
+                            track.max,
+                        );
+                        lp.rect_filled(filled, 2.0, Color32::WHITE);
+                        let s =
+                            ui.interact(pop, ui.id().with("volume_pop"), Sense::click_and_drag());
+                        if s.is_pointer_button_down_on() {
+                            if let Some(pp) = s.interact_pointer_pos() {
+                                *volume =
+                                    ((track.bottom() - pp.y) / track.height()).clamp(0.0, 1.0);
+                                *muted = false;
+                            }
+                        }
+                        ctx.request_repaint();
+                    }
+
+                    // ---- menus
+                    if let Some(m) = self.menu {
+                        let anchor = if m == Menu::Settings { more_r } else { sub_r };
+                        let w = 260.0;
+                        let h = if m == Menu::Settings { 150.0 } else { 78.0 };
+                        let left = (anchor.right() - w).max(rect.left() + 8.0);
+                        let mr = Rect::from_min_size(pos2(left, anchor.bottom() + 8.0), vec2(w, h));
+                        let lp = ui.ctx().layer_painter(egui::LayerId::new(
+                            egui::Order::Foreground,
+                            egui::Id::new("player_menu"),
+                        ));
+                        lp.rect_filled(mr, 8.0, Color32::from_rgba_unmultiplied(28, 28, 31, 245));
+                        lp.rect_stroke(
+                            mr,
+                            8.0,
+                            egui::Stroke::new(1.0f32, Color32::from_gray(48)),
+                            egui::StrokeKind::Inside,
+                        );
+                        let heading = |y: f32, t: &str| {
+                            lp.text(
+                                pos2(mr.left() + 18.0, y),
+                                Align2::LEFT_TOP,
+                                t,
+                                FontId::new(11.5, egui::FontFamily::Name("bold".into())),
+                                Color32::from_gray(150),
+                            );
+                        };
+                        let line = |y: f32, t: &str| {
+                            lp.text(
+                                pos2(mr.left() + 18.0, y),
+                                Align2::LEFT_TOP,
+                                t,
+                                FontId::proportional(14.0),
+                                Color32::from_gray(200),
+                            );
+                        };
+                        heading(mr.top() + 16.0, "SUBTITLES");
+                        line(mr.top() + 38.0, "No subtitles for this video");
+                        if m == Menu::Settings {
+                            lp.hline(
+                                mr.x_range().shrink(18.0),
+                                mr.top() + 72.0,
+                                egui::Stroke::new(1.0f32, Color32::from_gray(48)),
+                            );
+                            heading(mr.top() + 88.0, "AUDIO");
+                            line(
+                                mr.top() + 110.0,
+                                if has_audio {
+                                    "Default"
+                                } else {
+                                    "No audio track"
+                                },
+                            );
+                        }
+                        on_controls |= ui.rect_contains_pointer(mr);
+                        let clicked_away = ui.input(|i| i.pointer.any_click())
+                            && !ui.rect_contains_pointer(mr)
+                            && !ui.rect_contains_pointer(anchor);
+                        if clicked_away {
+                            self.menu = None;
+                        }
+                    }
+
+                    // ---- progress bar
+                    let by = bottom.bottom() - 86.0;
+                    let font = FontId::proportional(12.5);
+                    let shown = self.seek_drag.unwrap_or(pos);
+                    p.text(
+                        pos2(bottom.left() + 24.0, by),
+                        Align2::LEFT_CENTER,
+                        fmt_time(shown),
+                        font.clone(),
+                        Color32::from_gray(210),
                     );
-                    child.spacing_mut().item_spacing.x = 0.0;
-                    chrome::window_buttons(&mut child);
+                    p.text(
+                        pos2(bottom.right() - 16.0, by),
+                        Align2::RIGHT_CENTER,
+                        fmt_time(dur),
+                        font,
+                        Color32::from_gray(210),
+                    );
+                    let bar = Rect::from_min_max(
+                        pos2(bottom.left() + 66.0, by - 8.0),
+                        pos2(bottom.right() - 66.0, by + 8.0),
+                    );
+                    let s = ui.interact(bar, ui.id().with("seekbar"), Sense::click_and_drag());
+                    let hot = s.hovered() || s.dragged();
+                    let th = if hot { 5.0 } else { 3.0 };
+                    let track = Rect::from_center_size(bar.center(), vec2(bar.width(), th));
+                    p.rect_filled(track, 2.0, Color32::from_white_alpha(60));
+                    let f = if dur > 0.0 {
+                        (shown / dur).clamp(0.0, 1.0) as f32
+                    } else {
+                        0.0
+                    };
+                    let played_x = track.left() + track.width() * f;
+                    p.rect_filled(
+                        Rect::from_min_max(track.min, pos2(played_x, track.bottom())),
+                        2.0,
+                        RED,
+                    );
+                    let at = |x: f32| {
+                        (((x - track.left()) / track.width()).clamp(0.0, 1.0) as f64) * dur
+                    };
+                    if hot {
+                        p.circle_filled(pos2(played_x, track.center().y), 7.0, RED);
+                        if let Some(hp) = s.hover_pos() {
+                            p.text(
+                                pos2(hp.x, bar.top() - 6.0),
+                                Align2::CENTER_BOTTOM,
+                                fmt_time(at(hp.x)),
+                                FontId::proportional(12.0),
+                                Color32::WHITE,
+                            );
+                        }
+                    }
+                    if dur > 0.0 {
+                        if s.dragged() {
+                            if let Some(pp) = s.interact_pointer_pos() {
+                                self.seek_drag = Some(at(pp.x));
+                            }
+                        }
+                        if s.drag_stopped() {
+                            seek_to = self.seek_drag.take();
+                        } else if s.clicked() {
+                            if let Some(pp) = s.interact_pointer_pos() {
+                                seek_to = Some(at(pp.x));
+                            }
+                        }
+                    }
+                    let s = s.on_hover_cursor(CursorIcon::PointingHand);
+                    let _ = s;
+
+                    // ---- transport
+                    let cy = bottom.bottom() - 40.0;
+                    let cx = bottom.center().x;
+                    let secs = format!("{}", skip as u32);
+                    let back_r = Rect::from_center_size(pos2(cx - 82.0, cy), vec2(44.0, 44.0));
+                    let fwd_r = Rect::from_center_size(pos2(cx + 82.0, cy), vec2(44.0, 44.0));
+                    if ctl_button(
+                        ui,
+                        back_r,
+                        Icon::SkipBack,
+                        &format!("Back {secs} seconds (←)"),
+                    )
+                    .clicked()
+                    {
+                        skip_by = Some(-skip);
+                    }
+                    if ctl_button(
+                        ui,
+                        fwd_r,
+                        Icon::SkipForward,
+                        &format!("Forward {secs} seconds (→)"),
+                    )
+                    .clicked()
+                    {
+                        skip_by = Some(skip);
+                    }
+                    for r in [back_r, fwd_r] {
+                        p.text(
+                            r.center() + vec2(0.0, 1.5),
+                            Align2::CENTER_CENTER,
+                            &secs,
+                            FontId::new(8.5, egui::FontFamily::Name("bold".into())),
+                            Color32::WHITE,
+                        );
+                    }
+                    let play_r = Rect::from_center_size(pos2(cx, cy), vec2(56.0, 56.0));
+                    let pb = ui.interact(play_r, ui.id().with("play_btn"), Sense::click());
+                    let fill = if pb.hovered() {
+                        Color32::from_gray(70)
+                    } else {
+                        Color32::from_gray(48)
+                    };
+                    p.circle_filled(play_r.center(), 28.0, fill);
+                    let icon = if playing { Icon::Pause } else { Icon::Play };
+                    chrome::draw_icon(
+                        &p,
+                        play_r.center() + vec2(if playing { 0.0 } else { 1.5 }, 0.0),
+                        icon,
+                        Color32::WHITE,
+                    );
+                    let tip = if playing {
+                        "Pause (Space)"
+                    } else {
+                        "Play (Space)"
+                    };
+                    do_toggle |= pb
+                        .on_hover_text(tip)
+                        .on_hover_cursor(CursorIcon::PointingHand)
+                        .clicked();
+
+                    if self.has_next() {
+                        let episode = self.current.is_some_and(|i| self.items[i].episode);
+                        let label = if episode { "Next Episode" } else { "Next" };
+                        let g = p.layout_no_wrap(
+                            label.to_owned(),
+                            FontId::proportional(14.5),
+                            Color32::WHITE,
+                        );
+                        let nr = Rect::from_min_size(
+                            pos2(bottom.right() - 22.0 - g.size().x - 50.0, cy - 20.0),
+                            vec2(g.size().x + 50.0, 40.0),
+                        );
+                        let nb = ui.interact(nr, ui.id().with("next_btn"), Sense::click());
+                        let fill = if nb.hovered() {
+                            Color32::from_gray(64)
+                        } else {
+                            Color32::from_gray(40)
+                        };
+                        p.rect_filled(nr, 4.0, fill);
+                        p.galley(
+                            pos2(nr.left() + 16.0, nr.center().y - g.size().y / 2.0),
+                            g,
+                            Color32::WHITE,
+                        );
+                        chrome::draw_icon(
+                            &p,
+                            pos2(nr.right() - 18.0, nr.center().y),
+                            Icon::ChevronRight,
+                            Color32::WHITE,
+                        );
+                        do_next |= nb
+                            .on_hover_text("Next (N)")
+                            .on_hover_cursor(CursorIcon::PointingHand)
+                            .clicked();
+                    }
                 }
 
-                if resp.double_clicked() {
+                if resp.double_clicked() && !on_controls {
                     Self::toggle_fullscreen(ctx);
-                } else if resp.clicked() {
-                    do_toggle = true;
+                } else if resp.clicked() && !on_controls {
+                    if self.menu.is_some() {
+                        self.menu = None;
+                    } else {
+                        do_toggle = true;
+                    }
                 }
             });
+        if let Some(d) = skip_by.take() {
+            self.skip(d);
+        }
 
         if hide_ui {
             ctx.set_cursor_icon(CursorIcon::None);

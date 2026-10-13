@@ -23,6 +23,18 @@ pub enum Icon {
     ChevronLeft,
     ArrowRight,
     Star,
+    Pause,
+    ChevronRight,
+    Subtitles,
+    Volume,
+    VolumeMuted,
+    Fullscreen,
+    FullscreenExit,
+    More,
+    List,
+    /// Circular arrows; the caller writes the seconds inside.
+    SkipBack,
+    SkipForward,
 }
 
 /// Top bar: word mark, `left` (tabs), `right` (search, buttons), window buttons.
@@ -277,6 +289,113 @@ pub fn draw_icon(p: &egui::Painter, c: Pos2, icon: Icon, col: Color32) {
                     Stroke::NONE,
                 ));
             }
+        }
+        Icon::Pause => {
+            for dx in [-3.5, 3.5] {
+                p.rect_filled(
+                    Rect::from_center_size(c + vec2(dx, 0.0), vec2(3.5, 13.0)),
+                    1.0,
+                    col,
+                );
+            }
+        }
+        Icon::ChevronRight => {
+            p.line_segment([c + vec2(-2.0, -4.0), c + vec2(2.0, 0.0)], s);
+            p.line_segment([c + vec2(2.0, 0.0), c + vec2(-2.0, 4.0)], s);
+        }
+        Icon::Subtitles => {
+            p.rect_stroke(
+                Rect::from_center_size(c, vec2(16.0, 12.0)),
+                2.0,
+                s,
+                egui::StrokeKind::Middle,
+            );
+            p.hline(c.x - 4.5..=c.x - 1.5, c.y + 1.0, s);
+            p.hline(c.x + 0.5..=c.x + 4.5, c.y + 1.0, s);
+            p.hline(c.x - 4.5..=c.x + 1.5, c.y - 2.5, s);
+        }
+        Icon::Volume | Icon::VolumeMuted => {
+            p.add(egui::Shape::convex_polygon(
+                vec![
+                    c + vec2(-7.0, -2.5),
+                    c + vec2(-4.0, -2.5),
+                    c + vec2(0.0, -6.5),
+                    c + vec2(0.0, 6.5),
+                    c + vec2(-4.0, 2.5),
+                    c + vec2(-7.0, 2.5),
+                ],
+                Color32::TRANSPARENT,
+                s,
+            ));
+            if matches!(icon, Icon::VolumeMuted) {
+                p.line_segment([c + vec2(3.0, -3.0), c + vec2(8.0, 3.0)], s);
+                p.line_segment([c + vec2(8.0, -3.0), c + vec2(3.0, 3.0)], s);
+            } else {
+                for r in [4.0f32, 7.5] {
+                    let pts: Vec<Pos2> = (0..=10)
+                        .map(|i| {
+                            let a = -0.9 + i as f32 / 10.0 * 1.8;
+                            c + vec2(a.cos(), a.sin()) * r + vec2(0.5, 0.0)
+                        })
+                        .collect();
+                    p.add(egui::Shape::line(pts, s));
+                }
+            }
+        }
+        Icon::Fullscreen | Icon::FullscreenExit => {
+            let out = matches!(icon, Icon::Fullscreen);
+            for (sx, sy) in [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)] {
+                let corner = c + vec2(sx * 7.0, sy * 7.0);
+                let (a, b) = if out {
+                    (corner - vec2(sx * 4.0, 0.0), corner - vec2(0.0, sy * 4.0))
+                } else {
+                    let k = c + vec2(sx * 3.0, sy * 3.0);
+                    (k + vec2(sx * 4.0, 0.0), k + vec2(0.0, sy * 4.0))
+                };
+                let k = if out {
+                    corner
+                } else {
+                    c + vec2(sx * 3.0, sy * 3.0)
+                };
+                p.line_segment([a, k], s);
+                p.line_segment([k, b], s);
+            }
+        }
+        Icon::More => {
+            for dy in [-5.5, 0.0, 5.5] {
+                p.circle_filled(c + vec2(0.0, dy), 1.7, col);
+            }
+        }
+        Icon::List => {
+            for dy in [-5.0, 0.0, 5.0] {
+                p.hline(c.x - 7.0..=c.x + 7.0, c.y + dy, s);
+            }
+        }
+        Icon::SkipBack | Icon::SkipForward => {
+            let back = matches!(icon, Icon::SkipBack);
+            let s = Stroke::new(1.8f32, col);
+            let r = 11.0;
+            // an open circle, its gap at the top, with an arrowhead on one end
+            let (a0, a1) = (-1.25f32, 4.0f32);
+            let pts: Vec<Pos2> = (0..=28)
+                .map(|i| {
+                    let a = a0 + i as f32 / 28.0 * (a1 - a0);
+                    let a = if back { std::f32::consts::PI - a } else { a };
+                    c + vec2(a.cos(), a.sin()) * r
+                })
+                .collect();
+            let tip = pts[0];
+            p.add(egui::Shape::line(pts, s));
+            let d = if back { -1.0 } else { 1.0 };
+            p.add(egui::Shape::convex_polygon(
+                vec![
+                    tip + vec2(-4.0 * d, -4.0),
+                    tip + vec2(3.0 * d, 0.5),
+                    tip + vec2(-4.0 * d, 4.0),
+                ],
+                col,
+                Stroke::NONE,
+            ));
         }
         Icon::Settings => {
             for i in 0..8 {

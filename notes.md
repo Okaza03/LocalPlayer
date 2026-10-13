@@ -1,6 +1,6 @@
 # LocalPlayer v0.2.0
 
-A big redesign of the movie and series pages, and a new page for each episode.
+A big redesign: new movie and series pages, a page for each episode, and a new player.
 
 ### New: movie page
 - A large backdrop, with the poster on the left ("A film by ..." on top).
@@ -25,6 +25,17 @@ Click an episode to open its page:
 - **Up next**, and a link back to all episodes.
 
 Hovering over an episode card still shows a play button that starts it right away.
+
+### New: player
+- A top bar with close, the title and year/runtime (or episode), and buttons for subtitles, volume, fullscreen and settings. Every button names itself when you hover over it.
+- Hover over the volume button to get a slider.
+- The settings menu shows the subtitle and audio tracks.
+- A red progress bar you can click or drag, with the time under the pointer.
+- Skip back and forward buttons with your skip time on them, and a round play/pause button.
+- A **Next Episode** button for series.
+- The controls fade out while the video plays.
+
+Subtitles aren't supported yet. The subtitles button and menu say so for now, and they'll come in a later update.
 
 ### New: My list
 The bookmark button saves a movie or show to a **My list** row on Home.

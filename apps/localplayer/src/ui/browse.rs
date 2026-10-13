@@ -1154,7 +1154,15 @@ impl Browse {
                 let key = self.key(&item.id);
                 Some(Action::Play(vec![PlayItem {
                     title: item.title.clone(),
-                    subtitle: item.year.map(|y| y.to_string()).unwrap_or_default(),
+                    subtitle: [
+                        item.year.map(|y| y.to_string()),
+                        item.duration.filter(|d| *d > 0.0).map(fmt_runtime),
+                    ]
+                    .into_iter()
+                    .flatten()
+                    .collect::<Vec<_>>()
+                    .join(" · "),
+                    episode: false,
                     source: Source::Url {
                         url: item.stream.clone()?,
                         auth,
@@ -1179,7 +1187,11 @@ impl Browse {
                         let key = self.key(&e.id);
                         queue.push(PlayItem {
                             title: item.title.clone(),
-                            subtitle: format!("S{} E{} · {}", season.number, e.number, e.title),
+                            subtitle: format!(
+                                "S{:02}E{:02} · {}",
+                                season.number, e.number, e.title
+                            ),
+                            episode: true,
                             source: Source::Url {
                                 url: e.stream.clone(),
                                 auth: auth.clone(),
