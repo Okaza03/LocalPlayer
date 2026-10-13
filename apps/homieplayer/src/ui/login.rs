@@ -64,8 +64,6 @@ impl Login {
         let busy = self.task.is_some();
         card(ctx, |ui| {
             let mut action = Action::None;
-            super::logo(ui, 30.0);
-            ui.add_space(6.0);
             ui.label(super::bold("Sign in", 22.0));
             ui.label(RichText::new(format!("to {}", self.client.info.name)).color(MUTED));
             ui.add_space(14.0);

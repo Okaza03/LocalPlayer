@@ -33,8 +33,13 @@ pub enum Source {
 impl Source {
     pub fn name(&self) -> String {
         match self {
-            Source::File(p) => p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
-            Source::Url { url, .. } => crate::util::percent_decode(url.rsplit('/').next().unwrap_or(url)),
+            Source::File(p) => p
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            Source::Url { url, .. } => {
+                crate::util::percent_decode(url.rsplit('/').next().unwrap_or(url))
+            }
         }
     }
 }
@@ -105,7 +110,15 @@ impl Player {
             .recv()
             .map_err(|_| anyhow!("decoder thread crashed"))?
             .map_err(|e| anyhow!(e))?;
-        Ok(Self { sh, audio, tx, thread: Some(thread), meta, paused: false, wall: 0.0 })
+        Ok(Self {
+            sh,
+            audio,
+            tx,
+            thread: Some(thread),
+            meta,
+            paused: false,
+            wall: 0.0,
+        })
     }
 
     pub fn clock(&self) -> f64 {
@@ -114,7 +127,11 @@ impl Player {
         } else {
             self.sh.base() + self.wall
         };
-        if self.meta.duration > 0.0 { t.min(self.meta.duration) } else { t }
+        if self.meta.duration > 0.0 {
+            t.min(self.meta.duration)
+        } else {
+            t
+        }
     }
 
     pub fn tick(&mut self, dt: f64) {
@@ -211,7 +228,10 @@ fn decode_thread(
             let _ = mtx.send(Err(format!("{e:#}")));
         }
         Ok(mut d) => {
-            let _ = mtx.send(Ok(Meta { duration: d.duration, has_audio: d.audio.is_some() }));
+            let _ = mtx.send(Ok(Meta {
+                duration: d.duration,
+                has_audio: d.audio.is_some(),
+            }));
             if let Err(e) = d.run(&sh, &audio, &rx) {
                 eprintln!("decoder stopped: {e:#}");
                 sh.eof.store(true, Relaxed);
@@ -221,10 +241,19 @@ fn decode_thread(
 }
 
 fn open_audio(ictx: &ffmpeg::format::context::Input) -> Result<Option<ADec>> {
-    let Some(s) = ictx.streams().best(Type::Audio) else { return Ok(None) };
+    let Some(s) = ictx.streams().best(Type::Audio) else {
+        return Ok(None);
+    };
     let (idx, tb, par) = (s.index(), s.time_base(), s.parameters());
-    let dec = codec::context::Context::from_parameters(par)?.decoder().audio()?;
-    Ok(Some(ADec { idx, tb, dec, rs: None }))
+    let dec = codec::context::Context::from_parameters(par)?
+        .decoder()
+        .audio()?;
+    Ok(Some(ADec {
+        idx,
+        tb,
+        dec,
+        rs: None,
+    }))
 }
 
 fn fit(w: u32, h: u32, max_w: u32) -> (u32, u32) {
@@ -255,7 +284,10 @@ fn open_input(src: &Source, sh: &Arc<Shared>) -> Result<ffmpeg::format::context:
             opts.set("reconnect_on_network_error", "1");
             opts.set("reconnect_delay_max", "4");
             opts.set("rw_timeout", "20000000");
-            opts.set("user_agent", concat!("HomiePlayer/", env!("CARGO_PKG_VERSION")));
+            opts.set(
+                "user_agent",
+                concat!("HomiePlayer/", env!("CARGO_PKG_VERSION")),
+            );
             if let Some(a) = auth {
                 opts.set("headers", &format!("Authorization: {a}\r\n"));
             }
@@ -301,8 +333,14 @@ impl Decoder {
                 .ok_or_else(|| anyhow!("no video stream"))?;
             (s.index(), s.time_base(), s.parameters())
         };
-        let vdec = codec::context::Context::from_parameters(vpar)?.decoder().video()?;
-        let adec = if audio.available { open_audio(&ictx).ok().flatten() } else { None };
+        let vdec = codec::context::Context::from_parameters(vpar)?
+            .decoder()
+            .video()?;
+        let adec = if audio.available {
+            open_audio(&ictx).ok().flatten()
+        } else {
+            None
+        };
         let d = ictx.duration();
         Ok(Self {
             duration: if d > 0 { d as f64 / 1e6 } else { 0.0 },
@@ -417,13 +455,18 @@ impl Decoder {
                 sh.set_base(t);
                 self.need_base = false;
             }
-            sh.vq.lock().unwrap().push_back(VFrame { t, w, h, rgba: px });
+            sh.vq
+                .lock()
+                .unwrap()
+                .push_back(VFrame { t, w, h, rgba: px });
         }
         Ok(())
     }
 
     fn drain_audio(&mut self, audio: &AudioShared, skip_until: f64) -> Result<()> {
-        let Some(a) = self.audio.as_mut() else { return Ok(()) };
+        let Some(a) = self.audio.as_mut() else {
+            return Ok(());
+        };
         let mut f = frame::Audio::empty();
         while a.dec.receive_frame(&mut f).is_ok() {
             if secs(f.timestamp().unwrap_or(0), a.tb) < skip_until - 0.02 {

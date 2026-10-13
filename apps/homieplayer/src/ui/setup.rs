@@ -2,9 +2,7 @@
 use anyhow::Result;
 use eframe::egui::{self, RichText};
 
-use super::{
-    card, primary_button, spinner_text, text_field, Action, ERROR, MUTED,
-};
+use super::{card, primary_button, spinner_text, text_field, Action, ERROR, MUTED};
 use crate::api::Client;
 use crate::util::Task;
 
@@ -49,11 +47,7 @@ impl Setup {
         let busy = self.task.is_some();
         card(ctx, |ui| {
             let mut action = Action::None;
-            super::logo(ui, 30.0);
-            ui.add_space(6.0);
-            ui.label(
-                super::bold("Connect to your media library", 20.0),
-            );
+            ui.label(super::bold("Connect to your media library", 20.0));
             ui.label(
                 RichText::new("Enter the IP address (and port) of the computer on your network that serves your movies and series.")
                     .color(MUTED),

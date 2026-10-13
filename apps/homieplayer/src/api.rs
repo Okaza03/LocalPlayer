@@ -140,7 +140,11 @@ impl Library {
                     it.id = it.stream.clone().unwrap_or_else(|| it.title.clone());
                 }
                 // servers often number movies, series and episodes separately
-                let tag = if kind == Kind::Movie { "movie" } else { "series" };
+                let tag = if kind == Kind::Movie {
+                    "movie"
+                } else {
+                    "series"
+                };
                 it.id = format!("{tag}:{}", it.id);
                 it.seasons.sort_by_key(|s| s.number);
                 for s in &mut it.seasons {

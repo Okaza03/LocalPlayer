@@ -35,16 +35,34 @@ fn font(bytes: &'static [u8]) -> Arc<FontData> {
 pub fn apply_theme(ctx: &egui::Context) {
     let mut fonts = FontDefinitions::default();
     let fd = &mut fonts.font_data;
-    fd.insert("sans".into(), font(include_bytes!("../../assets/fonts/NotoSans-Regular.ttf")));
-    fd.insert("sans-bold".into(), font(include_bytes!("../../assets/fonts/NotoSans-Bold.ttf")));
-    fd.insert("sans-black".into(), font(include_bytes!("../../assets/fonts/NotoSans-Black.ttf")));
-    fd.insert("mono".into(), font(include_bytes!("../../assets/fonts/NotoSansMono-Medium.ttf")));
+    fd.insert(
+        "sans".into(),
+        font(include_bytes!("../../assets/fonts/NotoSans-Regular.ttf")),
+    );
+    fd.insert(
+        "sans-bold".into(),
+        font(include_bytes!("../../assets/fonts/NotoSans-Bold.ttf")),
+    );
+    fd.insert(
+        "sans-black".into(),
+        font(include_bytes!("../../assets/fonts/NotoSans-Black.ttf")),
+    );
+    fd.insert(
+        "mono".into(),
+        font(include_bytes!("../../assets/fonts/NotoSansMono-Medium.ttf")),
+    );
     let fallback = fonts.families[&FontFamily::Proportional].clone(); // keeps emoji/icons
     let fam = &mut fonts.families;
-    fam.get_mut(&FontFamily::Proportional).unwrap().insert(0, "sans".into());
-    fam.get_mut(&FontFamily::Monospace).unwrap().insert(0, "mono".into());
+    fam.get_mut(&FontFamily::Proportional)
+        .unwrap()
+        .insert(0, "sans".into());
+    fam.get_mut(&FontFamily::Monospace)
+        .unwrap()
+        .insert(0, "mono".into());
     for (name, first) in [("bold", "sans-bold"), ("black", "sans-black")] {
-        let list = std::iter::once(first.to_owned()).chain(fallback.iter().cloned()).collect();
+        let list = std::iter::once(first.to_owned())
+            .chain(fallback.iter().cloned())
+            .collect();
         fam.insert(FontFamily::Name(name.into()), list);
     }
     ctx.set_fonts(fonts);
@@ -79,7 +97,12 @@ pub fn apply_theme(ctx: &egui::Context) {
     v.window_corner_radius = CornerRadius::same(4);
     v.menu_corner_radius = CornerRadius::same(4);
     v.window_stroke = Stroke::new(1.0f32, LINE);
-    v.window_shadow = egui::Shadow { offset: [0, 8], blur: 24, spread: 0, color: Color32::from_black_alpha(140) };
+    v.window_shadow = egui::Shadow {
+        offset: [0, 8],
+        blur: 24,
+        spread: 0,
+        color: Color32::from_black_alpha(140),
+    };
     v.popup_shadow = v.window_shadow;
     for (w, fill) in [
         (&mut v.widgets.noninteractive, SURFACE),
@@ -114,7 +137,9 @@ pub fn mono(text: impl Into<String>, size: f32) -> RichText {
 }
 
 pub fn bold(text: impl Into<String>, size: f32) -> RichText {
-    RichText::new(text.into()).family(FontFamily::Name("bold".into())).size(size)
+    RichText::new(text.into())
+        .family(FontFamily::Name("bold".into()))
+        .size(size)
 }
 
 pub fn black_font(size: f32) -> FontId {
@@ -123,7 +148,12 @@ pub fn black_font(size: f32) -> FontId {
 
 /// The "HOMIEPLAYER" word mark.
 pub fn logo(ui: &mut Ui, size: f32) {
-    ui.label(RichText::new("HOMIEPLAYER").font(black_font(size)).extra_letter_spacing(size * 0.04).color(TEXT));
+    ui.label(
+        RichText::new("HOMIEPLAYER")
+            .font(black_font(size))
+            .extra_letter_spacing(size * 0.04)
+            .color(TEXT),
+    );
 }
 
 /// Muted section header, e.g. "PLAYBACK".
@@ -175,11 +205,28 @@ pub fn text_field(ui: &mut Ui, value: &mut String, hint: &str, password: bool) -
 
 fn tab_galley(ui: &Ui, label: &str, count: Option<usize>, selected: bool) -> Arc<egui::Galley> {
     let font = FontId::monospace(12.0);
-    let fmt = |color| TextFormat { font_id: font.clone(), color, extra_letter_spacing: 1.6, ..Default::default() };
+    let fmt = |color| TextFormat {
+        font_id: font.clone(),
+        color,
+        extra_letter_spacing: 1.6,
+        ..Default::default()
+    };
     let mut job = LayoutJob::default();
-    job.append(&label.to_uppercase(), 0.0, fmt(if selected { INK } else { TEXT }));
+    job.append(
+        &label.to_uppercase(),
+        0.0,
+        fmt(if selected { INK } else { TEXT }),
+    );
     if let Some(c) = count {
-        job.append(&c.to_string(), 9.0, fmt(if selected { Color32::from_gray(90) } else { MUTED }));
+        job.append(
+            &c.to_string(),
+            9.0,
+            fmt(if selected {
+                Color32::from_gray(90)
+            } else {
+                MUTED
+            }),
+        );
     }
     ui.fonts(|f| f.layout_job(job))
 }
@@ -199,7 +246,11 @@ pub fn tab(ui: &mut Ui, label: &str, selected: bool) -> Response {
 }
 
 /// A bordered row of options, the selected one white. Returns true on change.
-pub fn segmented<T: PartialEq + Clone>(ui: &mut Ui, value: &mut T, items: &[(T, &str, Option<usize>)]) -> bool {
+pub fn segmented<T: PartialEq + Clone>(
+    ui: &mut Ui,
+    value: &mut T,
+    items: &[(T, &str, Option<usize>)],
+) -> bool {
     let mut changed = false;
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
@@ -215,7 +266,11 @@ pub fn segmented<T: PartialEq + Clone>(ui: &mut Ui, value: &mut T, items: &[(T, 
                 p.rect_filled(r, 0.0, SURFACE_HI);
             }
             p.galley(r.center() - g.size() / 2.0, g, TEXT);
-            if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() && !sel {
+            if resp
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .clicked()
+                && !sel
+            {
                 *value = v.clone();
                 changed = true;
             }
@@ -226,7 +281,12 @@ pub fn segmented<T: PartialEq + Clone>(ui: &mut Ui, value: &mut T, items: &[(T, 
             for r in &rects[1..] {
                 p.vline(r.left(), r.y_range(), Stroke::new(1.0f32, LINE));
             }
-            p.rect_stroke(a.union(*b), 0.0, Stroke::new(1.0f32, LINE), StrokeKind::Inside);
+            p.rect_stroke(
+                a.union(*b),
+                0.0,
+                Stroke::new(1.0f32, LINE),
+                StrokeKind::Inside,
+            );
         }
     });
     changed
@@ -240,8 +300,15 @@ pub fn menu_item(ui: &mut Ui, text: &str) -> bool {
         ui.painter().rect_filled(r, 2.0, SURFACE_HI);
     }
     let pos = pos2(r.left() + 10.0, r.center().y);
-    ui.painter().text(pos, egui::Align2::LEFT_CENTER, text, FontId::proportional(14.5), TEXT);
-    resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked()
+    ui.painter().text(
+        pos,
+        egui::Align2::LEFT_CENTER,
+        text,
+        FontId::proportional(14.5),
+        TEXT,
+    );
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+        .clicked()
 }
 
 // ---------------------------------------------------------------- panels
@@ -249,35 +316,45 @@ pub fn menu_item(ui: &mut Ui, text: &str) -> bool {
 /// A centered card used by the setup and login screens.
 pub fn card<R>(ctx: &egui::Context, add: impl FnOnce(&mut Ui) -> R) -> R {
     let mut out = None;
-    egui::CentralPanel::default().frame(egui::Frame::new().fill(BG)).show(ctx, |ui| {
-        let full = ui.max_rect();
-        let w = full.width().clamp(280.0, 440.0);
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            ui.add_space(((full.height() - 540.0) / 2.0).max(24.0));
-            ui.vertical_centered(|ui| {
-                ui.set_max_width(w);
-                egui::Frame::new()
-                    .fill(SURFACE)
-                    .stroke(Stroke::new(1.0f32, LINE))
-                    .corner_radius(4)
-                    .inner_margin(28)
-                    .show(ui, |ui| {
-                        ui.set_width(w - 56.0);
-                        ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
-                            out = Some(add(ui));
+    egui::CentralPanel::default()
+        .frame(egui::Frame::new().fill(BG))
+        .show(ctx, |ui| {
+            let full = ui.max_rect();
+            let w = full.width().clamp(280.0, 440.0);
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                ui.add_space(((full.height() - 540.0) / 2.0).max(24.0));
+                ui.vertical_centered(|ui| {
+                    ui.set_max_width(w);
+                    egui::Frame::new()
+                        .fill(SURFACE)
+                        .stroke(Stroke::new(1.0f32, LINE))
+                        .corner_radius(4)
+                        .inner_margin(28)
+                        .show(ui, |ui| {
+                            ui.set_width(w - 56.0);
+                            ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
+                                out = Some(add(ui));
+                            });
                         });
-                    });
+                });
+                ui.add_space(24.0);
             });
-            ui.add_space(24.0);
         });
-    });
     out.unwrap()
 }
 
 /// A rect filled with a gradient; colors are top-left, top-right, bottom-right, bottom-left.
 pub fn gradient(p: &Painter, r: Rect, c: [Color32; 4]) {
     let mut m = Mesh::default();
-    for (pos, col) in [r.left_top(), r.right_top(), r.right_bottom(), r.left_bottom()].into_iter().zip(c) {
+    for (pos, col) in [
+        r.left_top(),
+        r.right_top(),
+        r.right_bottom(),
+        r.left_bottom(),
+    ]
+    .into_iter()
+    .zip(c)
+    {
         m.colored_vertex(pos, col);
     }
     m.add_triangle(0, 1, 2);
@@ -309,7 +386,11 @@ pub fn placeholder(p: &Painter, r: Rect, title: &str, radius: u8) {
     let c = color_for(title);
     p.rect_filled(r, radius, c);
     let dark = Color32::from_black_alpha(140);
-    gradient(p, r, [Color32::TRANSPARENT, Color32::TRANSPARENT, dark, dark]);
+    gradient(
+        p,
+        r,
+        [Color32::TRANSPARENT, Color32::TRANSPARENT, dark, dark],
+    );
     let size = (r.width() / 9.0).clamp(11.0, 22.0);
     let font = FontId::new(size, FontFamily::Name("bold".into()));
     let galley = p.layout(title.to_owned(), font, Color32::WHITE, r.width() - 16.0);

@@ -1,8 +1,8 @@
 //! Window chrome: our own title bar (the window has no system decorations),
 //! the status bar, and edge resizing.
 use eframe::egui::{
-    self, vec2, Align, Color32, CursorIcon, Id, Layout, Pos2, Rect, Response, ResizeDirection, Sense,
-    Stroke, Ui, ViewportCommand,
+    self, vec2, Align, Color32, CursorIcon, Id, Layout, Pos2, Rect, ResizeDirection, Response,
+    Sense, Stroke, Ui, ViewportCommand,
 };
 
 use super::{mono, BG, LINE, MUTED, SURFACE_HI, TEXT};
@@ -23,7 +23,12 @@ pub enum Icon {
 pub fn title_bar(ctx: &egui::Context, left: impl FnOnce(&mut Ui), right: impl FnOnce(&mut Ui)) {
     egui::TopBottomPanel::top("title_bar")
         .exact_height(BAR_H)
-        .frame(egui::Frame::new().fill(BG).inner_margin(egui::Margin { left: 18, right: 0, top: 0, bottom: 0 }))
+        .frame(egui::Frame::new().fill(BG).inner_margin(egui::Margin {
+            left: 18,
+            right: 0,
+            top: 0,
+            bottom: 0,
+        }))
         .show(ctx, |ui| {
             drag_area(ui, ui.max_rect());
             ui.horizontal_centered(|ui| {
@@ -45,7 +50,11 @@ pub fn title_bar(ctx: &egui::Context, left: impl FnOnce(&mut Ui), right: impl Fn
 
 /// Dragging moves the window; double-click maximizes.
 pub fn drag_area(ui: &mut Ui, rect: Rect) {
-    let r = ui.interact(rect, Id::new("window_drag").with(rect.top() as i32), Sense::click_and_drag());
+    let r = ui.interact(
+        rect,
+        Id::new("window_drag").with(rect.top() as i32),
+        Sense::click_and_drag(),
+    );
     if r.drag_started_by(egui::PointerButton::Primary) {
         ui.ctx().send_viewport_cmd(ViewportCommand::StartDrag);
     }
@@ -66,7 +75,13 @@ pub fn window_buttons(ui: &mut Ui) {
         ctx.send_viewport_cmd(ViewportCommand::Close);
     }
     let max = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
-    if icon_button(ui, if max { Icon::Restore } else { Icon::Maximize }, if max { "Restore" } else { "Maximize" }).clicked() {
+    if icon_button(
+        ui,
+        if max { Icon::Restore } else { Icon::Maximize },
+        if max { "Restore" } else { "Maximize" },
+    )
+    .clicked()
+    {
         toggle_maximized(&ctx);
     }
     if icon_button(ui, Icon::Minimize, "Minimize").clicked() {
@@ -78,19 +93,31 @@ pub fn window_buttons(ui: &mut Ui) {
 pub fn vsep(ui: &mut Ui) {
     let h = ui.available_height().min(BAR_H);
     let (r, _) = ui.allocate_exact_size(vec2(1.0, h), Sense::hover());
-    ui.painter().vline(r.center().x, r.y_range(), Stroke::new(1.0f32, LINE));
+    ui.painter()
+        .vline(r.center().x, r.y_range(), Stroke::new(1.0f32, LINE));
 }
 
 /// A square bar button with a drawn icon.
 pub fn icon_button(ui: &mut Ui, icon: Icon, tip: &str) -> Response {
-    let (r, resp) = ui.allocate_exact_size(vec2(BAR_H, BAR_H.min(ui.available_height())), Sense::click());
+    let (r, resp) = ui.allocate_exact_size(
+        vec2(BAR_H, BAR_H.min(ui.available_height())),
+        Sense::click(),
+    );
     let p = ui.painter();
     let hot = resp.hovered();
     if hot {
-        let fill = if matches!(icon, Icon::Close) { Color32::from_rgb(196, 43, 28) } else { SURFACE_HI };
+        let fill = if matches!(icon, Icon::Close) {
+            Color32::from_rgb(196, 43, 28)
+        } else {
+            SURFACE_HI
+        };
         p.rect_filled(r, 0.0, fill);
     }
-    let col = if hot { Color32::WHITE } else { Color32::from_gray(200) };
+    let col = if hot {
+        Color32::WHITE
+    } else {
+        Color32::from_gray(200)
+    };
     draw_icon(p, r.center(), icon, col);
     resp.on_hover_text(tip)
 }
@@ -102,10 +129,20 @@ pub fn draw_icon(p: &egui::Painter, c: Pos2, icon: Icon, col: Color32) {
             p.hline(c.x - 6.0..=c.x + 6.0, c.y, s);
         }
         Icon::Maximize => {
-            p.rect_stroke(Rect::from_center_size(c, vec2(11.0, 11.0)), 0.0, s, egui::StrokeKind::Inside);
+            p.rect_stroke(
+                Rect::from_center_size(c, vec2(11.0, 11.0)),
+                0.0,
+                s,
+                egui::StrokeKind::Inside,
+            );
         }
         Icon::Restore => {
-            p.rect_stroke(Rect::from_center_size(c + vec2(-1.5, 1.5), vec2(9.0, 9.0)), 0.0, s, egui::StrokeKind::Inside);
+            p.rect_stroke(
+                Rect::from_center_size(c + vec2(-1.5, 1.5), vec2(9.0, 9.0)),
+                0.0,
+                s,
+                egui::StrokeKind::Inside,
+            );
             p.line_segment([c + vec2(-1.5, -4.5), c + vec2(4.5, -4.5)], s);
             p.line_segment([c + vec2(4.5, -4.5), c + vec2(4.5, 1.5)], s);
         }
@@ -118,14 +155,19 @@ pub fn draw_icon(p: &egui::Painter, c: Pos2, icon: Icon, col: Color32) {
             let r = 7.0;
             let pts: Vec<Pos2> = (0..=24)
                 .map(|i| {
-                    let a = -0.35 * std::f32::consts::PI + i as f32 / 24.0 * 1.65 * std::f32::consts::PI;
+                    let a = -0.35 * std::f32::consts::PI
+                        + i as f32 / 24.0 * 1.65 * std::f32::consts::PI;
                     c + vec2(a.cos(), a.sin()) * r
                 })
                 .collect();
             let tip = pts[0];
             p.add(egui::Shape::line(pts, s));
             p.add(egui::Shape::convex_polygon(
-                vec![tip + vec2(-4.5, -2.0), tip + vec2(2.5, -3.5), tip + vec2(1.0, 3.5)],
+                vec![
+                    tip + vec2(-4.5, -2.0),
+                    tip + vec2(2.5, -3.5),
+                    tip + vec2(1.0, 3.5),
+                ],
                 col,
                 Stroke::NONE,
             ));
@@ -146,7 +188,11 @@ pub fn draw_icon(p: &egui::Painter, c: Pos2, icon: Icon, col: Color32) {
 pub fn status_bar(ctx: &egui::Context, left: &str, right: &str) {
     egui::TopBottomPanel::bottom("status_bar")
         .exact_height(30.0)
-        .frame(egui::Frame::new().fill(BG).inner_margin(egui::Margin::symmetric(18, 0)))
+        .frame(
+            egui::Frame::new()
+                .fill(BG)
+                .inner_margin(egui::Margin::symmetric(18, 0)),
+        )
         .show(ctx, |ui| {
             ui.horizontal_centered(|ui| {
                 ui.add(egui::Label::new(mono(left, 10.5).color(MUTED)).truncate());
@@ -159,16 +205,36 @@ pub fn status_bar(ctx: &egui::Context, left: &str, right: &str) {
 
 /// Resize from the window edges (the window has no system frame), plus a hairline border.
 pub fn window_frame(ctx: &egui::Context) {
-    let (max, fs) = ctx.input(|i| (i.viewport().maximized.unwrap_or(false), i.viewport().fullscreen.unwrap_or(false)));
+    let (max, fs) = ctx.input(|i| {
+        (
+            i.viewport().maximized.unwrap_or(false),
+            i.viewport().fullscreen.unwrap_or(false),
+        )
+    });
     if max || fs {
         return;
     }
     let screen = ctx.screen_rect();
-    ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, Id::new("window_border")))
-        .rect_stroke(screen, 0.0, Stroke::new(1.0f32, LINE), egui::StrokeKind::Inside);
-    let Some(p) = ctx.input(|i| i.pointer.hover_pos()) else { return };
+    ctx.layer_painter(egui::LayerId::new(
+        egui::Order::Foreground,
+        Id::new("window_border"),
+    ))
+    .rect_stroke(
+        screen,
+        0.0,
+        Stroke::new(1.0f32, LINE),
+        egui::StrokeKind::Inside,
+    );
+    let Some(p) = ctx.input(|i| i.pointer.hover_pos()) else {
+        return;
+    };
     let m = 5.0;
-    let (l, r, t, b) = (p.x - screen.left() < m, screen.right() - p.x < m, p.y - screen.top() < m, screen.bottom() - p.y < m);
+    let (l, r, t, b) = (
+        p.x - screen.left() < m,
+        screen.right() - p.x < m,
+        p.y - screen.top() < m,
+        screen.bottom() - p.y < m,
+    );
     use ResizeDirection::*;
     let dir = match (l, r, t, b) {
         (true, _, true, _) => NorthWest,
@@ -206,6 +272,17 @@ pub fn open_url(url: &str) {
 /// Avatar circle with the user's initial.
 pub fn avatar(p: &egui::Painter, c: Pos2, r: f32, name: &str) {
     p.circle_filled(c, r, super::ACCENT);
-    let initial = name.chars().next().unwrap_or('?').to_uppercase().to_string();
-    p.text(c, egui::Align2::CENTER_CENTER, initial, super::black_font(r * 1.05), TEXT);
+    let initial = name
+        .chars()
+        .next()
+        .unwrap_or('?')
+        .to_uppercase()
+        .to_string();
+    p.text(
+        c,
+        egui::Align2::CENTER_CENTER,
+        initial,
+        super::black_font(r * 1.05),
+        TEXT,
+    );
 }

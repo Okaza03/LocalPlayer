@@ -2,7 +2,9 @@
 use eframe::egui::{self, vec2, Align, Color32, Layout, RichText, Sense, Stroke, Ui};
 
 use super::chrome::avatar;
-use super::{bold, mono, primary_button, section, segmented, small_button, ACCENT, BG, LINE, MUTED, TEXT};
+use super::{
+    bold, mono, primary_button, section, segmented, small_button, ACCENT, BG, LINE, MUTED, TEXT,
+};
 use crate::config::{Config, Progress};
 use crate::util::fmt_runtime;
 
@@ -20,7 +22,7 @@ impl Conn {
     }
 }
 
-pub enum Out {
+pub enum Pick {
     Keep,
     Close,
     ChangeServer,
@@ -34,7 +36,12 @@ pub struct SettingsState {
     confirm_clear: bool,
 }
 
-fn dialog<R>(ctx: &egui::Context, id: &str, width: f32, add: impl FnOnce(&mut Ui) -> R) -> (R, bool) {
+fn dialog<R>(
+    ctx: &egui::Context,
+    id: &str,
+    width: f32,
+    add: impl FnOnce(&mut Ui) -> R,
+) -> (R, bool) {
     let frame = egui::Frame::new()
         .fill(BG)
         .stroke(Stroke::new(1.0f32, LINE))
@@ -45,7 +52,16 @@ fn dialog<R>(ctx: &egui::Context, id: &str, width: f32, add: impl FnOnce(&mut Ui
         .backdrop_color(Color32::from_black_alpha(160))
         .show(ctx, |ui| {
             ui.set_width(width.min(ctx.screen_rect().width() - 80.0));
-            egui::ScrollArea::vertical().max_height(ctx.screen_rect().height() - 120.0).show(ui, add).inner
+            // nothing here takes typing; stray keyboard focus would scroll the dialog to it
+            if let Some(f) = ctx.memory(|m| m.focused()) {
+                ctx.memory_mut(|m| m.surrender_focus(f));
+            }
+            let h = ctx.screen_rect().height() - 120.0;
+            egui::ScrollArea::vertical()
+                .max_height(h)
+                .min_scrolled_height(h)
+                .show(ui, add)
+                .inner
         });
     let close = r.should_close();
     (r.inner, close)
@@ -58,7 +74,11 @@ fn header(ui: &mut Ui, title: &str, sub: &str) {
         p.rect_filled(r, 7.0, ACCENT);
         let c = r.center() + vec2(1.5, 0.0);
         p.add(egui::Shape::convex_polygon(
-            vec![c + vec2(-6.0, -8.0), c + vec2(8.0, 0.0), c + vec2(-6.0, 8.0)],
+            vec![
+                c + vec2(-6.0, -8.0),
+                c + vec2(8.0, 0.0),
+                c + vec2(-6.0, 8.0),
+            ],
             Color32::WHITE,
             Stroke::NONE,
         ));
@@ -96,7 +116,9 @@ fn combo<T: PartialEq + Copy>(ui: &mut Ui, id: &str, value: &mut T, options: &[(
 
 fn check(ui: &mut Ui, value: &mut bool, label: &str) -> bool {
     ui.add_space(2.0);
-    let changed = ui.checkbox(value, RichText::new(label).size(15.0)).changed();
+    let changed = ui
+        .checkbox(value, RichText::new(label).size(15.0))
+        .changed();
     ui.add_space(4.0);
     changed
 }
@@ -107,18 +129,22 @@ pub fn settings(
     cfg: &mut Config,
     progress: &mut Progress,
     conn: Option<&Conn>,
-) -> Out {
-    let mut out = Out::Keep;
+) -> Pick {
+    let mut out = Pick::Keep;
     let mut changed = false;
     let (_, close) = dialog(ctx, "settings", 500.0, |ui| {
-        header(ui, "Settings", concat!("HomiePlayer ", env!("CARGO_PKG_VERSION")));
+        header(
+            ui,
+            "Settings",
+            concat!("HomiePlayer ", env!("CARGO_PKG_VERSION")),
+        );
 
         section(ui, "Server");
         match conn {
             Some(c) => {
                 row(ui, "Library", |ui| {
                     if small_button(ui, "Change").clicked() {
-                        out = Out::ChangeServer;
+                        out = Pick::ChangeServer;
                     }
                     ui.add_space(6.0);
                     ui.label(RichText::new(&c.name).color(MUTED));
@@ -128,7 +154,7 @@ pub fn settings(
                 if c.signed_in {
                     row(ui, "Signed in", |ui| {
                         if small_button(ui, "Sign out").clicked() {
-                            out = Out::SignOut;
+                            out = Pick::SignOut;
                         }
                         ui.add_space(6.0);
                         ui.label(RichText::new(c.user.as_deref().unwrap_or("")).color(MUTED));
@@ -137,26 +163,58 @@ pub fn settings(
             }
             None => row(ui, "Not connected", |ui| {
                 if small_button(ui, "Connect").clicked() {
-                    out = Out::ChangeServer;
+                    out = Pick::ChangeServer;
                 }
             }),
         }
 
         section(ui, "Playback");
         changed |= check(ui, &mut cfg.resume, "Continue where I left off");
-        changed |= check(ui, &mut cfg.autoplay_next, "Play the next episode automatically");
-        changed |= check(ui, &mut cfg.fullscreen_on_play, "Start videos in fullscreen");
+        changed |= check(
+            ui,
+            &mut cfg.autoplay_next,
+            "Play the next episode automatically",
+        );
+        changed |= check(
+            ui,
+            &mut cfg.fullscreen_on_play,
+            "Start videos in fullscreen",
+        );
         let before = cfg.skip_seconds;
         row(ui, "Arrow keys skip", |ui| {
-            combo(ui, "skip", &mut cfg.skip_seconds, &[(5, "5 seconds"), (10, "10 seconds"), (15, "15 seconds"), (30, "30 seconds")]);
+            combo(
+                ui,
+                "skip",
+                &mut cfg.skip_seconds,
+                &[
+                    (5, "5 seconds"),
+                    (10, "10 seconds"),
+                    (15, "15 seconds"),
+                    (30, "30 seconds"),
+                ],
+            );
         });
-        ui.label(RichText::new("Hold Shift to skip six times as far.").small().color(MUTED));
+        ui.label(
+            RichText::new("Hold Shift to skip six times as far.")
+                .small()
+                .color(MUTED),
+        );
         changed |= before != cfg.skip_seconds;
 
         section(ui, "Library");
         let before = cfg.refresh_minutes;
         row(ui, "Check for new movies and episodes", |ui| {
-            combo(ui, "refresh", &mut cfg.refresh_minutes, &[(0, "Only on start"), (5, "Every 5 minutes"), (15, "Every 15 minutes"), (60, "Every hour")]);
+            combo(
+                ui,
+                "refresh",
+                &mut cfg.refresh_minutes,
+                &[
+                    (0, "Only on start"),
+                    (5, "Every 5 minutes"),
+                    (15, "Every 15 minutes"),
+                    (60, "Every hour"),
+                ],
+            );
         });
         changed |= before != cfg.refresh_minutes;
         changed |= check(ui, &mut cfg.genre_rows, "Show a row for each genre on Home");
@@ -176,23 +234,36 @@ pub fn settings(
                 }
             });
             if st.confirm_clear {
-                ui.label(RichText::new("Forget every resume point and watched mark for this server?").small().color(MUTED));
+                ui.label(
+                    RichText::new("Forget every resume point and watched mark for this server?")
+                        .small()
+                        .color(MUTED),
+                );
             }
         }
 
         section(ui, "Appearance");
         ui.label(RichText::new("Interface size").size(15.0));
         ui.add_space(4.0);
-        changed |= segmented(ui, &mut cfg.ui_scale, &[(0.9, "Small", None), (1.0, "Normal", None), (1.15, "Large", None), (1.3, "Huge", None)]);
+        changed |= segmented(
+            ui,
+            &mut cfg.ui_scale,
+            &[
+                (0.9, "Small", None),
+                (1.0, "Normal", None),
+                (1.15, "Large", None),
+                (1.3, "Huge", None),
+            ],
+        );
 
         ui.add_space(22.0);
         ui.horizontal(|ui| {
             if super::secondary_button(ui, "Quit HomiePlayer").clicked() {
-                out = Out::Quit;
+                out = Pick::Quit;
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if primary_button(ui, "   Done   ", true).clicked() {
-                    out = Out::Close;
+                    out = Pick::Close;
                 }
             });
         });
@@ -200,21 +271,29 @@ pub fn settings(
     if changed {
         cfg.save();
     }
-    if close && matches!(out, Out::Keep) {
-        out = Out::Close;
+    if close && matches!(out, Pick::Keep) {
+        out = Pick::Close;
     }
-    if !matches!(out, Out::Keep) {
+    if !matches!(out, Pick::Keep) {
         st.confirm_clear = false;
     }
     out
 }
 
-pub fn profile(ctx: &egui::Context, conn: &Conn, progress: &Progress) -> Out {
-    let mut out = Out::Keep;
+pub fn profile(ctx: &egui::Context, conn: &Conn, progress: &Progress) -> Pick {
+    let mut out = Pick::Keep;
     let entries = progress.recent(&conn.prefix());
-    let finished = |kind: &str| entries.iter().filter(|(id, e)| id.starts_with(kind) && e.watched()).count();
+    let finished = |kind: &str| {
+        entries
+            .iter()
+            .filter(|(id, e)| id.starts_with(kind) && e.watched())
+            .count()
+    };
     let in_progress = entries.iter().filter(|(_, e)| e.in_progress()).count();
-    let secs: f64 = entries.iter().map(|(_, e)| if e.dur > 0.0 { e.pos.min(e.dur) } else { e.pos }).sum();
+    let secs: f64 = entries
+        .iter()
+        .map(|(_, e)| if e.dur > 0.0 { e.pos.min(e.dur) } else { e.pos })
+        .sum();
     let name = conn.user.clone().unwrap_or_else(|| "Guest".into());
 
     let (_, close) = dialog(ctx, "profile", 460.0, |ui| {
@@ -226,26 +305,44 @@ pub fn profile(ctx: &egui::Context, conn: &Conn, progress: &Progress) -> Out {
                 ui.spacing_mut().item_spacing.y = 2.0;
                 ui.add_space(6.0);
                 ui.label(bold(&name, 24.0));
-                let how = if conn.signed_in { "Signed in to" } else { "Connected to" };
+                let how = if conn.signed_in {
+                    "Signed in to"
+                } else {
+                    "Connected to"
+                };
                 ui.label(mono(format!("{how} {}", conn.name), 11.0).color(MUTED));
             });
         });
 
         section(ui, "Watching");
-        egui::Grid::new("stats").num_columns(2).spacing([24.0, 10.0]).show(ui, |ui| {
-            for (label, value) in [
-                ("Movies finished", finished("movie:").to_string()),
-                ("Episodes finished", finished("episode:").to_string()),
-                ("In progress", in_progress.to_string()),
-                ("Time watched", if secs > 0.0 { fmt_runtime(secs) } else { "—".into() }),
-            ] {
-                ui.label(RichText::new(label).size(15.0));
-                ui.label(bold(value, 16.0).color(TEXT));
-                ui.end_row();
-            }
-        });
+        egui::Grid::new("stats")
+            .num_columns(2)
+            .spacing([24.0, 10.0])
+            .show(ui, |ui| {
+                for (label, value) in [
+                    ("Movies finished", finished("movie:").to_string()),
+                    ("Episodes finished", finished("episode:").to_string()),
+                    ("In progress", in_progress.to_string()),
+                    (
+                        "Time watched",
+                        if secs > 0.0 {
+                            fmt_runtime(secs)
+                        } else {
+                            "—".into()
+                        },
+                    ),
+                ] {
+                    ui.label(RichText::new(label).size(15.0));
+                    ui.label(bold(value, 16.0).color(TEXT));
+                    ui.end_row();
+                }
+            });
         ui.add_space(4.0);
-        ui.label(RichText::new("Counted from this computer's watch history.").small().color(MUTED));
+        ui.label(
+            RichText::new("Counted from this computer's watch history.")
+                .small()
+                .color(MUTED),
+        );
 
         section(ui, "Server");
         ui.label(mono(&conn.base, 11.0).color(MUTED));
@@ -255,22 +352,22 @@ pub fn profile(ctx: &egui::Context, conn: &Conn, progress: &Progress) -> Out {
                 super::chrome::open_url(&conn.base);
             }
             if small_button(ui, "Settings").clicked() {
-                out = Out::OpenSettings;
+                out = Pick::OpenSettings;
             }
             if conn.signed_in && small_button(ui, "Sign out").clicked() {
-                out = Out::SignOut;
+                out = Pick::SignOut;
             }
         });
 
         ui.add_space(22.0);
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             if primary_button(ui, "   Done   ", true).clicked() {
-                out = Out::Close;
+                out = Pick::Close;
             }
         });
     });
-    if close && matches!(out, Out::Keep) {
-        out = Out::Close;
+    if close && matches!(out, Pick::Keep) {
+        out = Pick::Close;
     }
     out
 }

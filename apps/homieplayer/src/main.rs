@@ -15,10 +15,10 @@ use audio::AudioOut;
 use config::{Config, Progress};
 use images::Images;
 use ui::browse::Browse;
-use ui::login::Login;
-use ui::setup::Setup;
 use ui::chrome::{self, Icon};
+use ui::login::Login;
 use ui::settings::{self as dialogs, Conn, SettingsState};
+use ui::setup::Setup;
 use ui::watch::{PlayItem, Watch};
 use ui::Action;
 
@@ -87,7 +87,8 @@ impl App {
         let cfg = Config::load();
         // reconnect to the saved server; files on the command line play first
         let setup = Setup::new(ctx, cfg.server.clone(), files.is_empty());
-        let watch = (!files.is_empty()).then(|| Watch::new(files.into_iter().map(PlayItem::local).collect()));
+        let watch = (!files.is_empty())
+            .then(|| Watch::new(files.into_iter().map(PlayItem::local).collect()));
         Self {
             progress: Progress::load(),
             audio: AudioOut::new(),
@@ -124,22 +125,26 @@ impl App {
         let Some(d) = self.dialog else { return };
         let conn = self.conn();
         let out = match (d, &conn) {
-            (Dialog::Settings, _) => {
-                dialogs::settings(ctx, &mut self.settings, &mut self.cfg, &mut self.progress, conn.as_ref())
-            }
+            (Dialog::Settings, _) => dialogs::settings(
+                ctx,
+                &mut self.settings,
+                &mut self.cfg,
+                &mut self.progress,
+                conn.as_ref(),
+            ),
             (Dialog::Profile, Some(c)) => dialogs::profile(ctx, c, &self.progress),
-            (Dialog::Profile, None) => dialogs::Out::Close,
+            (Dialog::Profile, None) => dialogs::Pick::Close,
         };
         match out {
-            dialogs::Out::Keep => {}
-            dialogs::Out::Close => self.dialog = None,
-            dialogs::Out::OpenSettings => self.dialog = Some(Dialog::Settings),
-            dialogs::Out::Quit => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
-            dialogs::Out::ChangeServer => {
+            dialogs::Pick::Keep => {}
+            dialogs::Pick::Close => self.dialog = None,
+            dialogs::Pick::OpenSettings => self.dialog = Some(Dialog::Settings),
+            dialogs::Pick::Quit => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+            dialogs::Pick::ChangeServer => {
                 self.dialog = None;
                 self.handle(ctx, Action::ChangeServer);
             }
-            dialogs::Out::SignOut => {
+            dialogs::Pick::SignOut => {
                 self.dialog = None;
                 if let Stage::Browse(b) = &self.stage {
                     let c = b.client().clone();
@@ -173,7 +178,11 @@ impl App {
                     self.stage = Stage::Login(Login::new(client, self.cfg.username.clone(), None));
                 }
             }
-            Action::SignedIn { client, user, remember } => {
+            Action::SignedIn {
+                client,
+                user,
+                remember,
+            } => {
                 self.cfg.username = user.clone();
                 self.cfg.token = if remember { client.token.clone() } else { None };
                 self.cfg.save();
@@ -184,7 +193,8 @@ impl App {
                 self.cfg.token = None;
                 self.cfg.save();
                 self.images.set_client(None);
-                let msg = (client.info.mode == Mode::Api).then(|| "Your session has expired. Please sign in again.".to_owned());
+                let msg = (client.info.mode == Mode::Api)
+                    .then(|| "Your session has expired. Please sign in again.".to_owned());
                 self.stage = Stage::Login(Login::new(client, self.cfg.username.clone(), msg));
             }
             Action::SignOut(mut client) => {
@@ -223,7 +233,13 @@ impl eframe::App for App {
         }
 
         if let Some(w) = self.watch.as_mut() {
-            if w.ui(ctx, &self.audio, &mut self.cfg, &mut self.muted, &mut self.progress) {
+            if w.ui(
+                ctx,
+                &self.audio,
+                &mut self.cfg,
+                &mut self.muted,
+                &mut self.progress,
+            ) {
                 self.watch = None;
                 self.cfg.save();
                 ctx.send_viewport_cmd(egui::ViewportCommand::Title("HomiePlayer".into()));
@@ -232,9 +248,17 @@ impl eframe::App for App {
             return;
         }
 
-        let dropped: Vec<PathBuf> = ctx.input(|i| i.raw.dropped_files.iter().filter_map(|f| f.path.clone()).collect());
+        let dropped: Vec<PathBuf> = ctx.input(|i| {
+            i.raw
+                .dropped_files
+                .iter()
+                .filter_map(|f| f.path.clone())
+                .collect()
+        });
         if !dropped.is_empty() {
-            self.watch = Some(Watch::new(dropped.into_iter().map(PlayItem::local).collect()));
+            self.watch = Some(Watch::new(
+                dropped.into_iter().map(PlayItem::local).collect(),
+            ));
         }
 
         if !matches!(self.stage, Stage::Browse(_)) {
@@ -250,10 +274,17 @@ impl eframe::App for App {
                 self.dialog = Some(Dialog::Settings);
             }
             let left = match &self.stage {
-                Stage::Login(l) => format!("Connected to {}  ·  sign-in required", l.client().info.name),
+                Stage::Login(l) => {
+                    format!("Connected to {}  ·  sign-in required", l.client().info.name)
+                }
                 _ => "Not connected".to_owned(),
             };
-            let right = format!("HomiePlayer {}  ·  {} {}", env!("CARGO_PKG_VERSION"), std::env::consts::OS, std::env::consts::ARCH);
+            let right = format!(
+                "HomiePlayer {}  ·  {} {}",
+                env!("CARGO_PKG_VERSION"),
+                std::env::consts::OS,
+                std::env::consts::ARCH
+            );
             chrome::status_bar(ctx, &left, &right);
         }
 
@@ -265,7 +296,6 @@ impl eframe::App for App {
         self.handle(ctx, action);
         self.dialogs(ctx);
         chrome::window_frame(ctx);
-        tmp_shot(ctx, &mut self.dialog);
     }
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
@@ -276,30 +306,4 @@ impl eframe::App for App {
         self.progress.flush();
         self.cfg.save();
     }
-}
-
-// TEMP: self-screenshot for testing
-fn tmp_shot(ctx: &egui::Context, dialog: &mut Option<Dialog>) {
-    let Ok(path) = std::env::var("HP_SHOT") else { return };
-    let n = ctx.cumulative_pass_nr();
-    if n == 5 {
-        match std::env::var("HP_DIALOG").as_deref() {
-            Ok("settings") => *dialog = Some(Dialog::Settings),
-            Ok("profile") => *dialog = Some(Dialog::Profile),
-            _ => {}
-        }
-    }
-    if n == 400 {
-        ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(Default::default()));
-    }
-    ctx.input(|i| {
-        for e in &i.raw.events {
-            if let egui::Event::Screenshot { image, .. } = e {
-                let img = image::RgbaImage::from_raw(image.width() as u32, image.height() as u32, image.as_raw().to_vec()).unwrap();
-                img.save(&path).unwrap();
-                std::process::exit(0);
-            }
-        }
-    });
-    ctx.request_repaint();
 }

@@ -10,7 +10,10 @@ use eframe::egui::{
 };
 
 use super::chrome::{self, Icon};
-use super::{bold, gradient, image_cover, menu_item, mono, placeholder, primary_button, secondary_button, segmented, tab};
+use super::{
+    bold, gradient, image_cover, menu_item, mono, placeholder, primary_button, secondary_button,
+    segmented, tab,
+};
 use super::{ACCENT, BG, ERROR, MUTED, SURFACE, SURFACE_HI, TEXT};
 use crate::api::{Client, Item, Kind, Library, Mode, Unauthorized};
 use crate::config::{Config, Entry, Progress};
@@ -151,7 +154,13 @@ impl Browse {
         self.user.as_deref()
     }
 
-    pub fn ui(&mut self, ctx: &egui::Context, images: &mut Images, progress: &Progress, cfg: &Config) -> Action {
+    pub fn ui(
+        &mut self,
+        ctx: &egui::Context,
+        images: &mut Images,
+        progress: &Progress,
+        cfg: &Config,
+    ) -> Action {
         let mut action = Action::None;
         if let Some(r) = self.loading.as_mut().and_then(|t| t.poll()) {
             self.loading = None;
@@ -175,7 +184,10 @@ impl Browse {
             }
         }
         let every = Duration::from_secs(u64::from(cfg.refresh_minutes) * 60);
-        if cfg.refresh_minutes > 0 && self.loading.is_none() && self.loaded_at.is_some_and(|t| t.elapsed() > every) {
+        if cfg.refresh_minutes > 0
+            && self.loading.is_none()
+            && self.loaded_at.is_some_and(|t| t.elapsed() > every)
+        {
             self.reload(ctx);
         }
 
@@ -260,7 +272,9 @@ impl Browse {
             Some(Click::Nav(v)) => self.go(v),
             Some(Click::Play(id, ep, restart)) => {
                 if let Some(lib) = self.lib.clone() {
-                    if let Some(a) = self.play(&lib, &id, ep.as_deref(), restart || !cfg.resume, progress) {
+                    if let Some(a) =
+                        self.play(&lib, &id, ep.as_deref(), restart || !cfg.resume, progress)
+                    {
                         action = a;
                     }
                 }
@@ -287,10 +301,18 @@ impl Browse {
         chrome::title_bar(
             ctx,
             |ui| {
-                if in_details && tab(ui, "‹ Back", false).on_hover_text("Backspace").clicked() {
+                if in_details
+                    && tab(ui, "‹ Back", false)
+                        .on_hover_text("Backspace")
+                        .clicked()
+                {
                     back = true;
                 }
-                for (label, v) in [("Home", View::Home), ("Movies", View::Movies), ("TV Shows", View::Series)] {
+                for (label, v) in [
+                    ("Home", View::Home),
+                    ("Movies", View::Movies),
+                    ("TV Shows", View::Series),
+                ] {
                     let selected = !searching && current == v;
                     if tab(ui, label, selected).clicked() {
                         nav = Some(v);
@@ -305,8 +327,12 @@ impl Browse {
                 }
                 chrome::vsep(ui);
                 if self.loading.is_some() && self.lib.is_some() {
-                    let (r, _) = ui.allocate_exact_size(vec2(chrome::BAR_H, chrome::BAR_H), Sense::hover());
-                    egui::Spinner::new().size(16.0).color(TEXT).paint_at(ui, Rect::from_center_size(r.center(), vec2(16.0, 16.0)));
+                    let (r, _) =
+                        ui.allocate_exact_size(vec2(chrome::BAR_H, chrome::BAR_H), Sense::hover());
+                    egui::Spinner::new()
+                        .size(16.0)
+                        .color(TEXT)
+                        .paint_at(ui, Rect::from_center_size(r.center(), vec2(16.0, 16.0)));
                 } else if chrome::icon_button(ui, Icon::Refresh, "Refresh library").clicked() {
                     *action = Action::Refresh;
                 }
@@ -338,8 +364,10 @@ impl Browse {
 
     fn profile_menu(&mut self, ui: &mut Ui, action: &mut Action) {
         let name = self.user.clone().unwrap_or_else(|| "Guest".to_owned());
-        let label = ui.fonts(|f| f.layout_no_wrap(name.to_uppercase(), FontId::monospace(11.5), TEXT));
-        let (r, resp) = ui.allocate_exact_size(vec2(label.size().x + 72.0, chrome::BAR_H), Sense::click());
+        let label =
+            ui.fonts(|f| f.layout_no_wrap(name.to_uppercase(), FontId::monospace(11.5), TEXT));
+        let (r, resp) =
+            ui.allocate_exact_size(vec2(label.size().x + 72.0, chrome::BAR_H), Sense::click());
         let id = ui.make_persistent_id("profile_menu");
         let open = ui.memory(|m| m.is_popup_open(id));
         let p = ui.painter();
@@ -347,10 +375,18 @@ impl Browse {
             p.rect_filled(r, 0.0, SURFACE_HI);
         }
         chrome::avatar(p, pos2(r.left() + 26.0, r.center().y), 12.0, &name);
-        p.galley(pos2(r.left() + 46.0, r.center().y - label.size().y / 2.0), label, TEXT);
+        p.galley(
+            pos2(r.left() + 46.0, r.center().y - label.size().y / 2.0),
+            label,
+            TEXT,
+        );
         let c = pos2(r.right() - 15.0, r.center().y);
         p.add(egui::Shape::convex_polygon(
-            vec![c + vec2(-4.0, -2.0), c + vec2(4.0, -2.0), c + vec2(0.0, 3.0)],
+            vec![
+                c + vec2(-4.0, -2.0),
+                c + vec2(4.0, -2.0),
+                c + vec2(0.0, 3.0),
+            ],
             MUTED,
             Stroke::NONE,
         ));
@@ -358,44 +394,55 @@ impl Browse {
         if resp.clicked() {
             ui.memory_mut(|m| m.toggle_popup(id));
         }
-        egui::popup::popup_below_widget(ui, id, &resp, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
-            ui.set_min_width(250.0);
-            ui.horizontal(|ui| {
-                let (r, _) = ui.allocate_exact_size(vec2(36.0, 36.0), Sense::hover());
-                chrome::avatar(ui.painter(), r.center(), 17.0, &name);
-                ui.vertical(|ui| {
-                    ui.spacing_mut().item_spacing.y = 0.0;
-                    ui.label(bold(&name, 15.0));
-                    ui.label(mono(&self.client.info.name, 10.5).color(MUTED));
+        egui::popup::popup_below_widget(
+            ui,
+            id,
+            &resp,
+            egui::PopupCloseBehavior::CloseOnClickOutside,
+            |ui| {
+                ui.set_min_width(250.0);
+                ui.horizontal(|ui| {
+                    let (r, _) = ui.allocate_exact_size(vec2(36.0, 36.0), Sense::hover());
+                    chrome::avatar(ui.painter(), r.center(), 17.0, &name);
+                    ui.vertical(|ui| {
+                        ui.spacing_mut().item_spacing.y = 0.0;
+                        ui.label(bold(&name, 15.0));
+                        ui.label(mono(&self.client.info.name, 10.5).color(MUTED));
+                    });
                 });
-            });
-            ui.separator();
-            let mut pick = |ui: &mut Ui, text: &str, a: Action| {
-                if menu_item(ui, text) {
-                    *action = a;
+                ui.separator();
+                let mut pick = |ui: &mut Ui, text: &str, a: Action| {
+                    if menu_item(ui, text) {
+                        *action = a;
+                        ui.memory_mut(|m| m.close_popup());
+                    }
+                };
+                pick(ui, "Profile", Action::OpenProfile);
+                pick(ui, "Settings", Action::OpenSettings);
+                if menu_item(ui, "Admin  ↗") {
+                    chrome::open_url(&self.client.base);
                     ui.memory_mut(|m| m.close_popup());
                 }
-            };
-            pick(ui, "Profile", Action::OpenProfile);
-            pick(ui, "Settings", Action::OpenSettings);
-            if menu_item(ui, "Admin  ↗") {
-                chrome::open_url(&self.client.base);
-                ui.memory_mut(|m| m.close_popup());
-            }
-            ui.separator();
-            pick(ui, "Refresh library", Action::Refresh);
-            pick(ui, "Play a local file…", Action::OpenFiles);
-            ui.separator();
-            pick(ui, "Switch server", Action::ChangeServer);
-            if self.client.token.is_some() {
-                pick(ui, "Sign out", Action::SignOut(self.client.clone()));
-            }
-            pick(ui, "Quit", Action::Quit);
-        });
+                ui.separator();
+                pick(ui, "Refresh library", Action::Refresh);
+                pick(ui, "Play a local file…", Action::OpenFiles);
+                ui.separator();
+                pick(ui, "Switch server", Action::ChangeServer);
+                if self.client.token.is_some() {
+                    pick(ui, "Sign out", Action::SignOut(self.client.clone()));
+                }
+                pick(ui, "Quit", Action::Quit);
+            },
+        );
     }
 
     fn status_bar(&self, ctx: &egui::Context) {
-        let host = self.client.base.split("://").nth(1).unwrap_or(&self.client.base);
+        let host = self
+            .client
+            .base
+            .split("://")
+            .nth(1)
+            .unwrap_or(&self.client.base);
         let when = if self.loading.is_some() {
             "Loading library…".to_owned()
         } else {
@@ -409,9 +456,22 @@ impl Browse {
         let left = format!("{when}  ·  {}  ·  {host}", self.client.info.name);
         let right = match &self.lib {
             Some(l) => {
-                let eps: usize = l.series.iter().flat_map(|s| &s.seasons).map(|s| s.episodes.len()).sum();
-                let kind = if self.client.info.mode == Mode::Directory { "  ·  file server" } else { "" };
-                format!("{} movies  ·  {} series  ·  {eps} episodes{kind}", l.movies.len(), l.series.len())
+                let eps: usize = l
+                    .series
+                    .iter()
+                    .flat_map(|s| &s.seasons)
+                    .map(|s| s.episodes.len())
+                    .sum();
+                let kind = if self.client.info.mode == Mode::Directory {
+                    "  ·  file server"
+                } else {
+                    ""
+                };
+                format!(
+                    "{} movies  ·  {} series  ·  {eps} episodes{kind}",
+                    l.movies.len(),
+                    l.series.len()
+                )
             }
             None => String::new(),
         };
@@ -433,7 +493,9 @@ impl Browse {
             ui.add_space(120.0);
             ui.vertical_centered(|ui| {
                 ui.label(mono("Your library is empty", 13.0));
-                ui.label(RichText::new("No movies or series were found on this server.").color(MUTED));
+                ui.label(
+                    RichText::new("No movies or series were found on this server.").color(MUTED),
+                );
             });
             return None;
         }
@@ -479,7 +541,11 @@ impl Browse {
             let cards = self.poster_cards(lib.series.iter().take(30), progress);
             click = click.or(self.row(ui, "TV shows", &cards, false, Some(View::Series), images));
         }
-        let genres = if cfg.genre_rows { lib.genres() } else { Vec::new() };
+        let genres = if cfg.genre_rows {
+            lib.genres()
+        } else {
+            Vec::new()
+        };
         for g in genres.into_iter().take(8) {
             let items = lib.all().filter(|i| i.genres.contains(&g));
             let cards = self.poster_cards(items.take(30), progress);
@@ -576,7 +642,17 @@ impl Browse {
         ui.add_space(2.0);
         ui.add(egui::Label::new(bold(&item.title, 40.0)).wrap());
         if carousel.is_some() {
-            ui.label(mono(if item.kind == Kind::Movie { "Featured movie" } else { "Featured series" }, 11.0).color(ACCENT));
+            ui.label(
+                mono(
+                    if item.kind == Kind::Movie {
+                        "Featured movie"
+                    } else {
+                        "Featured series"
+                    },
+                    11.0,
+                )
+                .color(ACCENT),
+            );
         }
 
         let mut step = None;
@@ -587,14 +663,26 @@ impl Browse {
             for i in 0..n {
                 let c = pos2(x0 + i as f32 * 16.0, y);
                 let r = Rect::from_center_size(c, vec2(if i == cur { 14.0 } else { 6.0 }, 3.0));
-                pr.rect_filled(r, 0.0, if i == cur { TEXT } else { MUTED.gamma_multiply(0.6) });
+                pr.rect_filled(
+                    r,
+                    0.0,
+                    if i == cur {
+                        TEXT
+                    } else {
+                        MUTED.gamma_multiply(0.6)
+                    },
+                );
             }
             if resp.hovered() || resp.contains_pointer() {
                 for (dir, x) in [(-1isize, rect.left() + 18.0), (1, rect.right() - 18.0)] {
                     let r = Rect::from_center_size(pos2(x, rect.center().y), vec2(32.0, 64.0));
                     let a = ui.interact(r, ui.id().with(("hero_arrow", dir)), Sense::click());
                     let col = if a.hovered() { TEXT } else { MUTED };
-                    pr.rect_filled(r, 2.0, Color32::from_black_alpha(if a.hovered() { 160 } else { 80 }));
+                    pr.rect_filled(
+                        r,
+                        2.0,
+                        Color32::from_black_alpha(if a.hovered() { 160 } else { 80 }),
+                    );
                     pr.text(
                         r.center(),
                         Align2::CENTER_CENTER,
@@ -805,7 +893,11 @@ impl Browse {
                     Sense::click(),
                 );
                 let p = ui.painter();
-                p.rect_filled(ar, 2.0, Color32::from_black_alpha(if a.hovered() { 190 } else { 130 }));
+                p.rect_filled(
+                    ar,
+                    2.0,
+                    Color32::from_black_alpha(if a.hovered() { 190 } else { 130 }),
+                );
                 p.text(
                     ar.center(),
                     Align2::CENTER_CENTER,
@@ -845,11 +937,17 @@ impl Browse {
         if self.genre.as_ref().is_some_and(|g| !genres.contains(&g)) {
             self.genre = None;
         }
-        let in_genre: Vec<&Item> =
-            all.iter().filter(|i| self.genre.as_ref().is_none_or(|g| i.genres.contains(g))).collect();
+        let in_genre: Vec<&Item> = all
+            .iter()
+            .filter(|i| self.genre.as_ref().is_none_or(|g| i.genres.contains(g)))
+            .collect();
         let status: Vec<Filter> = in_genre.iter().map(|i| self.status(i, progress)).collect();
         let count = |f: Filter| status.iter().filter(|s| **s == f).count();
-        let counts = [count(Filter::InProgress), count(Filter::Unwatched), count(Filter::Watched)];
+        let counts = [
+            count(Filter::InProgress),
+            count(Filter::Unwatched),
+            count(Filter::Watched),
+        ];
         let mut items: Vec<&Item> = in_genre
             .iter()
             .zip(&status)

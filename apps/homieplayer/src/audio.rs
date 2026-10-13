@@ -99,7 +99,10 @@ impl AudioOut {
             Ok(a) => a,
             Err(e) => {
                 eprintln!("audio disabled: {e:#}");
-                Self { shared: Arc::new(AudioShared::new(false, 48_000)), _stream: None }
+                Self {
+                    shared: Arc::new(AudioShared::new(false, 48_000)),
+                    _stream: None,
+                }
             }
         }
     }
@@ -120,7 +123,10 @@ impl AudioOut {
             other => bail!("unsupported sample format {other:?}"),
         };
         stream.play()?;
-        Ok(Self { shared, _stream: Some(stream) })
+        Ok(Self {
+            shared,
+            _stream: Some(stream),
+        })
     }
 }
 

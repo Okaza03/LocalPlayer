@@ -3,9 +3,7 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
-use eframe::egui::{
-    self, pos2, vec2, Align2, Color32, CursorIcon, FontId, Key, Rect, Sense, Vec2,
-};
+use eframe::egui::{self, pos2, vec2, Align2, Color32, CursorIcon, FontId, Key, Rect, Sense, Vec2};
 
 use super::chrome;
 use super::{bold, gradient, mono, small_button, BG, ERROR, MUTED, TEXT};
@@ -122,7 +120,9 @@ impl Watch {
         } else {
             format!("{} — {}", item.title, item.subtitle)
         };
-        ctx.send_viewport_cmd(egui::ViewportCommand::Title(format!("{title} — HomiePlayer")));
+        ctx.send_viewport_cmd(egui::ViewportCommand::Title(format!(
+            "{title} — HomiePlayer"
+        )));
     }
 
     fn toggle_play(&mut self) {
@@ -406,10 +406,7 @@ impl Watch {
                 } else if self.opening.is_some() || self.player.is_some() {
                     let c = rect.center();
                     let sp = Rect::from_center_size(c - vec2(0.0, 20.0), vec2(40.0, 40.0));
-                    egui::Spinner::new()
-                        .size(40.0)
-                        .color(TEXT)
-                        .paint_at(ui, sp);
+                    egui::Spinner::new().size(40.0).color(TEXT).paint_at(ui, sp);
                     let name = self
                         .current
                         .map(|i| self.items[i].title.clone())
@@ -440,7 +437,10 @@ impl Watch {
                         bar,
                         [shade, shade, Color32::TRANSPARENT, Color32::TRANSPARENT],
                     );
-                    chrome::drag_area(ui, Rect::from_min_size(bar.min, vec2(bar.width(), chrome::BAR_H)));
+                    chrome::drag_area(
+                        ui,
+                        Rect::from_min_size(bar.min, vec2(bar.width(), chrome::BAR_H)),
+                    );
                     let mut child = ui
                         .new_child(egui::UiBuilder::new().max_rect(bar.shrink2(vec2(14.0, 10.0))));
                     child.horizontal(|ui| {
@@ -451,7 +451,9 @@ impl Watch {
                                 ui.spacing_mut().item_spacing.y = 0.0;
                                 ui.label(bold(&it.title, 16.0).color(Color32::WHITE));
                                 if !it.subtitle.is_empty() {
-                                    ui.label(mono(&it.subtitle, 10.5).color(Color32::from_gray(200)));
+                                    ui.label(
+                                        mono(&it.subtitle, 10.5).color(Color32::from_gray(200)),
+                                    );
                                 }
                             });
                         }
@@ -461,7 +463,9 @@ impl Watch {
                         vec2(3.0 * chrome::BAR_H, chrome::BAR_H),
                     );
                     let mut child = ui.new_child(
-                        egui::UiBuilder::new().max_rect(buttons).layout(egui::Layout::right_to_left(egui::Align::Center)),
+                        egui::UiBuilder::new()
+                            .max_rect(buttons)
+                            .layout(egui::Layout::right_to_left(egui::Align::Center)),
                     );
                     child.spacing_mut().item_spacing.x = 0.0;
                     chrome::window_buttons(&mut child);
