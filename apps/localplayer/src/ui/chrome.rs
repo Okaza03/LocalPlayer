@@ -20,7 +20,12 @@ pub enum Icon {
 }
 
 /// Top bar: word mark, `left` (tabs), `right` (search, buttons), window buttons.
-pub fn title_bar(ctx: &egui::Context, left: impl FnOnce(&mut Ui), right: impl FnOnce(&mut Ui)) {
+pub fn title_bar(
+    ctx: &egui::Context,
+    name: &str,
+    left: impl FnOnce(&mut Ui),
+    right: impl FnOnce(&mut Ui),
+) {
     egui::TopBottomPanel::top("title_bar")
         .exact_height(BAR_H)
         .frame(egui::Frame::new().fill(BG).inner_margin(egui::Margin {
@@ -33,7 +38,7 @@ pub fn title_bar(ctx: &egui::Context, left: impl FnOnce(&mut Ui), right: impl Fn
             drag_area(ui, ui.max_rect());
             ui.horizontal_centered(|ui| {
                 ui.spacing_mut().item_spacing.x = 6.0;
-                super::logo(ui, 19.0);
+                super::logo(ui, name, 19.0);
                 ui.add_space(14.0);
                 vsep(ui);
                 ui.add_space(10.0);
@@ -87,6 +92,27 @@ pub fn window_buttons(ui: &mut Ui) {
     if icon_button(ui, Icon::Minimize, "Minimize").clicked() {
         ctx.send_viewport_cmd(ViewportCommand::Minimized(true));
     }
+}
+
+/// The refresh icon that checks for a new LocalPlayer: a spinner while checking, and an
+/// "Update" tab next to it when one is out. Returns true when a check was requested.
+pub fn update_button(ui: &mut Ui, updates: &crate::update::Updates) -> bool {
+    let mut check = false;
+    if updates.checking() {
+        let (r, _) = ui.allocate_exact_size(vec2(BAR_H, BAR_H), Sense::hover());
+        egui::Spinner::new().size(16.0).color(TEXT).paint_at(ui, Rect::from_center_size(r.center(), vec2(16.0, 16.0)));
+    } else {
+        check = icon_button(ui, Icon::Refresh, "Check for updates").clicked();
+    }
+    if let Some(r) = &updates.available {
+        ui.add_space(8.0);
+        let tip = format!("LocalPlayer {} is available — click to download", r.version);
+        if super::tab(ui, &format!("Update {}", r.version), true).on_hover_text(tip).clicked() {
+            open_url(&r.url);
+        }
+        ui.add_space(8.0);
+    }
+    check
 }
 
 /// A full-height vertical divider.

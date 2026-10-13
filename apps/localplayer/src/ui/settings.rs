@@ -46,12 +46,13 @@ fn dialog<R>(
         .fill(BG)
         .stroke(Stroke::new(1.0f32, LINE))
         .corner_radius(4)
-        .inner_margin(egui::Margin::symmetric(26, 22));
+        // small right margin: the scrollbar lives there, in its own lane next to the content
+        .inner_margin(egui::Margin { left: 26, right: 4, top: 22, bottom: 22 });
     let r = egui::Modal::new(egui::Id::new(id))
         .frame(frame)
         .backdrop_color(Color32::from_black_alpha(160))
         .show(ctx, |ui| {
-            ui.set_width(width.min(ctx.screen_rect().width() - 80.0));
+            ui.set_width(width.min(ctx.screen_rect().width() - 80.0) + 22.0);
             // nothing here takes typing; stray keyboard focus would scroll the dialog to it
             if let Some(f) = ctx.memory(|m| m.focused()) {
                 ctx.memory_mut(|m| m.surrender_focus(f));
@@ -60,7 +61,12 @@ fn dialog<R>(
             egui::ScrollArea::vertical()
                 .max_height(h)
                 .min_scrolled_height(h)
-                .show(ui, add)
+                .show(ui, |ui| {
+                    egui::Frame::new()
+                        .inner_margin(egui::Margin { left: 0, right: 22, top: 0, bottom: 0 })
+                        .show(ui, add)
+                        .inner
+                })
                 .inner
         });
     let close = r.should_close();
@@ -136,7 +142,7 @@ pub fn settings(
         header(
             ui,
             "Settings",
-            concat!("HomiePlayer ", env!("CARGO_PKG_VERSION")),
+            concat!("LocalPlayer ", env!("CARGO_PKG_VERSION")),
         );
 
         section(ui, "Server");
@@ -258,7 +264,7 @@ pub fn settings(
 
         ui.add_space(22.0);
         ui.horizontal(|ui| {
-            if super::secondary_button(ui, "Quit HomiePlayer").clicked() {
+            if super::secondary_button(ui, "Quit LocalPlayer").clicked() {
                 out = Pick::Quit;
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -349,7 +355,7 @@ pub fn profile(ctx: &egui::Context, conn: &Conn, progress: &Progress) -> Pick {
         ui.add_space(6.0);
         ui.horizontal(|ui| {
             if small_button(ui, "Open admin ↗").clicked() {
-                super::chrome::open_url(&conn.base);
+                super::chrome::open_url(&format!("{}/admin", conn.base));
             }
             if small_button(ui, "Settings").clicked() {
                 out = Pick::OpenSettings;

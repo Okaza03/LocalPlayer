@@ -146,10 +146,14 @@ pub fn black_font(size: f32) -> FontId {
     FontId::new(size, FontFamily::Name("black".into()))
 }
 
-/// The "HOMIEPLAYER" word mark.
-pub fn logo(ui: &mut Ui, size: f32) {
+/// The word mark in the title bar: the server's name, or the app's.
+pub fn logo(ui: &mut Ui, text: &str, size: f32) {
+    let mut text = text.to_uppercase();
+    if text.chars().count() > 28 {
+        text = text.chars().take(27).collect::<String>() + "…";
+    }
     ui.label(
-        RichText::new("HOMIEPLAYER")
+        RichText::new(text)
             .font(black_font(size))
             .extra_letter_spacing(size * 0.04)
             .color(TEXT),
@@ -421,6 +425,7 @@ pub enum Action {
     ChangeServer,
     Refresh,
     OpenFiles,
+    CheckUpdates,
     OpenSettings,
     OpenProfile,
     Quit,

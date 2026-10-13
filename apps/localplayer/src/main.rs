@@ -4,6 +4,7 @@ mod config;
 mod images;
 mod player;
 mod ui;
+mod update;
 mod util;
 
 use std::path::PathBuf;
@@ -21,6 +22,7 @@ use ui::settings::{self as dialogs, Conn, SettingsState};
 use ui::setup::Setup;
 use ui::watch::{PlayItem, Watch};
 use ui::Action;
+use update::Updates;
 
 fn main() -> eframe::Result<()> {
     let paths: Vec<PathBuf> = std::env::args_os()
@@ -32,13 +34,13 @@ fn main() -> eframe::Result<()> {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1280.0, 780.0])
             .with_min_inner_size([560.0, 400.0])
-            .with_title("HomiePlayer")
+            .with_title("LocalPlayer")
             .with_decorations(false) // we draw our own title bar
-            .with_app_id("homieplayer"), // matches homieplayer.desktop
+            .with_app_id("localplayer"), // matches localplayer.desktop
         ..Default::default()
     };
     eframe::run_native(
-        "HomiePlayer",
+        "LocalPlayer",
         options,
         Box::new(move |cc| {
             ui::apply_theme(&cc.egui_ctx);
@@ -74,6 +76,7 @@ struct App {
     watch: Option<Watch>,
     dialog: Option<Dialog>,
     settings: SettingsState,
+    updates: Updates,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -99,6 +102,11 @@ impl App {
             cfg,
             dialog: None,
             settings: SettingsState::default(),
+            updates: {
+                let mut u = Updates::default();
+                u.check(ctx, false); // quietly, once per start
+                u
+            },
         }
     }
 
@@ -158,6 +166,7 @@ impl App {
         match action {
             Action::None | Action::Refresh => {}
             Action::OpenSettings => self.dialog = Some(Dialog::Settings),
+            Action::CheckUpdates => self.updates.check(ctx, true),
             Action::OpenProfile => self.dialog = Some(Dialog::Profile),
             Action::Quit => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
             Action::Connected(mut client) => {
@@ -242,7 +251,7 @@ impl eframe::App for App {
             ) {
                 self.watch = None;
                 self.cfg.save();
-                ctx.send_viewport_cmd(egui::ViewportCommand::Title("HomiePlayer".into()));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Title("LocalPlayer".into()));
             }
             chrome::window_frame(ctx);
             return;
@@ -262,16 +271,26 @@ impl eframe::App for App {
         }
 
         if !matches!(self.stage, Stage::Browse(_)) {
-            let mut open_settings = false;
+            let (mut open_settings, mut check) = (false, false);
+            let name = match &self.stage {
+                Stage::Login(l) => l.client().info.name.clone(),
+                _ => "LocalPlayer".to_owned(),
+            };
             chrome::title_bar(
                 ctx,
+                &name,
                 |_| {},
                 |ui| {
                     open_settings = chrome::icon_button(ui, Icon::Settings, "Settings").clicked();
+                    chrome::vsep(ui);
+                    check = chrome::update_button(ui, &self.updates);
                 },
             );
             if open_settings {
                 self.dialog = Some(Dialog::Settings);
+            }
+            if check {
+                self.updates.check(ctx, true);
             }
             let left = match &self.stage {
                 Stage::Login(l) => {
@@ -280,7 +299,7 @@ impl eframe::App for App {
                 _ => "Not connected".to_owned(),
             };
             let right = format!(
-                "HomiePlayer {}  ·  {} {}",
+                "LocalPlayer {}  ·  {} {}",
                 env!("CARGO_PKG_VERSION"),
                 std::env::consts::OS,
                 std::env::consts::ARCH
@@ -291,9 +310,10 @@ impl eframe::App for App {
         let action = match &mut self.stage {
             Stage::Setup(s) => s.ui(ctx),
             Stage::Login(l) => l.ui(ctx),
-            Stage::Browse(b) => b.ui(ctx, &mut self.images, &self.progress, &self.cfg),
+            Stage::Browse(b) => b.ui(ctx, &mut self.images, &self.progress, &self.cfg, &self.updates),
         };
         self.handle(ctx, action);
+        self.updates.ui(ctx);
         self.dialogs(ctx);
         chrome::window_frame(ctx);
     }

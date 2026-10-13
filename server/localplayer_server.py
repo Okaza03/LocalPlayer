@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Minimal reference media server for HomiePlayer (Python 3.9+, standard library only).
+"""Minimal reference media server for LocalPlayer (Python 3.9+, standard library only).
 
-    python3 homie_server.py ~/Videos                  # open library, port 8080
-    python3 homie_server.py ~/Videos --add-user noah  # enable sign-in
+    python3 localplayer_server.py ~/Videos                  # open library, port 8080
+    python3 localplayer_server.py ~/Videos --add-user noah  # enable sign-in
 
 Expected layout (anything else is ignored):
 
@@ -291,7 +291,7 @@ def make_handler(lib, users, name):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="HomiePlayer reference media server")
+    ap = argparse.ArgumentParser(description="LocalPlayer reference media server")
     ap.add_argument("media", type=Path, help="folder containing Movies/ and Series/")
     ap.add_argument("--port", type=int, default=8080)
     ap.add_argument("--host", default="0.0.0.0")
@@ -299,7 +299,7 @@ def main():
     ap.add_argument("--add-user", metavar="NAME", help="create/update a user, then exit")
     a = ap.parse_args()
     root = a.media.expanduser().resolve()
-    users = Users(root / ".homieplayer")
+    users = Users(root / ".localplayer")
     if a.add_user:
         pw = getpass.getpass(f"Password for {a.add_user}: ")
         if pw != getpass.getpass("Again: "):

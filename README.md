@@ -1,4 +1,4 @@
-# HomiePlayer
+# LocalPlayer
 
 A desktop video player and media-library client (Rust, egui, FFmpeg).
 
@@ -10,25 +10,25 @@ A desktop video player and media-library client (Rust, egui, FFmpeg).
 You can still play local files: pass them on the command line, drag them onto the window, or use *Open local file…*.
 
 ```sh
-cargo run --release -p homieplayer
+cargo run --release -p localplayer
 ```
 
-Settings and resume points are stored in `~/.config/homieplayer/`.
+Settings and resume points are stored in `~/.config/localplayer/`.
 
 ## Supported servers
 
-**A server with the HomiePlayer API (below).** It provides titles, artwork, descriptions, genres and optional login. `server/homie_server.py` is a working reference implementation that only needs the Python standard library:
+**A server with the LocalPlayer API (below).** It provides titles, artwork, descriptions, genres and optional login. `server/localplayer_server.py` is a working reference implementation that only needs the Python standard library:
 
 ```sh
-python3 server/homie_server.py ~/Videos                 # Movies/ and Series/ inside
-python3 server/homie_server.py ~/Videos --add-user noah # turn on sign-in
+python3 server/localplayer_server.py ~/Videos                 # Movies/ and Series/ inside
+python3 server/localplayer_server.py ~/Videos --add-user noah # turn on sign-in
 ```
 
-**Any plain directory listing** (nginx `autoindex on`, Apache, Caddy `file_server browse`). HomiePlayer crawls it and guesses movies and series from folder and file names (`Show/Season 1/Show.S01E02.Title.mkv`, `Movies/Title (2010)/…`). It also picks up `poster.jpg` and `fanart.jpg`. The server must support HTTP range requests for seeking to work; nginx, Apache and Caddy do, but `python -m http.server` doesn't.
+**Any plain directory listing** (nginx `autoindex on`, Apache, Caddy `file_server browse`). LocalPlayer crawls it and guesses movies and series from folder and file names (`Show/Season 1/Show.S01E02.Title.mkv`, `Movies/Title (2010)/…`). It also picks up `poster.jpg` and `fanart.jpg`. The server must support HTTP range requests for seeking to work; nginx, Apache and Caddy do, but `python -m http.server` doesn't.
 
 Only `http://` is supported for streaming. The bundled FFmpeg is built without TLS.
 
-## The HomiePlayer API
+## The LocalPlayer API
 
 All URLs in responses can be absolute or relative to the server root.
 
@@ -74,12 +74,12 @@ Only `title` plus `stream` (movies) or `seasons` (series) are required. `duratio
 Route::get('/info', fn () => ['name' => config('app.name'), 'auth' => true, 'version' => 1]);
 Route::post('/login', function (Request $r) {
     if (!Auth::attempt($r->only('username', 'password'))) return response()->json([], 401);
-    return ['token' => $r->user()->createToken('homieplayer')->plainTextToken, 'name' => $r->user()->name];
+    return ['token' => $r->user()->createToken('localplayer')->plainTextToken, 'name' => $r->user()->name];
 });
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', fn (Request $r) => $r->user()->currentAccessToken()->delete());
-    Route::get('/library', [HomiePlayerController::class, 'library']);   // builds the JSON above
-    Route::get('/stream/{type}/{id}', [HomiePlayerController::class, 'stream']); // return response()->file($path)
+    Route::get('/library', [LocalPlayerController::class, 'library']);   // builds the JSON above
+    Route::get('/stream/{type}/{id}', [LocalPlayerController::class, 'stream']); // return response()->file($path)
 });
 ```
 `response()->file()` (Symfony's `BinaryFileResponse`) handles range requests on its own.

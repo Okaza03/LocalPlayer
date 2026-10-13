@@ -6,7 +6,7 @@ use std::{env, fs};
 
 type Res<T = ()> = Result<T, Box<dyn std::error::Error>>;
 
-const NAME: &str = "homieplayer";
+const NAME: &str = "localplayer";
 
 fn main() {
     if let Err(e) = run() {
@@ -65,15 +65,15 @@ fn stage(prefix: &Path, absolute_exec: bool) -> Res {
     let bin = prefix.join("bin").join(NAME);
     put(&r.join("target/release").join(NAME), &bin, 0o755)?;
     put(
-        &r.join("packaging/homieplayer.svg"),
-        &prefix.join("share/icons/hicolor/scalable/apps/homieplayer.svg"),
+        &r.join("packaging/localplayer.svg"),
+        &prefix.join("share/icons/hicolor/scalable/apps/localplayer.svg"),
         0o644,
     )?;
-    let mut desktop = fs::read_to_string(r.join("packaging/homieplayer.desktop"))?;
+    let mut desktop = fs::read_to_string(r.join("packaging/localplayer.desktop"))?;
     if absolute_exec {
-        desktop = desktop.replace("Exec=homieplayer", &format!("Exec={}", bin.display()));
+        desktop = desktop.replace("Exec=localplayer", &format!("Exec={}", bin.display()));
     }
-    let dst = prefix.join("share/applications/homieplayer.desktop");
+    let dst = prefix.join("share/applications/localplayer.desktop");
     fs::create_dir_all(dst.parent().unwrap())?;
     fs::write(&dst, desktop)?;
     Ok(())
@@ -91,9 +91,9 @@ fn install(prefix: Option<String>) -> Res {
 fn uninstall(prefix: Option<String>) -> Res {
     let prefix = prefix_or_default(prefix);
     for f in [
-        "bin/homieplayer",
-        "share/applications/homieplayer.desktop",
-        "share/icons/hicolor/scalable/apps/homieplayer.svg",
+        "bin/localplayer",
+        "share/applications/localplayer.desktop",
+        "share/icons/hicolor/scalable/apps/localplayer.svg",
     ] {
         let _ = fs::remove_file(prefix.join(f));
     }
@@ -124,8 +124,8 @@ fn appimage() -> Res {
     sh(Command::new("linuxdeploy")
         .args(["--appdir", "AppDir"])
         .arg("--executable").arg(r.join("target/release").join(NAME))
-        .arg("--desktop-file").arg(r.join("packaging/homieplayer.desktop"))
-        .arg("--icon-file").arg(r.join("packaging/homieplayer.svg"))
+        .arg("--desktop-file").arg(r.join("packaging/localplayer.desktop"))
+        .arg("--icon-file").arg(r.join("packaging/localplayer.svg"))
         .args(["--output", "appimage"])
         .current_dir(&work))
 }

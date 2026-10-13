@@ -21,6 +21,7 @@ use crate::images::Images;
 use crate::player::Source;
 use crate::ui::watch::PlayItem;
 use crate::ui::Action;
+use crate::update::Updates;
 use crate::util::{fmt_runtime, fmt_time, Task};
 
 const POSTER: egui::Vec2 = vec2(150.0, 225.0);
@@ -160,6 +161,7 @@ impl Browse {
         images: &mut Images,
         progress: &Progress,
         cfg: &Config,
+        updates: &Updates,
     ) -> Action {
         let mut action = Action::None;
         if let Some(r) = self.loading.as_mut().and_then(|t| t.poll()) {
@@ -204,8 +206,8 @@ impl Browse {
             ctx.memory_mut(|m| m.request_focus(egui::Id::new("search")));
         }
 
-        self.top_bar(ctx, &mut action);
-        self.status_bar(ctx);
+        self.top_bar(ctx, &mut action, updates);
+        self.status_bar(ctx, updates);
 
         let mut click = None;
         egui::CentralPanel::default()
@@ -293,13 +295,15 @@ impl Browse {
 
     // ------------------------------------------------------------ chrome
 
-    fn top_bar(&mut self, ctx: &egui::Context, action: &mut Action) {
+    fn top_bar(&mut self, ctx: &egui::Context, action: &mut Action, updates: &Updates) {
         let mut nav = None;
         let mut back = false;
         let in_details = matches!(self.view, View::Details(_));
         let (current, searching) = (self.view.clone(), !self.search.is_empty());
+        let name = self.client.info.name.clone();
         chrome::title_bar(
             ctx,
+            &name,
             |ui| {
                 if in_details
                     && tab(ui, "‹ Back", false)
@@ -326,15 +330,8 @@ impl Browse {
                     *action = Action::OpenSettings;
                 }
                 chrome::vsep(ui);
-                if self.loading.is_some() && self.lib.is_some() {
-                    let (r, _) =
-                        ui.allocate_exact_size(vec2(chrome::BAR_H, chrome::BAR_H), Sense::hover());
-                    egui::Spinner::new()
-                        .size(16.0)
-                        .color(TEXT)
-                        .paint_at(ui, Rect::from_center_size(r.center(), vec2(16.0, 16.0)));
-                } else if chrome::icon_button(ui, Icon::Refresh, "Refresh library").clicked() {
-                    *action = Action::Refresh;
+                if chrome::update_button(ui, updates) {
+                    *action = Action::CheckUpdates;
                 }
                 chrome::vsep(ui);
                 ui.add_space(10.0);
@@ -420,7 +417,7 @@ impl Browse {
                 pick(ui, "Profile", Action::OpenProfile);
                 pick(ui, "Settings", Action::OpenSettings);
                 if menu_item(ui, "Admin  ↗") {
-                    chrome::open_url(&self.client.base);
+                    chrome::open_url(&format!("{}/admin", self.client.base));
                     ui.memory_mut(|m| m.close_popup());
                 }
                 ui.separator();
@@ -436,7 +433,7 @@ impl Browse {
         );
     }
 
-    fn status_bar(&self, ctx: &egui::Context) {
+    fn status_bar(&self, ctx: &egui::Context, updates: &Updates) {
         let host = self
             .client
             .base
@@ -453,7 +450,10 @@ impl Browse {
                 None => "Library not loaded".to_owned(),
             }
         };
-        let left = format!("{when}  ·  {}  ·  {host}", self.client.info.name);
+        let left = match updates.checked_label() {
+            Some(c) => format!("{when}  ·  {c}  ·  {host}"),
+            None => format!("{when}  ·  {host}"),
+        };
         let right = match &self.lib {
             Some(l) => {
                 let eps: usize = l

@@ -1,4 +1,4 @@
-//! Settings and watch progress, stored as JSON in ~/.config/homieplayer.
+//! Settings and watch progress, stored as JSON in ~/.config/localplayer.
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
@@ -14,16 +14,16 @@ fn config_home() -> Option<PathBuf> {
 }
 
 fn dir() -> Option<PathBuf> {
-    Some(config_home()?.join("homieplayer"))
+    Some(config_home()?.join("localplayer"))
 }
 
 fn load<T: DeserializeOwned + Default>(name: &str) -> T {
-    // fall back to the settings of the app's previous name
-    let old = config_home().map(|h| h.join("lumen-player").join(name));
+    // fall back to the settings of the app's previous names
+    let old = ["homieplayer", "lumen-player"].map(|n| config_home().map(|h| h.join(n).join(name)));
     dir()
         .map(|d| d.join(name))
         .into_iter()
-        .chain(old)
+        .chain(old.into_iter().flatten())
         .find_map(|p| fs::read_to_string(p).ok())
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default()

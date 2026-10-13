@@ -286,7 +286,7 @@ fn open_input(src: &Source, sh: &Arc<Shared>) -> Result<ffmpeg::format::context:
             opts.set("rw_timeout", "20000000");
             opts.set(
                 "user_agent",
-                concat!("HomiePlayer/", env!("CARGO_PKG_VERSION")),
+                concat!("LocalPlayer/", env!("CARGO_PKG_VERSION")),
             );
             if let Some(a) = auth {
                 opts.set("headers", &format!("Authorization: {a}\r\n"));

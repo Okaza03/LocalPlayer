@@ -121,7 +121,7 @@ impl Watch {
             format!("{} — {}", item.title, item.subtitle)
         };
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(format!(
-            "{title} — HomiePlayer"
+            "{title} — LocalPlayer"
         )));
     }
 

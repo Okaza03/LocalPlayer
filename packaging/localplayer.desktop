@@ -1,12 +1,12 @@
 #!/usr/bin/env xdg-open
 [Desktop Entry]
 Type=Application
-Name=HomiePlayer
+Name=LocalPlayer
 GenericName=Video Player
 Comment=Simple, fast video viewer
-Exec=homieplayer %F
-Icon=homieplayer
+Exec=localplayer %F
+Icon=localplayer
 Terminal=false
 Categories=AudioVideo;Video;Player;
 MimeType=video/mp4;video/x-matroska;video/webm;video/x-msvideo;video/quicktime;video/mpeg;video/ogg;video/x-flv;video/x-ms-wmv;video/3gpp;video/mp2t;
-StartupWMClass=homieplayer
+StartupWMClass=localplayer
