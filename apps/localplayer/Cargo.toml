@@ -7,7 +7,7 @@ description = "A small, fast video player and media library client"
 
 [dependencies]
 eframe = "0.31"
-ffmpeg-next = { version = "8.1", features = ["build", "build-lib-dav1d"] }
+ffmpeg-next = { version = "9.0", features = ["build", "build-lib-dav1d"] }
 cpal = "0.15"
 rfd = "0.15"
 anyhow = "1"

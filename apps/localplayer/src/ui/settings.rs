@@ -47,7 +47,12 @@ fn dialog<R>(
         .stroke(Stroke::new(1.0f32, LINE))
         .corner_radius(4)
         // small right margin: the scrollbar lives there, in its own lane next to the content
-        .inner_margin(egui::Margin { left: 26, right: 4, top: 22, bottom: 22 });
+        .inner_margin(egui::Margin {
+            left: 26,
+            right: 4,
+            top: 22,
+            bottom: 22,
+        });
     let r = egui::Modal::new(egui::Id::new(id))
         .frame(frame)
         .backdrop_color(Color32::from_black_alpha(160))
@@ -63,7 +68,12 @@ fn dialog<R>(
                 .min_scrolled_height(h)
                 .show(ui, |ui| {
                     egui::Frame::new()
-                        .inner_margin(egui::Margin { left: 0, right: 22, top: 0, bottom: 0 })
+                        .inner_margin(egui::Margin {
+                            left: 0,
+                            right: 22,
+                            top: 0,
+                            bottom: 0,
+                        })
                         .show(ui, add)
                         .inner
                 })
@@ -261,6 +271,14 @@ pub fn settings(
                 (1.3, "Huge", None),
             ],
         );
+
+        if crate::integrate::appimage().is_some() {
+            section(ui, "Desktop");
+            if check(ui, &mut cfg.app_menu, "Show LocalPlayer in the app menu") {
+                crate::integrate::sync(cfg.app_menu);
+                changed = true;
+            }
+        }
 
         ui.add_space(22.0);
         ui.horizontal(|ui| {

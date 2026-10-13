@@ -63,6 +63,8 @@ pub struct Config {
     pub genre_rows: bool,
     /// Interface zoom.
     pub ui_scale: f32,
+    /// Keep an app-menu entry for the AppImage (see integrate.rs).
+    pub app_menu: bool,
 }
 
 impl Default for Config {
@@ -79,6 +81,7 @@ impl Default for Config {
             refresh_minutes: 0,
             genre_rows: true,
             ui_scale: 1.0,
+            app_menu: true,
         }
     }
 }

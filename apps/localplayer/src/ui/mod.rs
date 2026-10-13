@@ -187,6 +187,31 @@ pub fn secondary_button(ui: &mut Ui, text: &str) -> Response {
     ui.add(b)
 }
 
+/// Under a [`Missing`](crate::api::Missing) error: what to do, plus a message
+/// for the server's admin.
+pub fn admin_help(ui: &mut Ui, missing: crate::api::Missing, base: &str) {
+    ui.add_space(4.0);
+    ui.label(RichText::new(missing.hint()).small().color(MUTED));
+    ui.add_space(6.0);
+    let id = egui::Id::new(("admin-note-copied", base));
+    let copied = ui.data(|d| d.get_temp::<bool>(id)).unwrap_or(false);
+    ui.horizontal(|ui| {
+        let label = if copied {
+            "Copied, paste it to the admin"
+        } else {
+            "Copy message for the admin"
+        };
+        if small_button(ui, label).clicked() {
+            ui.ctx().copy_text(missing.admin_note(base));
+            ui.data_mut(|d| d.insert_temp(id, true));
+        }
+        ui.add_space(6.0);
+        if ui.link("API docs").clicked() {
+            chrome::open_url(crate::api::API_DOCS);
+        }
+    });
+}
+
 pub fn small_button(ui: &mut Ui, text: &str) -> Response {
     let b = egui::Button::new(mono(text, 11.5).color(TEXT))
         .fill(Color32::TRANSPARENT)

@@ -100,14 +100,20 @@ pub fn update_button(ui: &mut Ui, updates: &crate::update::Updates) -> bool {
     let mut check = false;
     if updates.checking() {
         let (r, _) = ui.allocate_exact_size(vec2(BAR_H, BAR_H), Sense::hover());
-        egui::Spinner::new().size(16.0).color(TEXT).paint_at(ui, Rect::from_center_size(r.center(), vec2(16.0, 16.0)));
+        egui::Spinner::new()
+            .size(16.0)
+            .color(TEXT)
+            .paint_at(ui, Rect::from_center_size(r.center(), vec2(16.0, 16.0)));
     } else {
         check = icon_button(ui, Icon::Refresh, "Check for updates").clicked();
     }
     if let Some(r) = &updates.available {
         ui.add_space(8.0);
         let tip = format!("LocalPlayer {} is available — click to download", r.version);
-        if super::tab(ui, &format!("Update {}", r.version), true).on_hover_text(tip).clicked() {
+        if super::tab(ui, &format!("Update {}", r.version), true)
+            .on_hover_text(tip)
+            .clicked()
+        {
             open_url(&r.url);
         }
         ui.add_space(8.0);

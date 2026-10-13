@@ -3,7 +3,7 @@ use anyhow::Result;
 use eframe::egui::{self, RichText};
 
 use super::{card, primary_button, spinner_text, text_field, Action, ERROR, MUTED};
-use crate::api::{Client, Session};
+use crate::api::{Client, Missing, Session};
 use crate::util::Task;
 
 pub struct Login {
@@ -13,6 +13,7 @@ pub struct Login {
     remember: bool,
     task: Option<Task<Result<Session>>>,
     error: Option<String>,
+    missing: Option<Missing>,
 }
 
 impl Login {
@@ -24,6 +25,7 @@ impl Login {
             remember: true,
             task: None,
             error,
+            missing: None,
         }
     }
 
@@ -39,6 +41,7 @@ impl Login {
         );
         self.task = Some(Task::spawn(ctx, move || c.login(&u, &p)));
         self.error = None;
+        self.missing = None;
     }
 
     pub fn ui(&mut self, ctx: &egui::Context) -> Action {
@@ -56,6 +59,7 @@ impl Login {
                     };
                 }
                 Err(e) => {
+                    self.missing = e.downcast_ref::<Missing>().copied();
                     self.error = Some(format!("{e:#}"));
                     self.password.clear();
                 }
@@ -106,6 +110,9 @@ impl Login {
             if let Some(e) = &self.error {
                 ui.add_space(6.0);
                 ui.label(RichText::new(e).color(ERROR));
+                if let Some(m) = self.missing {
+                    super::admin_help(ui, m, &self.client.base);
+                }
             }
             ui.add_space(14.0);
             ui.vertical_centered(|ui| {

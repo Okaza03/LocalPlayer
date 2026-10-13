@@ -210,6 +210,94 @@ impl std::fmt::Display for Unauthorized {
 }
 impl std::error::Error for Unauthorized {}
 
+/// Where the LocalPlayer API is documented, for server admins.
+pub const API_DOCS: &str = "https://github.com/Okaza03/LocalPlayer#the-localplayer-api";
+
+/// The server is reachable but lacks a part of the LocalPlayer API, so only
+/// its admin can fix it. The UI offers a message the user can send them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Missing {
+    /// No `/api/info` and no usable file listing.
+    Api,
+    /// `/api/info` says sign-in is required but `/api/login` isn't there.
+    Login,
+    /// `/api/info` exists but `/api/library` doesn't.
+    Library,
+}
+
+impl std::fmt::Display for Missing {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str(match self {
+            Missing::Api => {
+                "This server doesn't support LocalPlayer: it has no LocalPlayer API \
+                 (/api/info) and doesn't share its files as a folder listing either."
+            }
+            Missing::Login => {
+                "This server says you have to sign in, but it has no sign-in API \
+                 (/api/login), so LocalPlayer can't sign you in."
+            }
+            Missing::Library => {
+                "This server has a LocalPlayer API but no library endpoint \
+                 (/api/library), so there's nothing to show."
+            }
+        })
+    }
+}
+impl std::error::Error for Missing {}
+
+impl Missing {
+    /// What the user can do about it.
+    pub fn hint(self) -> &'static str {
+        match self {
+            Missing::Api | Missing::Library => {
+                "Only the server's admin can add it. Send them the message below; \
+                 it explains exactly what to set up."
+            }
+            Missing::Login => {
+                "Only the server's admin can fix this: they can add the sign-in API, \
+                 or turn sign-in off. Send them the message below."
+            }
+        }
+    }
+
+    /// A ready-to-send request for the server's admin.
+    pub fn admin_note(self, base: &str) -> String {
+        let (problem, wanted) = match self {
+            Missing::Api => (
+                "it doesn't have the LocalPlayer API",
+                "  GET  /api/info     -> {\"name\": \"My server\", \"auth\": false, \"version\": 1}\n\
+                 \x20 GET  /api/library  -> the list of movies and series, with stream URLs\n\
+                 \x20 POST /api/login    -> only needed if you set \"auth\": true\n\n\
+                 If you'd rather not write code, either of these works too:\n\
+                 \x20 - run the ready-made server: python3 localplayer_server.py /path/to/videos\n\
+                 \x20 - share the video folder as a plain directory listing\n\
+                 \x20   (nginx \"autoindex on;\", Caddy \"file_server browse\", or Apache)",
+            ),
+            Missing::Login => (
+                "it asks me to sign in but has no sign-in endpoint",
+                "  POST /api/login  with {\"username\": \"...\", \"password\": \"...\"}\n\
+                 \x20   -> {\"token\": \"...\", \"name\": \"...\"}, or 401 for a wrong password\n\
+                 \x20 After that every request carries \"Authorization: Bearer <token>\".\n\n\
+                 Or, if the library doesn't need to be private, return \"auth\": false from /api/info.",
+            ),
+            Missing::Library => (
+                "it has /api/info but no /api/library",
+                "  GET  /api/library  -> {\"movies\": [...], \"series\": [...]}\n\
+                 \x20   (each movie needs a title and a stream URL that supports Range requests)",
+            ),
+        };
+        format!(
+            "Hi! I'd like to watch the videos on your server ({base}) with the LocalPlayer app, \
+             but {problem}.\n\n\
+             Could you add this?\n\n\
+             {wanted}\n\n\
+             The full spec, with examples (including a Laravel snippet), is here:\n\
+             {API_DOCS}\n\n\
+             Thanks!"
+        )
+    }
+}
+
 #[derive(Clone)]
 pub struct Client {
     pub base: String,
@@ -284,10 +372,12 @@ impl Client {
             },
             None => {
                 // not an API server: is it at least a file listing?
-                agent
-                    .get(&format!("{base}/"))
-                    .call()
-                    .map_err(|e| status_err(e, "can't reach the server"))?;
+                match agent.get(&format!("{base}/")).call() {
+                    Ok(_) => {}
+                    // it answered, so it's up, but there's nothing for us here
+                    Err(ureq::Error::Status(..)) => bail!(Missing::Api),
+                    Err(e) => return Err(status_err(e, "can't reach the server")),
+                }
                 ServerInfo {
                     name: host,
                     auth: false,
@@ -321,8 +411,10 @@ impl Client {
             .post(&format!("{}/api/login", self.base))
             .send_json(serde_json::json!({ "username": username, "password": password }));
         match r {
-            Ok(r) => r.into_json().context("unexpected login reply"),
+            // e.g. a web app answering every path with its HTML page
+            Ok(r) => r.into_json().map_err(|_| anyhow!(Missing::Login)),
             Err(ureq::Error::Status(400 | 401 | 403, _)) => bail!("Wrong username or password"),
+            Err(ureq::Error::Status(404 | 405 | 501, _)) => bail!(Missing::Login),
             Err(e) => Err(status_err(e, "sign-in failed")),
         }
     }
@@ -341,12 +433,12 @@ impl Client {
 
     pub fn library(&self) -> Result<Library> {
         let mut lib = match self.info.mode {
-            Mode::Api => self
-                .get(&format!("{}/api/library", self.base))
-                .call()
-                .map_err(|e| status_err(e, "can't load the library"))?
-                .into_json::<Library>()
-                .context("the server sent a library this app doesn't understand")?,
+            Mode::Api => match self.get(&format!("{}/api/library", self.base)).call() {
+                Err(ureq::Error::Status(404 | 405 | 501, _)) => bail!(Missing::Library),
+                r => r.map_err(|e| status_err(e, "can't load the library"))?,
+            }
+            .into_json::<Library>()
+            .context("the server sent a library this app doesn't understand")?,
             Mode::Directory => self.crawl()?,
         };
         lib.finish(&self.base);
@@ -419,10 +511,7 @@ impl Client {
             }
         }
         if videos.is_empty() {
-            bail!(
-                "this server is a website, not a media library: it has no /api/info endpoint \
-                 and isn't a plain file listing either (see README.md for the API to add)"
-            );
+            bail!(Missing::Api);
         }
         Ok(classify(&root, videos, &images))
     }
@@ -764,6 +853,17 @@ mod tests {
             resolve_href("http://h/Movies/", "A%20B.mkv?x"),
             "http://h/Movies/A%20B.mkv"
         );
+    }
+
+    #[test]
+    fn admin_notes() {
+        for m in [Missing::Api, Missing::Login, Missing::Library] {
+            let n = m.admin_note("http://h:8080");
+            assert!(n.contains("http://h:8080") && n.contains(API_DOCS), "{n}");
+        }
+        assert!(Missing::Login.admin_note("x").contains("/api/login"));
+        let e = anyhow!(Missing::Login);
+        assert_eq!(e.downcast_ref::<Missing>(), Some(&Missing::Login));
     }
 
     #[test]

@@ -172,7 +172,7 @@ impl Player {
         }
         self.sh.preview.store(false, Relaxed);
         let mut out = None;
-        while q.front().map_or(false, |f| f.t <= now) {
+        while q.front().is_some_and(|f| f.t <= now) {
             out = q.pop_front();
         }
         out
@@ -392,10 +392,10 @@ impl Decoder {
                         if self.vdec.send_packet(&pkt).is_ok() {
                             self.drain_video(sh, skip_until)?;
                         }
-                    } else if self.audio.as_ref().map_or(false, |a| a.idx == i) {
-                        if self.audio.as_mut().unwrap().dec.send_packet(&pkt).is_ok() {
-                            self.drain_audio(audio, skip_until)?;
-                        }
+                    } else if self.audio.as_ref().is_some_and(|a| a.idx == i)
+                        && self.audio.as_mut().unwrap().dec.send_packet(&pkt).is_ok()
+                    {
+                        self.drain_audio(audio, skip_until)?;
                     }
                 }
                 Err(ffmpeg::Error::Eof) => {
@@ -490,8 +490,10 @@ impl Decoder {
             let bytes = out.data(0);
             let n = (out.samples() * 2 * 4).min(bytes.len());
             let samples: Vec<f32> = bytes[..n]
-                .chunks_exact(4)
-                .map(|c| f32::from_ne_bytes([c[0], c[1], c[2], c[3]]))
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|c| f32::from_ne_bytes(*c))
                 .collect();
             audio.push(&samples);
         }

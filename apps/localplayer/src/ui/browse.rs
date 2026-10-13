@@ -15,7 +15,7 @@ use super::{
     segmented, tab,
 };
 use super::{ACCENT, BG, ERROR, MUTED, SURFACE, SURFACE_HI, TEXT};
-use crate::api::{Client, Item, Kind, Library, Mode, Unauthorized};
+use crate::api::{Client, Item, Kind, Library, Missing, Mode, Unauthorized};
 use crate::config::{Config, Entry, Progress};
 use crate::images::Images;
 use crate::player::Source;
@@ -83,6 +83,7 @@ pub struct Browse {
     lib: Option<Arc<Library>>,
     loading: Option<Task<Result<Library>>>,
     error: Option<String>,
+    missing: Option<Missing>,
     view: View,
     history: Vec<View>,
     search: String,
@@ -104,6 +105,7 @@ impl Browse {
             lib: None,
             loading: None,
             error: None,
+            missing: None,
             view: View::Home,
             history: Vec::new(),
             search: String::new(),
@@ -124,6 +126,7 @@ impl Browse {
         let c = self.client.clone();
         self.loading = Some(Task::spawn(ctx, move || c.library()));
         self.error = None;
+        self.missing = None;
     }
 
     fn key(&self, id: &str) -> String {
@@ -180,6 +183,7 @@ impl Browse {
                     return Action::NeedLogin(self.client.clone());
                 }
                 Err(e) => {
+                    self.missing = e.downcast_ref::<Missing>().copied();
                     self.error = Some(format!("{e:#}"));
                     self.loaded_at = Some(Instant::now()); // don't retry in a tight loop
                 }
@@ -220,6 +224,12 @@ impl Browse {
                             ui.label(mono("Couldn't load your library", 13.0));
                             ui.add_space(4.0);
                             ui.label(RichText::new(e).color(ERROR));
+                            if let Some(m) = self.missing {
+                                ui.scope(|ui| {
+                                    ui.set_max_width(460.0);
+                                    super::admin_help(ui, m, &self.client.base);
+                                });
+                            }
                             ui.add_space(12.0);
                             ui.horizontal(|ui| {
                                 let w = 300.0;

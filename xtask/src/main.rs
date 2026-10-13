@@ -16,12 +16,19 @@ fn main() {
 }
 
 fn root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().to_path_buf()
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .to_path_buf()
 }
 
 fn sh(cmd: &mut Command) -> Res {
     println!("+ {cmd:?}");
-    if cmd.status()?.success() { Ok(()) } else { Err(format!("command failed: {cmd:?}").into()) }
+    if cmd.status()?.success() {
+        Ok(())
+    } else {
+        Err(format!("command failed: {cmd:?}").into())
+    }
 }
 
 fn cargo(args: &[&str]) -> Res {
@@ -38,7 +45,14 @@ fn run() -> Res {
         Some("appimage") => appimage(),
         Some("ci") => {
             cargo(&["fmt", "--all", "--check"])?;
-            cargo(&["clippy", "--workspace", "--all-targets", "--", "-D", "warnings"])?;
+            cargo(&[
+                "clippy",
+                "--workspace",
+                "--all-targets",
+                "--",
+                "-D",
+                "warnings",
+            ])?;
             cargo(&["test", "--workspace"])
         }
         _ => {
@@ -83,8 +97,13 @@ fn install(prefix: Option<String>) -> Res {
     let prefix = prefix_or_default(prefix);
     cargo(&["build", "--release", "-p", NAME])?;
     stage(&prefix, true)?;
-    let _ = Command::new("update-desktop-database").arg(prefix.join("share/applications")).status();
-    println!("Installed to {}. Run `{NAME}` or open it from your app menu.", prefix.display());
+    let _ = Command::new("update-desktop-database")
+        .arg(prefix.join("share/applications"))
+        .status();
+    println!(
+        "Installed to {}. Run `{NAME}` or open it from your app menu.",
+        prefix.display()
+    );
     Ok(())
 }
 
@@ -103,7 +122,11 @@ fn uninstall(prefix: Option<String>) -> Res {
 
 fn dist() -> Res {
     cargo(&["build", "--release", "-p", NAME])?;
-    let name = format!("{NAME}-{}-linux-{}", env!("CARGO_PKG_VERSION"), env::consts::ARCH);
+    let name = format!(
+        "{NAME}-{}-linux-{}",
+        env!("CARGO_PKG_VERSION"),
+        env::consts::ARCH
+    );
     let out = root().join("target/dist");
     let tree = out.join(&name);
     let _ = fs::remove_dir_all(&tree);
@@ -123,9 +146,12 @@ fn appimage() -> Res {
     // needs linuxdeploy on PATH: https://github.com/linuxdeploy/linuxdeploy
     sh(Command::new("linuxdeploy")
         .args(["--appdir", "AppDir"])
-        .arg("--executable").arg(r.join("target/release").join(NAME))
-        .arg("--desktop-file").arg(r.join("packaging/localplayer.desktop"))
-        .arg("--icon-file").arg(r.join("packaging/localplayer.svg"))
+        .arg("--executable")
+        .arg(r.join("target/release").join(NAME))
+        .arg("--desktop-file")
+        .arg(r.join("packaging/localplayer.desktop"))
+        .arg("--icon-file")
+        .arg(r.join("packaging/localplayer.svg"))
         .args(["--output", "appimage"])
         .current_dir(&work))
 }

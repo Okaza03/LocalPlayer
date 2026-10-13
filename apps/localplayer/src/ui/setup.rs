@@ -3,13 +3,14 @@ use anyhow::Result;
 use eframe::egui::{self, RichText};
 
 use super::{card, primary_button, spinner_text, text_field, Action, ERROR, MUTED};
-use crate::api::Client;
+use crate::api::{normalize, Client, Missing};
 use crate::util::Task;
 
 pub struct Setup {
     address: String,
     task: Option<Task<Result<Client>>>,
     error: Option<String>,
+    missing: Option<Missing>,
 }
 
 impl Setup {
@@ -19,6 +20,7 @@ impl Setup {
             address,
             task: None,
             error: None,
+            missing: None,
         };
         if auto && !s.address.trim().is_empty() {
             s.connect(ctx);
@@ -30,6 +32,7 @@ impl Setup {
         let a = self.address.clone();
         self.task = Some(Task::spawn(ctx, move || Client::connect(&a)));
         self.error = None;
+        self.missing = None;
     }
 
     pub fn address(&self) -> &str {
@@ -41,7 +44,10 @@ impl Setup {
             self.task = None;
             match r {
                 Ok(c) => return Action::Connected(c),
-                Err(e) => self.error = Some(format!("{e:#}")),
+                Err(e) => {
+                    self.missing = e.downcast_ref::<Missing>().copied();
+                    self.error = Some(format!("{e:#}"));
+                }
             }
         }
         let busy = self.task.is_some();
@@ -94,6 +100,9 @@ impl Setup {
             if let Some(e) = &self.error {
                 ui.add_space(6.0);
                 ui.label(RichText::new(e).color(ERROR));
+                if let Some(m) = self.missing {
+                    super::admin_help(ui, m, &normalize(&self.address));
+                }
             }
             ui.add_space(16.0);
             ui.separator();

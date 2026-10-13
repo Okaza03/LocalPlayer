@@ -2,6 +2,7 @@ mod api;
 mod audio;
 mod config;
 mod images;
+mod integrate;
 mod player;
 mod ui;
 mod update;
@@ -88,6 +89,7 @@ enum Dialog {
 impl App {
     fn new(ctx: &egui::Context, files: Vec<PathBuf>) -> Self {
         let cfg = Config::load();
+        integrate::sync(cfg.app_menu);
         // reconnect to the saved server; files on the command line play first
         let setup = Setup::new(ctx, cfg.server.clone(), files.is_empty());
         let watch = (!files.is_empty())
@@ -310,7 +312,13 @@ impl eframe::App for App {
         let action = match &mut self.stage {
             Stage::Setup(s) => s.ui(ctx),
             Stage::Login(l) => l.ui(ctx),
-            Stage::Browse(b) => b.ui(ctx, &mut self.images, &self.progress, &self.cfg, &self.updates),
+            Stage::Browse(b) => b.ui(
+                ctx,
+                &mut self.images,
+                &self.progress,
+                &self.cfg,
+                &self.updates,
+            ),
         };
         self.handle(ctx, action);
         self.updates.ui(ctx);
