@@ -1,5 +1,6 @@
 //! Screens and the shared look.
 pub mod browse;
+pub mod check;
 pub mod chrome;
 pub mod login;
 pub mod settings;
@@ -27,6 +28,8 @@ pub const MUTED: Color32 = Color32::from_rgb(139, 141, 148);
 /// Text on white (selected tabs, primary buttons).
 pub const INK: Color32 = Color32::from_rgb(14, 15, 18);
 pub const ERROR: Color32 = Color32::from_rgb(255, 120, 110);
+pub const WARN: Color32 = Color32::from_rgb(242, 184, 75);
+pub const OK: Color32 = Color32::from_rgb(98, 200, 138);
 
 fn font(bytes: &'static [u8]) -> Arc<FontData> {
     Arc::new(FontData::from_static(bytes))
@@ -437,8 +440,15 @@ pub fn spinner_text(ui: &mut Ui, text: &str) {
 /// What a screen asks the app to do next.
 pub enum Action {
     None,
+    /// Run the server check on a newly entered address.
+    CheckServer(String),
     /// The server answered; sign in or go straight to the library.
     Connected(crate::api::Client),
+    /// The server check passed (and the user signed in if needed).
+    Ready {
+        client: crate::api::Client,
+        user: Option<String>,
+    },
     SignedIn {
         client: crate::api::Client,
         user: String,

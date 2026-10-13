@@ -18,6 +18,7 @@ use config::{Config, Progress};
 use images::Images;
 use ui::browse::Browse;
 use ui::chrome::{self, Icon};
+use ui::check::Check;
 use ui::login::Login;
 use ui::settings::{self as dialogs, Conn, SettingsState};
 use ui::setup::Setup;
@@ -64,6 +65,7 @@ pub fn pick_files() -> Option<Vec<PathBuf>> {
 
 enum Stage {
     Setup(Setup),
+    Check(Check),
     Login(Login),
     Browse(Box<Browse>),
 }
@@ -75,6 +77,8 @@ struct App {
     images: Images,
     muted: bool,
     stage: Stage,
+    /// A server check waiting for the user to sign in.
+    pending_check: Option<Check>,
     watch: Option<Watch>,
     dialog: Option<Dialog>,
     settings: SettingsState,
@@ -101,6 +105,7 @@ impl App {
             images: Images::new(ctx),
             muted: false,
             stage: Stage::Setup(setup),
+            pending_check: None,
             watch,
             cfg,
             dialog: None,
@@ -118,6 +123,24 @@ impl App {
         self.stage = Stage::Browse(Box::new(Browse::new(ctx, client, user)));
     }
 
+    /// Save the address from the setup or check screen. A different server
+    /// forgets the old one's session.
+    fn remember_server(&mut self) {
+        let address = match &self.stage {
+            Stage::Setup(s) => s.address(),
+            Stage::Check(c) => c.address(),
+            _ => return,
+        }
+        .trim()
+        .to_owned();
+        if address != self.cfg.server {
+            self.cfg.server = address;
+            self.cfg.token = None; // belonged to the old server
+            self.cfg.admin = false;
+        }
+        self.cfg.save();
+    }
+
     fn conn(&self) -> Option<Conn> {
         let conn = |c: &Client, user: Option<&str>| Conn {
             name: c.info.name.clone(),
@@ -129,7 +152,7 @@ impl App {
         match &self.stage {
             Stage::Browse(b) => Some(conn(b.client(), b.user())),
             Stage::Login(l) => Some(conn(l.client(), None)),
-            Stage::Setup(_) => None,
+            Stage::Setup(_) | Stage::Check(_) => None,
         }
     }
 
@@ -187,16 +210,20 @@ impl App {
             Action::ShowUpdate => self.updates.show(),
             Action::OpenProfile => self.dialog = Some(Dialog::Profile),
             Action::Quit => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+            Action::CheckServer(address) => {
+                self.pending_check = None;
+                self.stage = Stage::Check(Check::new(ctx, address));
+            }
             Action::Connected(mut client) => {
-                if let Stage::Setup(s) = &self.stage {
-                    if s.address().trim() != self.cfg.server {
-                        self.cfg.server = s.address().trim().to_owned();
-                        self.cfg.token = None; // belonged to the old server
-                        self.cfg.admin = false;
+                self.remember_server();
+                if matches!(self.stage, Stage::Check(_)) {
+                    // a newly added server: sign in, then finish the check
+                    let login = Login::new(client, self.cfg.username.clone(), None);
+                    if let Stage::Check(c) = std::mem::replace(&mut self.stage, Stage::Login(login))
+                    {
+                        self.pending_check = Some(c);
                     }
-                }
-                self.cfg.save();
-                if !client.info.auth {
+                } else if !client.info.auth {
                     self.browse(ctx, client, None);
                 } else if let Some(t) = self.cfg.token.clone() {
                     client.token = Some(t);
@@ -216,7 +243,17 @@ impl App {
                 self.cfg.token = if remember { client.token.clone() } else { None };
                 self.cfg.admin = remember && client.admin;
                 self.cfg.save();
-                self.browse(ctx, client, Some(user));
+                match self.pending_check.take() {
+                    Some(mut c) => {
+                        c.signed_in(ctx, client, Some(user));
+                        self.stage = Stage::Check(c);
+                    }
+                    None => self.browse(ctx, client, Some(user)),
+                }
+            }
+            Action::Ready { client, user } => {
+                self.remember_server();
+                self.browse(ctx, client, user);
             }
             Action::NeedLogin(mut client) => {
                 client.token = None;
@@ -242,7 +279,13 @@ impl App {
             }
             Action::ChangeServer => {
                 self.images.set_client(None);
-                self.stage = Stage::Setup(Setup::new(ctx, self.cfg.server.clone(), false));
+                // keep what the user typed if they're backing out of a check
+                let pending = self.pending_check.take();
+                let address = match (&self.stage, &pending) {
+                    (Stage::Check(c), _) | (_, Some(c)) => c.address().to_owned(),
+                    _ => self.cfg.server.clone(),
+                };
+                self.stage = Stage::Setup(Setup::new(ctx, address, false));
             }
             Action::OpenFiles => {
                 if let Some(files) = pick_files() {
@@ -323,6 +366,7 @@ impl eframe::App for App {
                 Stage::Login(l) => {
                     format!("Connected to {}  ·  sign-in required", l.client().info.name)
                 }
+                Stage::Check(c) => format!("Checking {}", c.address()),
                 _ => "Not connected".to_owned(),
             };
             let right = format!(
@@ -336,6 +380,7 @@ impl eframe::App for App {
 
         let action = match &mut self.stage {
             Stage::Setup(s) => s.ui(ctx),
+            Stage::Check(c) => c.ui(ctx),
             Stage::Login(l) => l.ui(ctx),
             Stage::Browse(b) => b.ui(
                 ctx,

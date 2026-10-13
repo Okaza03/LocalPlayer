@@ -2,7 +2,7 @@
 //!
 //! Two kinds of servers are supported:
 //! * **API servers** answer `GET /api/info` with JSON and serve the catalog at
-//!   `GET /api/library`, optionally behind `POST /api/login` (see README.md).
+//!   `GET /api/library`, optionally behind `POST /api/login` (see docs/API.md).
 //! * **Plain file servers** (nginx/Apache/Caddy directory listings): the
 //!   listing is crawled and movies/series are guessed from folder and file names.
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -13,6 +13,8 @@ use anyhow::{anyhow, bail, Context, Result};
 use serde::Deserialize;
 
 use crate::util::percent_decode;
+
+pub mod check;
 
 pub const VIDEO_EXTS: &[&str] = &[
     "mp4", "mkv", "webm", "avi", "mov", "m4v", "flv", "wmv", "mpg", "mpeg", "ogv", "ts", "3gp",
@@ -309,7 +311,7 @@ impl std::fmt::Display for Unauthorized {
 impl std::error::Error for Unauthorized {}
 
 /// Where the LocalPlayer API is documented, for server admins.
-pub const API_DOCS: &str = "https://github.com/Okaza03/LocalPlayer#the-localplayer-api";
+pub const API_DOCS: &str = "https://github.com/Okaza03/LocalPlayer/blob/main/docs/API.md";
 
 /// The server is reachable but lacks a part of the LocalPlayer API, so only
 /// its admin can fix it. The UI offers a message the user can send them.
@@ -495,6 +497,16 @@ impl Client {
         })
     }
 
+    fn new(base: String, info: ServerInfo) -> Self {
+        Self {
+            base,
+            info,
+            token: None,
+            admin: false,
+            agent: agent(),
+        }
+    }
+
     pub fn auth_header(&self) -> Option<String> {
         self.token.as_ref().map(|t| format!("Bearer {t}"))
     }
@@ -534,7 +546,14 @@ impl Client {
     }
 
     pub fn library(&self) -> Result<Library> {
-        let mut lib = match self.info.mode {
+        let mut lib = self.raw_library()?;
+        lib.finish(&self.base);
+        Ok(lib)
+    }
+
+    /// The library as the server sent it, before unplayable entries are dropped.
+    fn raw_library(&self) -> Result<Library> {
+        Ok(match self.info.mode {
             Mode::Api => match self.get(&format!("{}/api/library", self.base)).call() {
                 Err(ureq::Error::Status(404 | 405 | 501, _)) => bail!(Missing::Library),
                 r => r.map_err(|e| status_err(e, "can't load the library"))?,
@@ -542,9 +561,7 @@ impl Client {
             .into_json::<Library>()
             .context("the server sent a library this app doesn't understand")?,
             Mode::Directory => self.crawl()?,
-        };
-        lib.finish(&self.base);
-        Ok(lib)
+        })
     }
 
     /// Download an image (poster, backdrop) with our credentials.

@@ -94,7 +94,8 @@ impl Setup {
                     primary_button(ui, "Connect", ok)
                 });
                 if ok && (b.clicked() || enter) {
-                    self.connect(ui.ctx());
+                    // a server the user enters gets the full check first
+                    action = Action::CheckServer(self.address.trim().to_owned());
                 }
             }
             if let Some(e) = &self.error {
