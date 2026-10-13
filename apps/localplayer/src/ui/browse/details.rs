@@ -376,25 +376,19 @@ fn cast_grid(ui: &mut Ui, cast: &[CastMember], images: &mut Images, cell_w: f32,
                 Some(t) => image_circle(p, c, r, &t),
                 None => chrome::avatar(p, c, r, &m.name),
             }
-            let clip = p.with_clip_rect(Rect::from_center_size(
-                pos2(c.x, rect.center().y),
-                vec2(cell_w - 8.0, rect.height()),
-            ));
-            clip.text(
-                pos2(c.x, c.y + r + 12.0),
-                Align2::CENTER_TOP,
-                &m.name,
-                FontId::proportional(14.0),
-                TEXT,
-            );
+            // one line each, shortened with "…" to fit the cell
+            let line = |text: &str, font: FontId, col: Color32, y: f32| {
+                let mut job =
+                    LayoutJob::single_section(text.to_owned(), TextFormat::simple(font, col));
+                job.wrap.max_width = cell_w - 12.0;
+                job.wrap.max_rows = 1;
+                job.wrap.overflow_character = Some('…');
+                let g = p.layout_job(job);
+                p.galley(pos2(c.x - g.size().x / 2.0, y), g, col);
+            };
+            line(&m.name, FontId::proportional(14.0), TEXT, c.y + r + 12.0);
             if let Some(ch) = &m.character {
-                clip.text(
-                    pos2(c.x, c.y + r + 32.0),
-                    Align2::CENTER_TOP,
-                    ch,
-                    FontId::monospace(11.0),
-                    MUTED,
-                );
+                line(ch, FontId::monospace(11.0), MUTED, c.y + r + 32.0);
             }
         }
         ui.add_space(14.0);

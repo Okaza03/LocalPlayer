@@ -21,6 +21,15 @@ const IMAGE_EXTS: &[&str] = &["jpg", "jpeg", "png", "webp"];
 
 // ------------------------------------------------------------------ model
 
+/// Lists may come as `null` from servers; treat that like a missing list.
+fn null_as_empty<'de, D, T>(d: D) -> Result<Vec<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Ok(Option::<Vec<T>>::deserialize(d)?.unwrap_or_default())
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
 pub enum Kind {
     #[default]
@@ -37,6 +46,7 @@ pub struct Item {
     pub overview: String,
     pub poster: Option<String>,
     pub backdrop: Option<String>,
+    #[serde(deserialize_with = "null_as_empty")]
     pub genres: Vec<String>,
     /// Age rating such as "PG-13".
     pub rating: Option<String>,
@@ -47,6 +57,7 @@ pub struct Item {
     /// Movies only.
     pub stream: Option<String>,
     /// Series only.
+    #[serde(deserialize_with = "null_as_empty")]
     pub seasons: Vec<Season>,
     #[serde(skip)]
     pub kind: Kind,
@@ -57,7 +68,9 @@ pub struct Item {
     /// Movies.
     pub director: Option<String>,
     /// Series.
+    #[serde(deserialize_with = "null_as_empty")]
     pub creators: Vec<String>,
+    #[serde(deserialize_with = "null_as_empty")]
     pub cast: Vec<CastMember>,
     /// Release date, "YYYY-MM-DD".
     pub released: Option<String>,
@@ -78,6 +91,7 @@ pub struct Item {
     /// Movies: about the video file.
     pub file: Option<FileInfo>,
     /// Critics' quotes.
+    #[serde(deserialize_with = "null_as_empty")]
     pub reviews: Vec<Review>,
 }
 
@@ -126,6 +140,7 @@ pub struct Review {
 pub struct Season {
     pub number: u32,
     pub title: Option<String>,
+    #[serde(deserialize_with = "null_as_empty")]
     pub episodes: Vec<Episode>,
 }
 
@@ -161,7 +176,9 @@ pub struct Episode {
 #[derive(Default, Deserialize)]
 #[serde(default)]
 pub struct Library {
+    #[serde(deserialize_with = "null_as_empty")]
     pub movies: Vec<Item>,
+    #[serde(deserialize_with = "null_as_empty")]
     pub series: Vec<Item>,
 }
 
@@ -938,6 +955,15 @@ mod tests {
             resolve_href("http://h/Movies/", "A%20B.mkv?x"),
             "http://h/Movies/A%20B.mkv"
         );
+    }
+
+    #[test]
+    fn null_lists() {
+        let lib: Library = serde_json::from_str(
+            r#"{"movies":[{"title":"M","stream":"/s","cast":null,"genres":null,"reviews":null}],"series":null}"#,
+        )
+        .unwrap();
+        assert!(lib.movies[0].cast.is_empty() && lib.series.is_empty());
     }
 
     #[test]
