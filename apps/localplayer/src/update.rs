@@ -8,7 +8,7 @@ use serde::Deserialize;
 use crate::ui::{chrome, mono, small_button, BG, LINE, MUTED, TEXT};
 use crate::util::Task;
 
-const REPO: &str = "Okaza03/MovieViewer";
+const REPO: &str = "Okaza03/LocalPlayer";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Clone)]
