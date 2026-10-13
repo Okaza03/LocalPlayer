@@ -1,24 +1,21 @@
-# LocalPlayer v0.3.0
+# LocalPlayer v0.3.1
 
-Adding a server now checks it step by step before you sign in.
+A fix for the server check from v0.3.0.
 
-### New
-- **Server check.** When you add a server, LocalPlayer tests each part of it in turn and shows the result as it goes: whether it can be reached, `/api/info`, the server name, sign-in, `/api/login`, the library, movies and episodes, playback and seeking, and artwork.
-- **Errors and warnings.** Problems that stop the app from working, like no library or videos that won't play, block the server until they're fixed. Smaller gaps, like missing artwork or a server without a sign-in, are warnings. Click **I know this is missing, continue** to go on anyway.
-- **Metadata overview.** A bar for each field (poster, description, genres, cast, runtime, episode thumbnails, …) shows how many titles have it, for example `Poster 48/52`.
-- **Copy report** copies every result as text, so you can send it to whoever runs the server.
-- The check runs once, when a server is added. Reconnecting at startup works the same as before.
+### Fixed
+- **Laravel servers pass the sign-in check.** The check tests `/api/login` with an empty username and password. Laravel answers that with `422` (a validation error), which the check wrongly counted as a failure. `422` now counts as "sign-in found", and the sign-in screen shows it as a wrong username or password.
+- **API requests ask for JSON.** Every request to the API now sends `Accept: application/json`, so frameworks like Laravel answer `401` when you're signed out instead of redirecting to a web login page.
 
 ### For server owners
-There's a new guide at [docs/API.md](https://github.com/Okaza03/LocalPlayer/blob/main/docs/API.md). It covers every endpoint and field, what each check step tests and how to fix it, setup for the bundled Python server and for nginx, Caddy and Apache folder listings, examples for Laravel, Express and Flask, and curl commands to test by hand.
+Nothing to change on your side. [docs/API.md](https://github.com/Okaza03/LocalPlayer/blob/main/docs/API.md) now lists `422` as a valid answer to a failed sign-in.
 
 ### Downloads
 | File | For |
 |---|---|
-| `localplayer-v0.3.0-x86_64.AppImage` | any distro (`chmod +x` and run, updates itself) |
-| `localplayer-v0.3.0-x86_64.flatpak` | any distro with Flatpak (added a few minutes after the others) |
-| `localplayer_0.3.0-1_amd64.deb` | Debian / Ubuntu / Mint |
-| `localplayer-0.3.0-linux-x86_64.tar.gz` | manual install |
+| `localplayer-v0.3.1-x86_64.AppImage` | any distro (`chmod +x` and run, updates itself) |
+| `localplayer-v0.3.1-x86_64.flatpak` | any distro with Flatpak (added a few minutes after the others) |
+| `localplayer_0.3.1-1_amd64.deb` | Debian / Ubuntu / Mint |
+| `localplayer-0.3.1-linux-x86_64.tar.gz` | manual install |
 
 If you're using the AppImage, click **Update now** to get this version.
 
