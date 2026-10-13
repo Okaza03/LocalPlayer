@@ -265,6 +265,7 @@ impl eframe::App for App {
         self.handle(ctx, action);
         self.dialogs(ctx);
         chrome::window_frame(ctx);
+        tmp_shot(ctx, &mut self.dialog);
     }
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
@@ -275,4 +276,30 @@ impl eframe::App for App {
         self.progress.flush();
         self.cfg.save();
     }
+}
+
+// TEMP: self-screenshot for testing
+fn tmp_shot(ctx: &egui::Context, dialog: &mut Option<Dialog>) {
+    let Ok(path) = std::env::var("HP_SHOT") else { return };
+    let n = ctx.cumulative_pass_nr();
+    if n == 5 {
+        match std::env::var("HP_DIALOG").as_deref() {
+            Ok("settings") => *dialog = Some(Dialog::Settings),
+            Ok("profile") => *dialog = Some(Dialog::Profile),
+            _ => {}
+        }
+    }
+    if n == 400 {
+        ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(Default::default()));
+    }
+    ctx.input(|i| {
+        for e in &i.raw.events {
+            if let egui::Event::Screenshot { image, .. } = e {
+                let img = image::RgbaImage::from_raw(image.width() as u32, image.height() as u32, image.as_raw().to_vec()).unwrap();
+                img.save(&path).unwrap();
+                std::process::exit(0);
+            }
+        }
+    });
+    ctx.request_repaint();
 }

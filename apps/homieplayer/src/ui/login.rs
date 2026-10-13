@@ -64,18 +64,18 @@ impl Login {
         let busy = self.task.is_some();
         card(ctx, |ui| {
             let mut action = Action::None;
-            ui.vertical_centered(|ui| super::logo(ui, 44.0));
+            super::logo(ui, 30.0);
             ui.add_space(6.0);
-            ui.label(RichText::new("Sign in").size(22.0).strong());
+            ui.label(super::bold("Sign in", 22.0));
             ui.label(RichText::new(format!("to {}", self.client.info.name)).color(MUTED));
             ui.add_space(14.0);
 
-            ui.label(RichText::new("Username").strong());
+            ui.label(super::mono("Username", 11.0).color(MUTED));
             let u = ui
                 .add_enabled_ui(!busy, |ui| text_field(ui, &mut self.username, "", false))
                 .inner;
             ui.add_space(4.0);
-            ui.label(RichText::new("Password").strong());
+            ui.label(super::mono("Password", 11.0).color(MUTED));
             let p = ui
                 .add_enabled_ui(!busy, |ui| text_field(ui, &mut self.password, "", true))
                 .inner;

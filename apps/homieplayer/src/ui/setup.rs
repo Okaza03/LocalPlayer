@@ -3,7 +3,7 @@ use anyhow::Result;
 use eframe::egui::{self, RichText};
 
 use super::{
-    card, primary_button, secondary_button, spinner_text, text_field, Action, ERROR, MUTED,
+    card, primary_button, spinner_text, text_field, Action, ERROR, MUTED,
 };
 use crate::api::Client;
 use crate::util::Task;
@@ -49,19 +49,17 @@ impl Setup {
         let busy = self.task.is_some();
         card(ctx, |ui| {
             let mut action = Action::None;
-            ui.vertical_centered(|ui| super::logo(ui, 44.0));
+            super::logo(ui, 30.0);
             ui.add_space(6.0);
             ui.label(
-                RichText::new("Connect to your media library")
-                    .size(20.0)
-                    .strong(),
+                super::bold("Connect to your media library", 20.0),
             );
             ui.label(
                 RichText::new("Enter the IP address (and port) of the computer on your network that serves your movies and series.")
                     .color(MUTED),
             );
             ui.add_space(14.0);
-            ui.label(RichText::new("Server address").strong());
+            ui.label(super::mono("Server address", 11.0).color(MUTED));
             let r = ui
                 .add_enabled_ui(!busy, |ui| {
                     text_field(ui, &mut self.address, "192.168.1.20:8080", false)
@@ -108,7 +106,7 @@ impl Setup {
             ui.add_space(6.0);
             ui.horizontal(|ui| {
                 ui.label(RichText::new("Just want to watch a file?").color(MUTED));
-                if secondary_button(ui, " Open local file… ").clicked() {
+                if super::small_button(ui, "Open file").clicked() {
                     action = Action::OpenFiles;
                 }
             });

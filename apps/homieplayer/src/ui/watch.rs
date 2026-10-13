@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use eframe::egui::{
-    self, pos2, vec2, Align2, Color32, CursorIcon, FontId, Key, Rect, RichText, Sense, Vec2,
+    self, pos2, vec2, Align2, Color32, CursorIcon, FontId, Key, Rect, Sense, Vec2,
 };
 
 use super::chrome;
