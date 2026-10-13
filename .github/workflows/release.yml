@@ -46,6 +46,11 @@ jobs:
         run: |
           V=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
           [ "v$V" = "$GITHUB_REF_NAME" ] || { echo "Tag $GITHUB_REF_NAME != Cargo.toml v$V"; exit 1; }
+          # notes.md is the release description: rewrite it for every release
+          head -n1 notes.md | grep -qF "v$V" \
+            || { echo "notes.md's first line must name v$V; write this release's notes"; exit 1; }
+          grep -qF "<release version=\"$V\"" packaging/flatpak/io.github.okaza03.LocalPlayer.metainfo.xml \
+            || { echo "add <release version=\"$V\"> to the Flatpak metainfo"; exit 1; }
 
       - run: cargo install cargo-deb --locked
       - run: cargo xtask dist
@@ -89,11 +94,18 @@ jobs:
       - uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/v')
         with:
+          body_path: notes.md
           files: |
             target/dist/*.tar.gz
             target/dist/*.AppImage
             target/debian/*.deb
             SHA256SUMS.txt
+
+      # the Flatpak job packages this exact binary
+      - uses: actions/upload-artifact@v4
+        with:
+          name: localplayer-bin
+          path: target/release/${{ env.APP }}
 
       - uses: actions/upload-artifact@v4
         if: github.event_name == 'workflow_dispatch'
@@ -102,3 +114,28 @@ jobs:
           path: |
             target/dist/*
             target/debian/*.deb
+
+  flatpak:
+    needs: linux
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-25.08
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: localplayer-bin
+          path: target/release
+
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          manifest-path: packaging/flatpak/io.github.okaza03.LocalPlayer.yml
+          bundle: localplayer-${{ github.ref_name }}-x86_64.flatpak
+          cache: false
+
+      - uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          files: localplayer-*.flatpak

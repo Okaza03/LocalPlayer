@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.okaza03.LocalPlayer</id>
+  <name>LocalPlayer</name>
+  <summary>Watch movies and series from your home media server</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT OR Apache-2.0</project_license>
+  <developer id="io.github.okaza03">
+    <name>Okaza03</name>
+  </developer>
+  <description>
+    <p>
+      A small, fast video player and media-library client. Point it at a media
+      server on your network to browse movies and TV shows, pick up where you
+      left off and play the next episode automatically. It also plays files
+      from your computer.
+    </p>
+  </description>
+  <launchable type="desktop-id">io.github.okaza03.LocalPlayer.desktop</launchable>
+  <url type="homepage">https://github.com/Okaza03/LocalPlayer</url>
+  <url type="bugtracker">https://github.com/Okaza03/LocalPlayer/issues</url>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.2" date="2026-10-13"/>
+    <release version="0.1.1" date="2026-10-13"/>
+  </releases>
+</component>

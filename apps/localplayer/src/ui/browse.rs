@@ -21,7 +21,7 @@ use crate::images::Images;
 use crate::player::Source;
 use crate::ui::watch::PlayItem;
 use crate::ui::Action;
-use crate::update::Updates;
+use crate::update::{self, Updates};
 use crate::util::{fmt_runtime, fmt_time, Task};
 
 const POSTER: egui::Vec2 = vec2(150.0, 225.0);
@@ -336,8 +336,10 @@ impl Browse {
                     *action = Action::OpenSettings;
                 }
                 chrome::vsep(ui);
-                if chrome::update_button(ui, updates) {
-                    *action = Action::CheckUpdates;
+                match chrome::update_button(ui, updates) {
+                    Some(update::Click::Check) => *action = Action::CheckUpdates,
+                    Some(update::Click::ShowUpdate) => *action = Action::ShowUpdate,
+                    None => {}
                 }
                 chrome::vsep(ui);
                 ui.add_space(10.0);

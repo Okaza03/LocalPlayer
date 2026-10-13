@@ -37,7 +37,8 @@ fn main() -> eframe::Result<()> {
             .with_min_inner_size([560.0, 400.0])
             .with_title("LocalPlayer")
             .with_decorations(false) // we draw our own title bar
-            .with_app_id("localplayer"), // matches localplayer.desktop
+            // matches localplayer.desktop, or the Flatpak's renamed copy of it
+            .with_app_id(std::env::var("FLATPAK_ID").unwrap_or_else(|_| "localplayer".into())),
         ..Default::default()
     };
     eframe::run_native(
@@ -182,6 +183,7 @@ impl App {
             }
             Action::OpenSettings => self.dialog = Some(Dialog::Settings),
             Action::CheckUpdates => self.updates.check(ctx, true),
+            Action::ShowUpdate => self.updates.show(),
             Action::OpenProfile => self.dialog = Some(Dialog::Profile),
             Action::Quit => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
             Action::Connected(mut client) => {
@@ -286,7 +288,7 @@ impl eframe::App for App {
         }
 
         if !matches!(self.stage, Stage::Browse(_)) {
-            let (mut open_settings, mut check) = (false, false);
+            let (mut open_settings, mut click) = (false, None);
             let name = match &self.stage {
                 Stage::Login(l) => l.client().info.name.clone(),
                 _ => "LocalPlayer".to_owned(),
@@ -298,14 +300,16 @@ impl eframe::App for App {
                 |ui| {
                     open_settings = chrome::icon_button(ui, Icon::Settings, "Settings").clicked();
                     chrome::vsep(ui);
-                    check = chrome::update_button(ui, &self.updates);
+                    click = chrome::update_button(ui, &self.updates);
                 },
             );
             if open_settings {
                 self.dialog = Some(Dialog::Settings);
             }
-            if check {
-                self.updates.check(ctx, true);
+            match click {
+                Some(update::Click::Check) => self.updates.check(ctx, true),
+                Some(update::Click::ShowUpdate) => self.updates.show(),
+                None => {}
             }
             let left = match &self.stage {
                 Stage::Login(l) => {

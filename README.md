@@ -15,6 +15,23 @@ cargo run --release -p localplayer
 
 Settings and resume points are stored in `~/.config/localplayer/`.
 
+## Installing
+
+Each [release](https://github.com/Okaza03/LocalPlayer/releases) has:
+
+- **AppImage**: `chmod +x` it and run it. The first launch adds LocalPlayer to your app menu (you can turn this off in Settings). Updates are one click: the app downloads the new AppImage, verifies it against `SHA256SUMS.txt`, replaces itself and restarts.
+- **Flatpak**: `flatpak install --user localplayer-vX.Y.Z-x86_64.flatpak`. To update, install the newer file the same way, since sandboxed apps can't replace themselves. The manifest is in `packaging/flatpak/`.
+- **.deb** and **.tar.gz**: the app tells you when an update is out and opens the release page.
+
+## Releasing
+
+1. Bump `version` in `Cargo.toml`.
+2. Rewrite `notes.md` for the new version. Its first line must name it (`# LocalPlayer vX.Y.Z`). It becomes the release description.
+3. Add `<release version="X.Y.Z" …/>` to `packaging/flatpak/io.github.okaza03.LocalPlayer.metainfo.xml`.
+4. Commit, then `git tag vX.Y.Z && git push origin main vX.Y.Z`.
+
+The release workflow refuses to publish if any of these are out of sync with the tag.
+
 ## Supported servers
 
 **A server with the LocalPlayer API (below).** It provides titles, artwork, descriptions, genres and optional login. `server/localplayer_server.py` is a working reference implementation that only needs the Python standard library:

@@ -95,9 +95,13 @@ pub fn window_buttons(ui: &mut Ui) {
 }
 
 /// The refresh icon that checks for a new LocalPlayer: a spinner while checking, and an
-/// "Update" tab next to it when one is out. Returns true when a check was requested.
-pub fn update_button(ui: &mut Ui, updates: &crate::update::Updates) -> bool {
-    let mut check = false;
+/// "Update" tab next to it when one is out.
+pub fn update_button(
+    ui: &mut Ui,
+    updates: &crate::update::Updates,
+) -> Option<crate::update::Click> {
+    use crate::update::Click;
+    let mut click = None;
     if updates.checking() {
         let (r, _) = ui.allocate_exact_size(vec2(BAR_H, BAR_H), Sense::hover());
         egui::Spinner::new()
@@ -105,20 +109,22 @@ pub fn update_button(ui: &mut Ui, updates: &crate::update::Updates) -> bool {
             .color(TEXT)
             .paint_at(ui, Rect::from_center_size(r.center(), vec2(16.0, 16.0)));
     } else {
-        check = icon_button(ui, Icon::Refresh, "Check for updates").clicked();
+        if icon_button(ui, Icon::Refresh, "Check for updates").clicked() {
+            click = Some(Click::Check);
+        }
     }
     if let Some(r) = &updates.available {
         ui.add_space(8.0);
-        let tip = format!("LocalPlayer {} is available — click to download", r.version);
+        let tip = format!("LocalPlayer {} is available — click to update", r.version);
         if super::tab(ui, &format!("Update {}", r.version), true)
             .on_hover_text(tip)
             .clicked()
         {
-            open_url(&r.url);
+            click = Some(Click::ShowUpdate);
         }
         ui.add_space(8.0);
     }
-    check
+    click
 }
 
 /// A full-height vertical divider.

@@ -451,6 +451,8 @@ pub enum Action {
     Refresh,
     OpenFiles,
     CheckUpdates,
+    /// Re-show the "update available" notice.
+    ShowUpdate,
     OpenSettings,
     OpenProfile,
     Quit,
