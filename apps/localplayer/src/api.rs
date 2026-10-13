@@ -463,6 +463,7 @@ impl Client {
         let agent = agent();
         let api = agent
             .get(&format!("{base}/api/info"))
+            .set("Accept", "application/json")
             .call()
             .ok()
             .and_then(|r| r.into_json::<InfoJson>().ok());
@@ -523,11 +524,14 @@ impl Client {
         let r = self
             .agent
             .post(&format!("{}/api/login", self.base))
+            .set("Accept", "application/json")
             .send_json(serde_json::json!({ "username": username, "password": password }));
         match r {
             // e.g. a web app answering every path with its HTML page
             Ok(r) => r.into_json().map_err(|_| anyhow!(Missing::Login)),
-            Err(ureq::Error::Status(400 | 401 | 403, _)) => bail!("Wrong username or password"),
+            Err(ureq::Error::Status(400 | 401 | 403 | 422, _)) => {
+                bail!("Wrong username or password")
+            }
             Err(ureq::Error::Status(404 | 405 | 501, _)) => bail!(Missing::Login),
             Err(e) => Err(status_err(e, "sign-in failed")),
         }
@@ -537,7 +541,11 @@ impl Client {
     pub fn logout(&self) {
         if self.info.mode == Mode::Api && self.token.is_some() {
             let url = format!("{}/api/logout", self.base);
-            let mut r = self.agent.post(&url).timeout(Duration::from_secs(3));
+            let mut r = self
+                .agent
+                .post(&url)
+                .set("Accept", "application/json")
+                .timeout(Duration::from_secs(3));
             if let Some(h) = self.auth_header() {
                 r = r.set("Authorization", &h);
             }
@@ -554,7 +562,11 @@ impl Client {
     /// The library as the server sent it, before unplayable entries are dropped.
     fn raw_library(&self) -> Result<Library> {
         Ok(match self.info.mode {
-            Mode::Api => match self.get(&format!("{}/api/library", self.base)).call() {
+            Mode::Api => match self
+                .get(&format!("{}/api/library", self.base))
+                .set("Accept", "application/json")
+                .call()
+            {
                 Err(ureq::Error::Status(404 | 405 | 501, _)) => bail!(Missing::Library),
                 r => r.map_err(|e| status_err(e, "can't load the library"))?,
             }

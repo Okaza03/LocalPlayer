@@ -257,7 +257,8 @@ impl Check {
                     action = Action::CheckServer(self.address.clone());
                 }
             } else if warns > 0 {
-                let msg = format!(
+                let msg =
+                    format!(
                     "LocalPlayer works with this server, but {} above {} missing or incomplete.",
                     if warns == 1 { "one thing" } else { "some things" },
                     if warns == 1 { "is" } else { "are" },

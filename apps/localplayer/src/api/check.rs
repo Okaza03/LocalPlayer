@@ -9,8 +9,8 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use eframe::egui;
 
 use super::{
-    agent, normalize, Client, Episode, InfoJson, Item, Library, Missing, Mode, ServerInfo,
-    Session, Unauthorized,
+    agent, normalize, Client, Episode, InfoJson, Item, Library, Missing, Mode, ServerInfo, Session,
+    Unauthorized,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -82,7 +82,10 @@ pub fn start(ctx: &egui::Context, job: Job) -> Receiver<Event> {
             Job::Address(a) => run.connect(&a),
             Job::SignedIn(c) => Some(c),
         };
-        if let Some(c) = client.as_ref().filter(|c| !c.info.auth || c.token.is_some()) {
+        if let Some(c) = client
+            .as_ref()
+            .filter(|c| !c.info.auth || c.token.is_some())
+        {
             run.library(c);
         }
         let ok = !run.failed;
@@ -135,7 +138,11 @@ impl Run {
             match agent.get(&format!("{base}/")).call() {
                 Ok(r) => {
                     let body = r.into_string().unwrap_or_default();
-                    (Pass, format!("{base} answered."), Some(body.contains("href=")))
+                    (
+                        Pass,
+                        format!("{base} answered."),
+                        Some(body.contains("href=")),
+                    )
                 }
                 Err(ureq::Error::Status(code, _)) => {
                     (Pass, format!("{base} answered ({code})."), Some(false))
@@ -152,7 +159,11 @@ impl Run {
         })?;
 
         let info = self.step("LocalPlayer API · GET /api/info", || {
-            let why = match agent.get(&format!("{base}/api/info")).call() {
+            let why = match agent
+                .get(&format!("{base}/api/info"))
+                .set("Accept", "application/json")
+                .call()
+            {
                 Ok(r) => match r.into_json::<InfoJson>() {
                     Ok(i) => return (Pass, "Found.".to_owned(), Some(i)),
                     Err(_) => "It answered, but not with JSON".to_owned(),
@@ -198,11 +209,14 @@ impl Run {
             ));
         };
 
-        let name = self.step("Server name", || match info.name.filter(|n| !n.trim().is_empty()) {
-            Some(n) => (Pass, format!("“{n}”"), n),
-            None => {
-                let msg = format!("/api/info has no \"name\", so the server is shown as {host}.");
-                (Warn, msg, host.clone())
+        let name = self.step("Server name", || {
+            match info.name.filter(|n| !n.trim().is_empty()) {
+                Some(n) => (Pass, format!("“{n}”"), n),
+                None => {
+                    let msg =
+                        format!("/api/info has no \"name\", so the server is shown as {host}.");
+                    (Warn, msg, host.clone())
+                }
             }
         });
 
@@ -234,9 +248,11 @@ impl Run {
         self.step("Sign-in API · POST /api/login", || {
             let r = agent
                 .post(&format!("{base}/api/login"))
+                .set("Accept", "application/json")
                 .send_json(serde_json::json!({ "username": "", "password": "" }));
             match r {
-                Err(ureq::Error::Status(400 | 401 | 403, _)) => {
+                // 422: a validation error for the empty fields (Laravel)
+                Err(ureq::Error::Status(400 | 401 | 403 | 422, _)) => {
                     let msg = "Found; it turns down an empty username and password.".to_owned();
                     (Pass, msg, ())
                 }
@@ -266,10 +282,16 @@ impl Run {
         });
 
         self.step("Library API · GET /api/library", || {
-            match agent.get(&format!("{base}/api/library")).call() {
-                Err(ureq::Error::Status(401 | 403, _)) => {
-                    (Later, "Protected. Checked after you sign in.".to_owned(), ())
-                }
+            match agent
+                .get(&format!("{base}/api/library"))
+                .set("Accept", "application/json")
+                .call()
+            {
+                Err(ureq::Error::Status(401 | 403, _)) => (
+                    Later,
+                    "Protected. Checked after you sign in.".to_owned(),
+                    (),
+                ),
                 Err(ureq::Error::Status(404 | 405 | 501, _)) => {
                     (Fail, Missing::Library.to_string(), ())
                 }
@@ -332,19 +354,26 @@ impl Run {
                 );
                 (Fail, msg, ())
             } else if bad > 0 {
-                let msg = format!(
-                    "{bad} of {n} movies have no \"stream\" URL and will be hidden."
-                );
+                let msg = format!("{bad} of {n} movies have no \"stream\" URL and will be hidden.");
                 (Warn, msg, ())
             } else {
-                (Pass, format!("{}, all playable.", plural(n, "movie", "movies")), ())
+                (
+                    Pass,
+                    format!("{}, all playable.", plural(n, "movie", "movies")),
+                    (),
+                )
             }
         });
 
         self.step("Series and episodes", || {
             let n = lib.series.len();
             let empty = lib.series.iter().filter(|s| episode_count(s) == 0).count();
-            let eps = || lib.series.iter().flat_map(|s| &s.seasons).flat_map(|s| &s.episodes);
+            let eps = || {
+                lib.series
+                    .iter()
+                    .flat_map(|s| &s.seasons)
+                    .flat_map(|s| &s.episodes)
+            };
             let total = eps().count();
             let bad = eps().filter(|e| e.stream.trim().is_empty()).count();
             if n == 0 {
@@ -387,22 +416,25 @@ impl Run {
             return;
         }
 
-        let stream = lib.movies.iter().find_map(|m| m.stream.clone()).or_else(|| {
-            lib.series
-                .iter()
-                .flat_map(|s| &s.seasons)
-                .flat_map(|s| &s.episodes)
-                .find(|e| !e.stream.is_empty())
-                .map(|e| e.stream.clone())
-        });
+        let stream = lib
+            .movies
+            .iter()
+            .find_map(|m| m.stream.clone())
+            .or_else(|| {
+                lib.series
+                    .iter()
+                    .flat_map(|s| &s.seasons)
+                    .flat_map(|s| &s.episodes)
+                    .find(|e| !e.stream.is_empty())
+                    .map(|e| e.stream.clone())
+            });
         if let Some(url) = stream {
             self.step("Streaming · Range requests", || {
                 match client.get(&url).set("Range", "bytes=0-1").call() {
                     Ok(r) => {
                         let ct = r.content_type().to_owned();
                         if ct.starts_with("text/html") || ct.contains("json") {
-                            let msg =
-                                format!("{url} sent {ct} instead of a video file.");
+                            let msg = format!("{url} sent {ct} instead of a video file.");
                             (Fail, msg, ())
                         } else if r.status() == 206 {
                             (Pass, "Videos play, and seeking works.".to_owned(), ())
@@ -443,7 +475,10 @@ impl Run {
 
         let groups = coverage(&lib, client.info.mode);
         let fields = || groups.iter().flat_map(|g| &g.fields);
-        let level = fields().map(Field::level).max_by_key(|l| *l as u8).unwrap_or(Pass);
+        let level = fields()
+            .map(Field::level)
+            .max_by_key(|l| *l as u8)
+            .unwrap_or(Pass);
         let incomplete = fields().filter(|f| f.level() != Pass).count();
         self.send(Event::Metadata(groups.clone()));
         self.step("Metadata", || {
@@ -492,7 +527,9 @@ fn coverage(lib: &Library, mode: Mode) -> Vec<Group> {
         ..field("Title", &titles, |i| !i.title.trim().is_empty())
     }];
     if api {
-        all.push(field("Description", &titles, |i| !i.overview.trim().is_empty()));
+        all.push(field("Description", &titles, |i| {
+            !i.overview.trim().is_empty()
+        }));
     }
     all.extend([
         field("Poster", &titles, |i| has(&i.poster)),

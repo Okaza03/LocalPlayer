@@ -146,7 +146,7 @@ The steps, in order:
 | LocalPlayer API | `GET /api/info` returns JSON | Neither `/api/info` nor a folder listing exists | No `/api/info`, but there's a folder listing to fall back to |
 | Server name | `name` in `/api/info` | | `name` is missing; the app shows the host instead |
 | Sign-in required | `auth` in `/api/info` | | `auth` is `false`: anyone on the network can watch |
-| Sign-in API | `POST /api/login` with an empty username and password | 404/405/501, or a non-JSON answer | It signs in with an empty username and password |
+| Sign-in API | `POST /api/login` with an empty username and password | Anything but 400/401/403/422, or a non-JSON answer | It signs in with an empty username and password |
 | Library API | `GET /api/library` *without* a token | 404/405/501 | It answers without a token even though `auth` is `true` |
 | *(sign-in screen, if `auth` is `true`)* | | | |
 | Library | `GET /api/library` with the token, parsed | Error status, `401` with a fresh token, or JSON the app can't read | |
@@ -172,7 +172,7 @@ With a folder listing only Title, Poster, Backdrop, Year and episode Title are c
 
 ## Endpoints
 
-All paths are relative to the address the user types. If they type `192.168.1.20:8080/media`, the app requests `http://192.168.1.20:8080/media/api/info`. Only `http://` works for streaming (the bundled FFmpeg is built without TLS).
+All API requests are sent with `Accept: application/json`. All paths are relative to the address the user types. If they type `192.168.1.20:8080/media`, the app requests `http://192.168.1.20:8080/media/api/info`. Only `http://` works for streaming (the bundled FFmpeg is built without TLS).
 
 ### `GET /api/info`: required, no sign-in
 
@@ -208,7 +208,7 @@ Success, `200`:
 | `name` | string | Display name. Defaults to the username. |
 | `admin` | bool | `true` shows the app's Admin buttons, which open `<server>/admin` in the browser. Hiding the buttons is only a convenience, so `/admin` must check permissions itself. |
 
-A wrong username or password must get `401` (`400` and `403` work too). Don't answer `200` with an error message in it. The check sends an empty username and password and expects one of those codes.
+A wrong username or password must get `401` (`400`, `403` and `422` work too). Don't answer `200` with an error message in it. The check sends an empty username and password and expects one of those codes, so a validation error for empty fields (Laravel's `422`) is fine.
 
 ### `POST /api/logout`: optional
 
