@@ -1,28 +1,22 @@
-# LocalPlayer v0.1.2
+# LocalPlayer v0.1.3
 
-### New: one-click updates for the AppImage
-When a new version is out, click **Update now** in the notice (or the **Update** tab at the top). LocalPlayer downloads the new AppImage, checks it against the release's `SHA256SUMS.txt`, swaps it in at the same place and restarts. There's nothing to download or `chmod` yourself, and your app-menu entry keeps working.
+### Changed: Admin buttons only for admins
+The **Admin** item in the profile menu and the **Open admin** button in your profile are now only shown to admins. Everyone else no longer sees them.
 
-> This starts with the **next** update: v0.1.1 and older still send you to the download page once. Grab this AppImage by hand, and future updates are one click.
+The server decides who's an admin: it adds `"admin": true` to its sign-in reply (`POST /api/login`) for those users. Servers that don't send it show no Admin buttons to anyone.
 
-The `.deb` and `.tar.gz` versions still open the release page. Flatpak updates go through Flatpak (see below).
-
-### New: Flatpak
-There's now a `.flatpak` download that runs in Flatpak's sandbox on any distro:
-```sh
-flatpak install --user localplayer-v0.1.2-x86_64.flatpak
-```
-To update, download the newer `.flatpak` and run the same command again. LocalPlayer tells you when there's one to get. The sandbox can reach your network and read your Videos folder. Files elsewhere can be opened with **Open file…**.
-
-### Changed
-- The **Update** tab in the top bar now shows the update notice instead of opening your browser.
+- **Admins who chose "Keep me signed in" before this update:** sign out and back in once to get the buttons back.
+- **Running the bundled Python server:** create admins with `--add-user NAME --admin`.
+- **Server developers:** the README's API section shows the new field. Hiding the buttons is only cosmetic, so your `/admin` page still has to check permissions itself.
 
 ### Downloads
 | File | For |
 |---|---|
-| `localplayer-v0.1.2-x86_64.AppImage` | any distro (`chmod +x` and run, updates itself) |
-| `localplayer-v0.1.2-x86_64.flatpak` | any distro with Flatpak |
-| `localplayer_0.1.2-1_amd64.deb` | Debian / Ubuntu / Mint |
-| `localplayer-0.1.2-linux-x86_64.tar.gz` | manual install |
+| `localplayer-v0.1.3-x86_64.AppImage` | any distro (`chmod +x` and run, updates itself) |
+| `localplayer-v0.1.3-x86_64.flatpak` | any distro with Flatpak (added a few minutes after the others) |
+| `localplayer_0.1.3-1_amd64.deb` | Debian / Ubuntu / Mint |
+| `localplayer-0.1.3-linux-x86_64.tar.gz` | manual install |
+
+If you're on v0.1.2 with the AppImage, click **Update now** to get this version.
 
 Checksums for the AppImage, `.deb` and `.tar.gz` are in `SHA256SUMS.txt`.

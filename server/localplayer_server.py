@@ -147,7 +147,7 @@ class Library:
 
 
 class Users:
-    """users.json: {"name": {"salt": hex, "hash": hex}}; tokens.json: {"token": "name"}."""
+    """users.json: {"name": {"salt": hex, "hash": hex, "admin": bool}}; tokens.json: {"token": "name"}."""
 
     def __init__(self, folder):
         self.folder = folder
@@ -165,9 +165,9 @@ class Users:
         path.write_text(json.dumps(data, indent=2))
         path.chmod(0o600)
 
-    def add(self, name, password):
+    def add(self, name, password, admin=False):
         salt = secrets.token_hex(16)
-        self.users[name] = {"salt": salt, "hash": self.hash(password, salt)}
+        self.users[name] = {"salt": salt, "hash": self.hash(password, salt), "admin": admin}
         self.save("users.json", self.users)
 
     def login(self, name, password):
@@ -179,6 +179,9 @@ class Users:
             self.tokens[token] = name
             self.save("tokens.json", self.tokens)
         return token
+
+    def is_admin(self, name):
+        return bool(self.users.get(name, {}).get("admin"))
 
     def logout(self, token):
         with self.lock:
@@ -224,7 +227,8 @@ def make_handler(lib, users, name):
                 if not token:
                     time.sleep(1)  # slow down guessing
                     return self.send_json({"error": "wrong username or password"}, 401)
-                return self.send_json({"token": token, "name": req["username"]})
+                user = str(req["username"])
+                return self.send_json({"token": token, "name": user, "admin": users.is_admin(user)})
             if path == "/api/logout":
                 users.logout(self.token())
                 return self.send_json({})
@@ -297,6 +301,7 @@ def main():
     ap.add_argument("--host", default="0.0.0.0")
     ap.add_argument("--name", default=None, help="name shown in the app")
     ap.add_argument("--add-user", metavar="NAME", help="create/update a user, then exit")
+    ap.add_argument("--admin", action="store_true", help="with --add-user: the user may open /admin")
     a = ap.parse_args()
     root = a.media.expanduser().resolve()
     users = Users(root / ".localplayer")
@@ -304,8 +309,9 @@ def main():
         pw = getpass.getpass(f"Password for {a.add_user}: ")
         if pw != getpass.getpass("Again: "):
             raise SystemExit("passwords don't match")
-        users.add(a.add_user, pw)
-        print(f"User {a.add_user} saved. Sign-in is now required.")
+        users.add(a.add_user, pw, a.admin)
+        role = "admin" if a.admin else "user"
+        print(f"User {a.add_user} saved ({role}). Sign-in is now required.")
         return
     name = a.name or f"{os.uname().nodename} media"
     srv = ThreadingHTTPServer((a.host, a.port), make_handler(Library(root), users, name))

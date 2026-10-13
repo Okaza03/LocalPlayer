@@ -50,6 +50,8 @@ pub struct Config {
     pub username: String,
     /// Session token, kept only when "remember me" is ticked.
     pub token: Option<String>,
+    /// Whether the saved session's user is an admin (cleared with the token).
+    pub admin: bool,
     pub volume: f32,
     /// Play the next episode when one ends.
     pub autoplay_next: bool,
@@ -73,6 +75,7 @@ impl Default for Config {
             server: String::new(),
             username: String::new(),
             token: None,
+            admin: false,
             volume: 0.7,
             autoplay_next: true,
             resume: true,

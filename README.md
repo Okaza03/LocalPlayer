@@ -39,6 +39,7 @@ The release workflow refuses to publish if any of these are out of sync with the
 ```sh
 python3 server/localplayer_server.py ~/Videos                 # Movies/ and Series/ inside
 python3 server/localplayer_server.py ~/Videos --add-user noah # turn on sign-in
+python3 server/localplayer_server.py ~/Videos --add-user noah --admin  # ...as an admin
 ```
 
 **Any plain directory listing** (nginx `autoindex on`, Apache, Caddy `file_server browse`). LocalPlayer crawls it and guesses movies and series from folder and file names (`Show/Season 1/Show.S01E02.Title.mkv`, `Movies/Title (2010)/…`). It also picks up `poster.jpg` and `fanart.jpg`. The server must support HTTP range requests for seeking to work; nginx, Apache and Caddy do, but `python -m http.server` doesn't.
@@ -56,7 +57,8 @@ All URLs in responses can be absolute or relative to the server root.
 `auth: true` makes the app show the sign-in screen.
 
 ### `POST /api/login`
-Request `{"username": "...", "password": "..."}`. Response `{"token": "...", "name": "Noah"}`.
+Request `{"username": "...", "password": "..."}`. Response `{"token": "...", "name": "Noah", "admin": false}`.
+`admin` is optional. Only users with `"admin": true` see the app's Admin buttons, which open `<server>/admin`. Hiding the buttons is just convenience, so the `/admin` page must still check permissions itself.
 Return `401` for a wrong password. After that, every request carries `Authorization: Bearer <token>`, including video and image requests. Any `401` sends the user back to the sign-in screen.
 
 ### `POST /api/logout` (optional)
@@ -91,7 +93,8 @@ Only `title` plus `stream` (movies) or `seasons` (series) are required. `duratio
 Route::get('/info', fn () => ['name' => config('app.name'), 'auth' => true, 'version' => 1]);
 Route::post('/login', function (Request $r) {
     if (!Auth::attempt($r->only('username', 'password'))) return response()->json([], 401);
-    return ['token' => $r->user()->createToken('localplayer')->plainTextToken, 'name' => $r->user()->name];
+    return ['token' => $r->user()->createToken('localplayer')->plainTextToken, 'name' => $r->user()->name,
+            'admin' => (bool) $r->user()->is_admin];
 });
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', fn (Request $r) => $r->user()->currentAccessToken()->delete());

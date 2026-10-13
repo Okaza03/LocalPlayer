@@ -14,6 +14,7 @@ pub struct Conn {
     pub base: String,
     pub user: Option<String>,
     pub signed_in: bool,
+    pub admin: bool,
 }
 
 impl Conn {
@@ -384,7 +385,7 @@ pub fn profile(ctx: &egui::Context, conn: &Conn, progress: &Progress) -> Pick {
         ui.label(mono(&conn.base, 11.0).color(MUTED));
         ui.add_space(6.0);
         ui.horizontal(|ui| {
-            if small_button(ui, "Open admin ↗").clicked() {
+            if conn.admin && small_button(ui, "Open admin ↗").clicked() {
                 super::chrome::open_url(&format!("{}/admin", conn.base));
             }
             if small_button(ui, "Settings").clicked() {

@@ -423,7 +423,7 @@ impl Browse {
                     }
                 };
                 pick(ui, "Profile", Action::OpenProfile);
-                if menu_item(ui, "Admin  ↗") {
+                if self.client.admin && menu_item(ui, "Admin  ↗") {
                     chrome::open_url(&format!("{}/admin", self.client.base));
                     ui.memory_mut(|m| m.close_popup());
                 }

@@ -51,6 +51,7 @@ impl Login {
                 Ok(s) => {
                     let mut client = self.client.clone();
                     client.token = Some(s.token);
+                    client.admin = s.admin;
                     let user = s.name.unwrap_or_else(|| self.username.trim().to_owned());
                     return Action::SignedIn {
                         client,

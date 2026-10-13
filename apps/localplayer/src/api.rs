@@ -197,6 +197,9 @@ pub struct Session {
     pub token: String,
     #[serde(default)]
     pub name: Option<String>,
+    /// The server lets this user open its /admin page.
+    #[serde(default)]
+    pub admin: bool,
 }
 
 /// The server rejected our token; the user has to sign in again.
@@ -303,6 +306,9 @@ pub struct Client {
     pub base: String,
     pub info: ServerInfo,
     pub token: Option<String>,
+    /// Signed in as an admin: show the Admin buttons. Only hides them;
+    /// the server's /admin page must check permissions itself.
+    pub admin: bool,
     agent: ureq::Agent,
 }
 
@@ -389,6 +395,7 @@ impl Client {
             base,
             info,
             token: None,
+            admin: false,
             agent,
         })
     }
@@ -853,6 +860,14 @@ mod tests {
             resolve_href("http://h/Movies/", "A%20B.mkv?x"),
             "http://h/Movies/A%20B.mkv"
         );
+    }
+
+    #[test]
+    fn session_admin_flag() {
+        let s: Session = serde_json::from_str(r#"{"token":"t","name":"N"}"#).unwrap();
+        assert!(!s.admin);
+        let s: Session = serde_json::from_str(r#"{"token":"t","admin":true}"#).unwrap();
+        assert!(s.admin);
     }
 
     #[test]

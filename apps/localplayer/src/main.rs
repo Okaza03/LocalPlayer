@@ -124,6 +124,7 @@ impl App {
             base: c.base.clone(),
             user: user.map(str::to_owned),
             signed_in: c.token.is_some(),
+            admin: c.admin,
         };
         match &self.stage {
             Stage::Browse(b) => Some(conn(b.client(), b.user())),
@@ -191,6 +192,7 @@ impl App {
                     if s.address().trim() != self.cfg.server {
                         self.cfg.server = s.address().trim().to_owned();
                         self.cfg.token = None; // belonged to the old server
+                        self.cfg.admin = false;
                     }
                 }
                 self.cfg.save();
@@ -198,6 +200,7 @@ impl App {
                     self.browse(ctx, client, None);
                 } else if let Some(t) = self.cfg.token.clone() {
                     client.token = Some(t);
+                    client.admin = self.cfg.admin;
                     let user = Some(self.cfg.username.clone()).filter(|u| !u.is_empty());
                     self.browse(ctx, client, user);
                 } else {
@@ -211,12 +214,15 @@ impl App {
             } => {
                 self.cfg.username = user.clone();
                 self.cfg.token = if remember { client.token.clone() } else { None };
+                self.cfg.admin = remember && client.admin;
                 self.cfg.save();
                 self.browse(ctx, client, Some(user));
             }
             Action::NeedLogin(mut client) => {
                 client.token = None;
+                client.admin = false;
                 self.cfg.token = None;
+                self.cfg.admin = false;
                 self.cfg.save();
                 self.images.set_client(None);
                 let msg = (client.info.mode == Mode::Api)
@@ -227,7 +233,9 @@ impl App {
                 let c = client.clone();
                 std::thread::spawn(move || c.logout());
                 client.token = None;
+                client.admin = false;
                 self.cfg.token = None;
+                self.cfg.admin = false;
                 self.cfg.save();
                 self.images.set_client(None);
                 self.stage = Stage::Login(Login::new(client, self.cfg.username.clone(), None));
