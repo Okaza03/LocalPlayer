@@ -6,7 +6,7 @@ use eframe::egui::{
     TextFormat, TextureHandle, Ui, UiBuilder,
 };
 
-use super::{Browse, Click, Tab, View, GAP, SIDE};
+use super::{Browse, Click, Probe, Tab, View, GAP, SIDE};
 use crate::api::{CastMember, Episode, FileInfo, Item, Library};
 use crate::config::Progress;
 use crate::images::Images;
@@ -94,11 +94,37 @@ fn years(item: &Item) -> Option<String> {
     })
 }
 
-/// "Arcane.S01E01.1080p.mp4": the server's file name, else the stream URL's.
-fn file_name(file: Option<&FileInfo>, stream: &str) -> String {
-    file.and_then(|f| f.name.clone()).unwrap_or_else(|| {
+/// "Arcane.S01E01.1080p.mp4": the server's file name, else the stream URL's
+/// when it looks like one (not "/api/stream/movie/42").
+fn file_name(file: Option<&FileInfo>, stream: &str) -> Option<String> {
+    file.and_then(|f| f.name.clone()).or_else(|| {
         let last = stream.split(['?', '#']).next().unwrap_or(stream);
-        percent_decode(last.rsplit('/').next().unwrap_or(last))
+        let name = percent_decode(last.rsplit('/').next().unwrap_or(last));
+        let ext = name.rsplit_once('.')?.1.to_lowercase();
+        crate::api::VIDEO_EXTS
+            .contains(&ext.as_str())
+            .then_some(name)
+    })
+}
+
+/// The server's file info with gaps filled from probing the stream.
+fn merge(server: Option<&FileInfo>, probed: Option<&FileInfo>) -> Option<FileInfo> {
+    let (s, p) = match (server, probed) {
+        (None, None) => return None,
+        (Some(s), None) => return Some(s.clone()),
+        (None, Some(p)) => return Some(p.clone()),
+        (Some(s), Some(p)) => (s, p),
+    };
+    Some(FileInfo {
+        quality: s.quality.clone().or_else(|| p.quality.clone()),
+        container: s.container.clone().or_else(|| p.container.clone()),
+        video_codec: s.video_codec.clone().or_else(|| p.video_codec.clone()),
+        audio_codec: s.audio_codec.clone().or_else(|| p.audio_codec.clone()),
+        audio_channels: s.audio_channels.or(p.audio_channels),
+        bitrate: s.bitrate.or(p.bitrate),
+        size: s.size.or(p.size),
+        name: s.name.clone().or_else(|| p.name.clone()),
+        path: s.path.clone().or_else(|| p.path.clone()),
     })
 }
 
@@ -552,6 +578,39 @@ fn all_episodes(s: &Item) -> Vec<(usize, usize)> {
 // ------------------------------------------------------------- pages
 
 impl Browse {
+    /// File info for `stream`: what the server sent, completed by probing the
+    /// stream once in the background (cached), plus the probed duration.
+    fn file_for(
+        &mut self,
+        ctx: &egui::Context,
+        stream: &str,
+        server: Option<&FileInfo>,
+    ) -> (Option<FileInfo>, Option<f64>) {
+        let complete = server.is_some_and(|f| f.quality.is_some() && f.size.is_some());
+        if !complete && !self.probes.contains_key(stream) {
+            let src = crate::player::Source::Url {
+                url: stream.to_owned(),
+                auth: self.client.auth_header(),
+            };
+            self.probes.insert(
+                stream.to_owned(),
+                Probe::Running(crate::util::Task::spawn(ctx, move || {
+                    crate::player::probe(&src)
+                })),
+            );
+        }
+        if let Some(Probe::Running(t)) = self.probes.get_mut(stream) {
+            if let Some(r) = t.poll() {
+                let done = r.map_or(Probe::Failed, |(f, d)| Probe::Done(f, d));
+                self.probes.insert(stream.to_owned(), done);
+            }
+        }
+        match self.probes.get(stream) {
+            Some(Probe::Done(f, d)) => (merge(server, Some(f)), *d),
+            _ => (server.cloned(), None),
+        }
+    }
+
     fn bookmark(&mut self, ui: &mut Ui, item: &Item) {
         let key = self.key(&item.id);
         let on = self.watchlist.contains(&key);
@@ -574,6 +633,11 @@ impl Browse {
         progress: &Progress,
     ) -> Option<Click> {
         let mut click = None;
+        let (file, probed) = match item.stream.as_deref() {
+            Some(s) => self.file_for(ui.ctx(), s, item.file.as_ref()),
+            None => (item.file.clone(), None),
+        };
+        let runtime = item.duration.filter(|d| *d > 0.0).or(probed);
         let w = ui.available_width();
         let h = (w * 0.5).clamp(520.0, 700.0);
         let (rect, _) = ui.allocate_exact_size(vec2(w, h), Sense::hover());
@@ -653,7 +717,7 @@ impl Browse {
                     GOLD,
                 );
             }
-            let f = item.file.as_ref();
+            let f = file.as_ref();
             let under: Vec<String> = [
                 f.and_then(|f| f.quality.clone()),
                 f.and_then(|f| f.size).map(bytes),
@@ -717,11 +781,11 @@ impl Browse {
                     sep(ui);
                     ui.label(RichText::new(y.to_string()).size(15.0).color(GOLD));
                 }
-                if let Some(d) = item.duration.filter(|d| *d > 0.0) {
+                if let Some(d) = runtime {
                     sep(ui);
                     ui.label(RichText::new(fmt_runtime(d)).size(15.0).color(TEXT));
                 }
-                if let Some(q) = item.file.as_ref().and_then(|f| f.quality.as_deref()) {
+                if let Some(q) = file.as_ref().and_then(|f| f.quality.as_deref()) {
                     sep(ui);
                     tag(ui, q);
                 }
@@ -824,7 +888,7 @@ impl Browse {
                 }
                 if narrow {
                     ui.add_space(12.0);
-                    self.movie_side(ui, item);
+                    self.movie_side(ui, item, file.as_ref(), runtime);
                 }
             });
             if !narrow {
@@ -832,7 +896,7 @@ impl Browse {
                 ui.vertical(|ui| {
                     ui.spacing_mut().item_spacing.x = sp;
                     ui.set_width(rw);
-                    self.movie_side(ui, item);
+                    self.movie_side(ui, item, file.as_ref(), runtime);
                 });
             }
         });
@@ -840,8 +904,7 @@ impl Browse {
     }
 
     /// File/metadata and critics panels next to the movie's cast.
-    fn movie_side(&self, ui: &mut Ui, item: &Item) {
-        let f = item.file.as_ref();
+    fn movie_side(&self, ui: &mut Ui, item: &Item, f: Option<&FileInfo>, runtime: Option<f64>) {
         let opt = |v: Option<String>, col: Color32, size: f32| v.map(|v| (v, col, size));
         let candidates = [
             ("Director", opt(item.director.clone(), TEXT, 14.0)),
@@ -849,14 +912,7 @@ impl Browse {
                 "Released",
                 opt(item.released.as_deref().map(date_long), TEXT, 14.0),
             ),
-            (
-                "Runtime",
-                opt(
-                    item.duration.filter(|d| *d > 0.0).map(fmt_runtime),
-                    TEXT,
-                    14.0,
-                ),
-            ),
+            ("Runtime", opt(runtime.map(fmt_runtime), TEXT, 14.0)),
             ("Budget", opt(item.budget.map(money), TEXT, 14.0)),
             ("Box office", opt(item.revenue.map(money), TEXT, 14.0)),
             (
@@ -903,7 +959,7 @@ impl Browse {
             (
                 "File",
                 opt(
-                    item.stream.as_deref().map(|s| file_name(f, s)),
+                    item.stream.as_deref().and_then(|s| file_name(f, s)),
                     TEXT.gamma_multiply(0.8),
                     12.0,
                 ),
@@ -1466,7 +1522,9 @@ impl Browse {
         }
 
         ui.add_space(26.0);
-        let file = ep.file.as_ref();
+        let (file, probed) = self.file_for(ui.ctx(), &ep.stream, ep.file.as_ref());
+        let file = file.as_ref();
+        let runtime = ep.duration.filter(|d| *d > 0.0).or(probed);
         padded(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 16.0;
@@ -1479,7 +1537,7 @@ impl Browse {
                     .size(14.0)
                     .color(GOLD),
                 );
-                if let Some(d) = ep.duration.filter(|d| *d > 0.0) {
+                if let Some(d) = runtime {
                     dot(ui);
                     ui.label(
                         RichText::new(minutes(d))
@@ -1632,12 +1690,15 @@ impl Browse {
                 caps(ui, "File", MUTED);
                 ui.add_space(10.0);
                 panel(ui, |ui| {
-                    let mut cells = vec![("Filename", file_name(file, &ep.stream), TEXT, 12.5)];
+                    let mut cells = Vec::new();
+                    if let Some(n) = file_name(file, &ep.stream) {
+                        cells.push(("Filename", n, TEXT, 12.5));
+                    }
                     if let Some(q) = file.and_then(|f| f.quality.clone()) {
                         cells.push(("Resolution", q, TEAL, 14.0));
                     }
                     cells.push(("Episode", sxe(season.number, ep.number), TEXT, 14.0));
-                    if let Some(d) = ep.duration.filter(|d| *d > 0.0) {
+                    if let Some(d) = runtime {
                         cells.push(("Runtime", minutes(d), TEXT, 14.0));
                     }
                     if let Some(s) = file.and_then(|f| f.size) {
@@ -1711,8 +1772,10 @@ mod tests {
             file_name(
                 None,
                 "http://h/media/Arcane/Arcane.S01E01.1080p%20x.mp4?token=1"
-            ),
-            "Arcane.S01E01.1080p x.mp4"
+            )
+            .as_deref(),
+            Some("Arcane.S01E01.1080p x.mp4")
         );
+        assert_eq!(file_name(None, "http://h/api/stream/movie/42"), None);
     }
 }

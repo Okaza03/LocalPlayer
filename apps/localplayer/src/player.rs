@@ -322,6 +322,67 @@ fn open_input(src: &Source, sh: &Arc<Shared>) -> Result<ffmpeg::format::context:
     }
 }
 
+/// "1080p" for a frame size; wide films (1920x800) count by width.
+fn quality(w: i32, h: i32) -> String {
+    match (w, h) {
+        (w, h) if w >= 3800 || h >= 2100 => "2160p".into(),
+        (w, h) if w >= 2500 || h >= 1400 => "1440p".into(),
+        (w, h) if w >= 1900 || h >= 1060 => "1080p".into(),
+        (w, h) if w >= 1260 || h >= 700 => "720p".into(),
+        (_, h) => format!("{h}p"),
+    }
+}
+
+/// Read what's in a video from its headers, without decoding: container,
+/// codecs, resolution, audio channels, bitrate, size and duration.
+/// Fills in the details page when the server doesn't send `file`.
+pub fn probe(src: &Source) -> Result<(crate::api::FileInfo, Option<f64>)> {
+    ffmpeg::init()?;
+    let sh = Arc::new(Shared::new());
+    let ictx = open_input(src, &sh)?;
+    let mut info = crate::api::FileInfo::default();
+    // "mov,mp4,m4a,…" lists every name of the demuxer; prefer the file's extension
+    let names = ictx.format().name().to_owned();
+    let name = src.name();
+    let ext = name.rsplit_once('.').map(|(_, e)| e.to_lowercase());
+    info.container = Some(match ext {
+        Some(e) if names.split(',').any(|n| n == e) => e,
+        _ if names.starts_with("matroska") => "mkv".into(),
+        _ if names.starts_with("mov,mp4") => "mp4".into(),
+        _ => names.split(',').next().unwrap_or(&names).to_owned(),
+    });
+    if let Some(v) = ictx.streams().best(Type::Video) {
+        let par = v.parameters();
+        info.video_codec = Some(par.id().name().to_owned());
+        // SAFETY: par wraps the stream's live AVCodecParameters
+        let (w, h) = unsafe { ((*par.as_ptr()).width, (*par.as_ptr()).height) };
+        if h > 0 {
+            info.quality = Some(quality(w, h));
+        }
+    }
+    if let Some(a) = ictx.streams().best(Type::Audio) {
+        let par = a.parameters();
+        info.audio_codec = Some(par.id().name().to_owned());
+        // SAFETY: as above
+        let ch = unsafe { (*par.as_ptr()).ch_layout.nb_channels };
+        info.audio_channels = u32::try_from(ch).ok().filter(|c| *c > 0);
+    }
+    info.bitrate = u64::try_from(ictx.bit_rate()).ok().filter(|b| *b > 0);
+    // SAFETY: pb is the open input's I/O context (null for some protocols)
+    let size = unsafe {
+        let pb = (*ictx.as_ptr()).pb;
+        if pb.is_null() {
+            -1
+        } else {
+            ffmpeg::sys::avio_size(pb)
+        }
+    };
+    info.size = u64::try_from(size).ok().filter(|s| *s > 0);
+    let d = ictx.duration();
+    let duration = (d > 0).then(|| d as f64 / f64::from(ffmpeg::sys::AV_TIME_BASE));
+    Ok((info, duration))
+}
+
 impl Decoder {
     fn open(src: &Source, audio: &AudioShared, sh: &Arc<Shared>) -> Result<Self> {
         ffmpeg::init()?;

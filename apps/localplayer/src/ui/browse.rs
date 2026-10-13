@@ -42,6 +42,13 @@ enum View {
     Episode(String, String),
 }
 
+/// Background probe of a stream's file info (see `player::probe`).
+enum Probe {
+    Running(Task<Result<(crate::api::FileInfo, Option<f64>)>>),
+    Done(crate::api::FileInfo, Option<f64>),
+    Failed,
+}
+
 /// The series page's sections.
 #[derive(Clone, Copy, PartialEq)]
 enum Tab {
@@ -111,6 +118,8 @@ pub struct Browse {
     loaded_at: Option<Instant>,
     tab: Tab,
     watchlist: Watchlist,
+    /// By stream URL.
+    probes: HashMap<String, Probe>,
 }
 
 impl Browse {
@@ -135,6 +144,7 @@ impl Browse {
             loaded_at: None,
             tab: Tab::Episodes,
             watchlist: Watchlist::load(),
+            probes: HashMap::new(),
         };
         b.reload(ctx);
         b

@@ -41,7 +41,7 @@ Subtitles aren't supported yet. The subtitles button and menu say so for now, an
 The bookmark button saves a movie or show to a **My list** row on Home.
 
 ### For server owners
-All the new information is optional: the app shows what your server sends and hides the rest. The README's API section lists the new fields (`logo`, `director`, `creators`, `cast`, `released`, `budget`, `revenue`, `score`, `reviews`, `network`, `status`, `file`, and `aired` for episodes). The bundled Python server sends file info automatically and reads the rest from `info.json`.
+All the new information is optional: the app shows what your server sends and hides the rest. Quality, codecs, audio, bitrate, file size and runtime don't need the server's help: when it doesn't send them, the app reads them from the video itself, which takes about half a second. The README's API section lists the new fields (`logo`, `director`, `creators`, `cast`, `released`, `budget`, `revenue`, `score`, `reviews`, `network`, `status`, `file`, and `aired` for episodes). The bundled Python server sends file info automatically and reads the rest from `info.json`.
 
 ### Downloads
 | File | For |
