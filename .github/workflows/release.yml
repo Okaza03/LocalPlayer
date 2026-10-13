@@ -1,0 +1,30 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  linux:
+    runs-on: ubuntu-24.04   # FFmpeg 6.1 -> ffmpeg-next "6.1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: System deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config clang libclang-dev \
+            libavcodec-dev libavformat-dev libavutil-dev libswscale-dev \
+            libswresample-dev libavdevice-dev libavfilter-dev libasound2-dev \
+            libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev \
+            libxrandr-dev libxi-dev libgl1-mesa-dev
+      - run: cargo install cargo-deb --locked
+      - run: cargo xtask dist
+      - run: cargo xtask deb
+      - run: sha256sum target/dist/*.tar.gz target/debian/*.deb > SHA256SUMS.txt
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            target/dist/*.tar.gz
+            target/debian/*.deb
+            SHA256SUMS.txt

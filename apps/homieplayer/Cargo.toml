@@ -1,0 +1,29 @@
+[package]
+name = "homieplayer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "A small, fast video player and media library client"
+
+[dependencies]
+eframe = "0.31"
+ffmpeg-next = { version = "8.1", features = ["build", "build-lib-dav1d"] }
+cpal = "0.15"
+rfd = "0.15"
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ureq = { version = "2.12", features = ["json"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
+
+[package.metadata.deb]
+name = "homieplayer"
+section = "video"
+priority = "optional"
+depends = "$auto"
+extended-description = "A small, fast video player built with egui and FFmpeg."
+assets = [
+  ["target/release/homieplayer", "usr/bin/", "755"],
+  ["../../packaging/homieplayer.desktop", "usr/share/applications/", "644"],
+  ["../../packaging/homieplayer.svg", "usr/share/icons/hicolor/scalable/apps/", "644"],
+]
