@@ -175,3 +175,37 @@ impl Progress {
         }
     }
 }
+
+/// Titles the user bookmarked ("My list"), newest first, keyed like [`Progress`].
+#[derive(Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Watchlist {
+    items: Vec<String>,
+}
+
+impl Watchlist {
+    pub fn load() -> Self {
+        load("watchlist.json")
+    }
+
+    pub fn contains(&self, key: &str) -> bool {
+        self.items.iter().any(|k| k == key)
+    }
+
+    pub fn toggle(&mut self, key: &str) {
+        match self.items.iter().position(|k| k == key) {
+            Some(i) => {
+                self.items.remove(i);
+            }
+            None => self.items.insert(0, key.to_owned()),
+        }
+        save("watchlist.json", self);
+    }
+
+    /// Item ids saved for the server whose keys start with `prefix`.
+    pub fn ids<'a>(&'a self, prefix: &'a str) -> impl Iterator<Item = &'a str> + 'a {
+        self.items
+            .iter()
+            .filter_map(move |k| k.strip_prefix(prefix))
+    }
+}

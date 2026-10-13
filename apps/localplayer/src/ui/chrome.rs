@@ -17,6 +17,12 @@ pub enum Icon {
     Maximize,
     Restore,
     Close,
+    Bookmark,
+    BookmarkOn,
+    Play,
+    ChevronLeft,
+    ArrowRight,
+    Star,
 }
 
 /// Top bar: word mark, `left` (tabs), `right` (search, buttons), window buttons.
@@ -209,6 +215,68 @@ pub fn draw_icon(p: &egui::Painter, c: Pos2, icon: Icon, col: Color32) {
                 col,
                 Stroke::NONE,
             ));
+        }
+        Icon::Bookmark | Icon::BookmarkOn => {
+            let pts = vec![
+                c + vec2(-5.0, -7.0),
+                c + vec2(5.0, -7.0),
+                c + vec2(5.0, 7.0),
+                c + vec2(0.0, 3.0),
+                c + vec2(-5.0, 7.0),
+            ];
+            if matches!(icon, Icon::BookmarkOn) {
+                // concave at the notch: fill as two halves
+                for half in [[pts[0], pts[3], pts[4]], [pts[0], pts[1], pts[3]]] {
+                    p.add(egui::Shape::convex_polygon(
+                        half.to_vec(),
+                        col,
+                        Stroke::NONE,
+                    ));
+                }
+                p.add(egui::Shape::convex_polygon(
+                    vec![pts[1], pts[2], pts[3]],
+                    col,
+                    Stroke::NONE,
+                ));
+            }
+            p.add(egui::Shape::closed_line(pts, Stroke::new(1.6f32, col)));
+        }
+        Icon::Play => {
+            p.add(egui::Shape::convex_polygon(
+                vec![
+                    c + vec2(-4.0, -6.0),
+                    c + vec2(6.0, 0.0),
+                    c + vec2(-4.0, 6.0),
+                ],
+                col,
+                Stroke::NONE,
+            ));
+        }
+        Icon::ChevronLeft => {
+            p.line_segment([c + vec2(2.0, -4.0), c + vec2(-2.0, 0.0)], s);
+            p.line_segment([c + vec2(-2.0, 0.0), c + vec2(2.0, 4.0)], s);
+        }
+        Icon::ArrowRight => {
+            p.line_segment([c + vec2(-5.0, 0.0), c + vec2(5.0, 0.0)], s);
+            p.line_segment([c + vec2(1.0, -4.0), c + vec2(5.0, 0.0)], s);
+            p.line_segment([c + vec2(5.0, 0.0), c + vec2(1.0, 4.0)], s);
+        }
+        Icon::Star => {
+            let pts: Vec<Pos2> = (0..10)
+                .map(|i| {
+                    let a = -std::f32::consts::FRAC_PI_2 + i as f32 * std::f32::consts::PI / 5.0;
+                    let r = if i % 2 == 0 { 6.0 } else { 2.6 };
+                    c + vec2(a.cos(), a.sin()) * r
+                })
+                .collect();
+            // a star isn't convex: fan of triangles from the center
+            for i in 0..10 {
+                p.add(egui::Shape::convex_polygon(
+                    vec![c, pts[i], pts[(i + 1) % 10]],
+                    col,
+                    Stroke::NONE,
+                ));
+            }
         }
         Icon::Settings => {
             for i in 0..8 {

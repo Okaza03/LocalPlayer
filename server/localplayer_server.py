@@ -9,8 +9,12 @@ Expected layout (anything else is ignored):
     Movies/Inception (2010)/Inception.mkv   (+ poster.jpg, fanart.jpg, info.json)
     Series/The Office/Season 1/The.Office.S01E01.Pilot.mkv   (+ poster.jpg, fanart.jpg, info.json)
 
-info.json may set title, year, overview, genres, rating, duration; for a series
-also "episodes": {"S01E01": {"title": ..., "overview": ...}}.
+info.json may set title, year, overview, genres, rating, duration, and the
+details-page extras: director, creators, cast ([{"name", "character", "photo"}],
+photo being a URL or an image file next to info.json), released, end_year,
+network, status, budget, revenue, score, score_source, reviews. A series can add
+"episodes": {"S01E01": {"title", "overview", "aired", "score"}}. A logo.png
+next to the video is used as title artwork.
 """
 import argparse
 import getpass
@@ -48,6 +52,39 @@ def find_art(folder, names):
             if (folder / f"{n}{ext}").is_file():
                 return folder / f"{n}{ext}"
     return None
+
+
+QUALITY = re.compile(r"(?i)\b(2160p|4k|1440p|1080p|720p|576p|480p)\b")
+EXTRAS = ("director", "creators", "released", "end_year", "network", "status",
+          "budget", "revenue", "score", "score_source", "reviews")
+
+
+def file_info(lib, f):
+    q = QUALITY.search(f.stem)
+    return {
+        "quality": q and q.group(1).lower().replace("4k", "2160p"),
+        "container": f.suffix.lstrip(".").lower(),
+        "size": f.stat().st_size,
+        "name": f.name,
+        "path": "/" + str(f.parent.relative_to(lib.root)),
+    }
+
+
+def extras(lib, info, folder):
+    out = {k: info[k] for k in EXTRAS if k in info}
+    cast = []
+    for c in info.get("cast", []):
+        c = dict(c)
+        photo = c.get("photo")
+        if photo and "://" not in photo and (folder / photo).is_file():
+            c["photo"] = lib.url("art", folder / photo)
+        cast.append(c)
+    if cast:
+        out["cast"] = cast
+    logo = find_art(folder, ["logo", "clearlogo"])
+    if logo:
+        out["logo"] = lib.url("art", logo)
+    return out
 
 
 def read_info(path):
@@ -100,6 +137,8 @@ class Library:
                     "poster": poster and self.url("art", poster),
                     "backdrop": backdrop and self.url("art", backdrop),
                     "stream": self.url("media", f),
+                    "file": file_info(self, f),
+                    **(extras(self, info, folder) if own else {}),
                 })
         for top in self.category(SERIES_DIRS):
             for show in sorted(d for d in top.iterdir() if d.is_dir()):
@@ -124,6 +163,9 @@ class Library:
                         "duration": meta.get("duration"),
                         "still": still and self.url("art", still),
                         "stream": self.url("media", f),
+                        "aired": meta.get("aired"),
+                        "score": meta.get("score"),
+                        "file": file_info(self, f),
                     })
                 if not seasons:
                     continue
@@ -142,6 +184,7 @@ class Library:
                     "poster": poster and self.url("art", poster),
                     "backdrop": backdrop and self.url("art", backdrop),
                     "seasons": [{"number": n, "episodes": eps} for n, eps in sorted(seasons.items())],
+                    **extras(self, info, show),
                 })
         return {"movies": movies, "series": series}
 

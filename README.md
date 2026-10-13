@@ -84,6 +84,33 @@ Invalidates the bearer token.
   }]
 }
 ```
+#### Optional details-page fields
+The movie, series and episode pages show these when the server sends them. Sections without data are hidden.
+
+```json
+{
+  "logo": "/art/42/logo.png",
+  "director": "Danny Boyle",
+  "creators": ["Christian Linke", "Alex Yee"],
+  "cast": [{ "name": "Cillian Murphy", "character": "Jim", "photo": "/art/people/1.jpg" }],
+  "released": "2002-10-31",
+  "end_year": 2024,
+  "network": "Netflix",
+  "status": "Ended",
+  "budget": 8000000,
+  "revenue": 82784517,
+  "score": 7.2,
+  "score_source": "TMDB",
+  "reviews": [{ "quote": "…", "source": "Reverse Shot", "score": "4.5 / 5" }],
+  "file": {
+    "quality": "1080p", "container": "mp4", "video_codec": "h264",
+    "audio_codec": "aac", "audio_channels": 6, "bitrate": 2600000,
+    "size": 2090000000, "name": "28.Days.Later.2002.1080p.mp4", "path": "/movies/28 Days Later"
+  }
+}
+```
+`logo` is transparent title artwork shown instead of the title text. `creators`, `end_year`, `network` and `status` are for series; `director`, `budget` and `revenue` for movies. Episodes can also have `aired` (`"YYYY-MM-DD"`), `score` and `file`. `bitrate` is in bits per second and `size` in bytes. The bundled Python server fills `file` itself and reads the rest from `info.json`.
+
 Only `title` plus `stream` (movies) or `seasons` (series) are required. `duration` is in seconds and `added` is a Unix timestamp. Stream URLs must serve the raw file with `Range` support.
 
 ### Adding it to a Laravel app

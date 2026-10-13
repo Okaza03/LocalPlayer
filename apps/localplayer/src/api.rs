@@ -50,6 +50,75 @@ pub struct Item {
     pub seasons: Vec<Season>,
     #[serde(skip)]
     pub kind: Kind,
+
+    // Optional extras for the details page; sections without data are hidden.
+    /// Title artwork (transparent PNG) shown instead of the title text.
+    pub logo: Option<String>,
+    /// Movies.
+    pub director: Option<String>,
+    /// Series.
+    pub creators: Vec<String>,
+    pub cast: Vec<CastMember>,
+    /// Release date, "YYYY-MM-DD".
+    pub released: Option<String>,
+    /// Series: last year it aired ("2021–2024").
+    pub end_year: Option<u32>,
+    /// Series: "Netflix".
+    pub network: Option<String>,
+    /// Series: "Ended", "Returning Series", …
+    pub status: Option<String>,
+    /// US dollars.
+    pub budget: Option<u64>,
+    /// Box office, US dollars.
+    pub revenue: Option<u64>,
+    /// Audience score out of 10, e.g. 7.2 …
+    pub score: Option<f32>,
+    /// … and where it's from, e.g. "TMDB".
+    pub score_source: Option<String>,
+    /// Movies: about the video file.
+    pub file: Option<FileInfo>,
+    /// Critics' quotes.
+    pub reviews: Vec<Review>,
+}
+
+#[derive(Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct CastMember {
+    pub name: String,
+    pub character: Option<String>,
+    pub photo: Option<String>,
+}
+
+#[derive(Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct FileInfo {
+    /// "1080p"
+    pub quality: Option<String>,
+    /// "mkv"
+    pub container: Option<String>,
+    /// "h264"
+    pub video_codec: Option<String>,
+    /// "aac"
+    pub audio_codec: Option<String>,
+    pub audio_channels: Option<u32>,
+    /// Bits per second.
+    pub bitrate: Option<u64>,
+    /// Bytes.
+    pub size: Option<u64>,
+    /// File name.
+    pub name: Option<String>,
+    /// Where it lives on the server, e.g. "/movies/28 Days Later".
+    pub path: Option<String>,
+}
+
+#[derive(Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct Review {
+    pub quote: String,
+    /// "Reverse Shot"
+    pub source: Option<String>,
+    /// "4.5 / 5"
+    pub score: Option<String>,
 }
 
 #[derive(Clone, Default, Deserialize)]
@@ -82,6 +151,11 @@ pub struct Episode {
     pub still: Option<String>,
     pub duration: Option<f64>,
     pub stream: String,
+    /// Air date, "YYYY-MM-DD".
+    pub aired: Option<String>,
+    /// Audience score out of 10.
+    pub score: Option<f32>,
+    pub file: Option<FileInfo>,
 }
 
 #[derive(Default, Deserialize)]
@@ -135,6 +209,10 @@ impl Library {
                 it.kind = kind;
                 fix(&mut it.poster);
                 fix(&mut it.backdrop);
+                fix(&mut it.logo);
+                for c in &mut it.cast {
+                    fix(&mut c.photo);
+                }
                 fix(&mut it.stream);
                 if it.id.is_empty() {
                     it.id = it.stream.clone().unwrap_or_else(|| it.title.clone());

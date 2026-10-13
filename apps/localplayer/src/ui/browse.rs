@@ -1,4 +1,6 @@
 //! The media library: home page, movie/series grids, search and details.
+mod details;
+
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -16,7 +18,7 @@ use super::{
 };
 use super::{ACCENT, BG, ERROR, MUTED, SURFACE, SURFACE_HI, TEXT};
 use crate::api::{Client, Item, Kind, Library, Missing, Mode, Unauthorized};
-use crate::config::{Config, Entry, Progress};
+use crate::config::{Config, Entry, Progress, Watchlist};
 use crate::images::Images;
 use crate::player::Source;
 use crate::ui::watch::PlayItem;
@@ -36,6 +38,16 @@ enum View {
     Movies,
     Series,
     Details(String),
+    /// series id, episode id
+    Episode(String, String),
+}
+
+/// The series page's sections.
+#[derive(Clone, Copy, PartialEq)]
+enum Tab {
+    Episodes,
+    Related,
+    Details,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -54,11 +66,13 @@ enum Sort {
 }
 
 /// What a card or button asked for.
+#[derive(Clone)]
 enum Click {
     Open(String),
     /// item id, episode id (series), start from the beginning
     Play(String, Option<String>, bool),
     Nav(View),
+    Back,
 }
 
 struct NextUp<'a> {
@@ -95,6 +109,8 @@ pub struct Browse {
     row_jump: HashMap<String, f32>,
     filter: Filter,
     loaded_at: Option<Instant>,
+    tab: Tab,
+    watchlist: Watchlist,
 }
 
 impl Browse {
@@ -117,6 +133,8 @@ impl Browse {
             row_jump: HashMap::new(),
             filter: Filter::All,
             loaded_at: None,
+            tab: Tab::Episodes,
+            watchlist: Watchlist::load(),
         };
         b.reload(ctx);
         b
@@ -135,9 +153,12 @@ impl Browse {
 
     fn go(&mut self, v: View) {
         if v != self.view {
-            if matches!(v, View::Details(_)) {
+            if matches!(v, View::Details(_) | View::Episode(..)) {
                 self.history.push(self.view.clone());
-                self.season = usize::MAX; // pick the one with the next episode
+                if let View::Details(_) = v {
+                    self.season = usize::MAX; // pick the one with the next episode
+                    self.tab = Tab::Episodes;
+                }
             } else {
                 self.history.clear();
             }
@@ -171,10 +192,13 @@ impl Browse {
             self.loading = None;
             match r {
                 Ok(lib) => {
-                    if let View::Details(id) = &self.view {
-                        if lib.find(id).is_none() {
-                            self.view = View::Home;
-                        }
+                    let gone = match &self.view {
+                        View::Details(id) => lib.find(id).is_none(),
+                        View::Episode(_, ep) => lib.find_episode(ep).is_none(),
+                        _ => false,
+                    };
+                    if gone {
+                        self.view = View::Home;
                     }
                     self.lib = Some(Arc::new(lib));
                     self.loaded_at = Some(Instant::now());
@@ -251,6 +275,7 @@ impl Browse {
                 };
                 let scroll_id = match &self.view {
                     View::Details(id) => format!("details{id}"),
+                    View::Episode(_, ep) => format!("episode{ep}"),
                     _ if !self.search.is_empty() => "search".to_owned(),
                     v => format!("{}", view_index(v)),
                 };
@@ -270,7 +295,18 @@ impl Browse {
                                     self.grid_page(ui, &lib, Kind::Series, images, progress)
                                 }
                                 View::Details(id) => match lib.find(&id) {
-                                    Some(item) => self.details(ui, &lib, item, images, progress),
+                                    Some(item) if item.kind == Kind::Movie => {
+                                        self.movie_page(ui, &lib, item, images, progress)
+                                    }
+                                    Some(item) => {
+                                        self.series_page(ui, &lib, item, images, progress)
+                                    }
+                                    None => Some(Click::Nav(View::Home)),
+                                },
+                                View::Episode(_, ep) => match lib.find_episode(&ep) {
+                                    Some((s, si, ei)) => {
+                                        self.episode_page(ui, s, si, ei, images, progress)
+                                    }
                                     None => Some(Click::Nav(View::Home)),
                                 },
                             }
@@ -282,6 +318,7 @@ impl Browse {
         match click {
             Some(Click::Open(id)) => self.go(View::Details(id)),
             Some(Click::Nav(v)) => self.go(v),
+            Some(Click::Back) => self.back(),
             Some(Click::Play(id, ep, restart)) => {
                 if let Some(lib) = self.lib.clone() {
                     if let Some(a) =
@@ -304,7 +341,7 @@ impl Browse {
     fn top_bar(&mut self, ctx: &egui::Context, action: &mut Action, updates: &Updates) {
         let mut nav = None;
         let mut back = false;
-        let in_details = matches!(self.view, View::Details(_));
+        let in_details = matches!(self.view, View::Details(_) | View::Episode(..));
         let (current, searching) = (self.view.clone(), !self.search.is_empty());
         let name = self.client.info.name.clone();
         chrome::title_bar(
@@ -530,6 +567,16 @@ impl Browse {
         if !cont.is_empty() {
             click = click.or(self.row(ui, "Continue watching", &cont, true, None, images));
         }
+        let prefix = format!("{}|", self.client.base);
+        let mine: Vec<&Item> = self
+            .watchlist
+            .ids(&prefix)
+            .filter_map(|id| lib.find(id))
+            .collect();
+        if !mine.is_empty() {
+            let cards = self.poster_cards(mine.into_iter(), progress);
+            click = click.or(self.row(ui, "My list", &cards, false, None, images));
+        }
         if lib.all().any(|i| i.added.is_some()) {
             let mut recent: Vec<&Item> = lib.all().filter(|i| i.added.is_some()).collect();
             recent.sort_by_key(|i| std::cmp::Reverse(i.added));
@@ -720,7 +767,10 @@ impl Browse {
                         (None, true) => "Continue",
                         (None, false) => "Play",
                     };
-                    (format!("{verb} S{} E{}", s.number, ep.number), n.started)
+                    (
+                        format!("{verb} S{:02} E{:02}", s.number, ep.number),
+                        n.started,
+                    )
                 }
                 None => ("Play".into(), false),
             },
@@ -1078,54 +1128,6 @@ impl Browse {
 
     // -------------------------------------------------------------- details
 
-    fn details(
-        &mut self,
-        ui: &mut Ui,
-        lib: &Library,
-        item: &Item,
-        images: &mut Images,
-        progress: &Progress,
-    ) -> Option<Click> {
-        let (mut click, _) = self.hero(ui, item, images, progress, None);
-        if item.kind == Kind::Series && !item.seasons.is_empty() {
-            if self.season >= item.seasons.len() {
-                self.season = self.next_up(item, progress).map_or(0, |n| n.si);
-            }
-            ui.add_space(12.0);
-            let labels: Vec<String> = item.seasons.iter().map(|s| s.label()).collect();
-            let opts: Vec<(usize, &str, Option<usize>)> = labels
-                .iter()
-                .enumerate()
-                .map(|(i, l)| (i, l.as_str(), Some(item.seasons[i].episodes.len())))
-                .collect();
-            ui.horizontal(|ui| {
-                ui.add_space(SIDE - 22.0);
-                ScrollArea::horizontal().id_salt("seasons").show(ui, |ui| {
-                    segmented(ui, &mut self.season, &opts);
-                });
-            });
-            ui.add_space(10.0);
-            let season = &item.seasons[self.season];
-            for ep in &season.episodes {
-                let entry = progress.get(&self.key(&ep.id));
-                if episode_row(ui, item, ep, entry, images) {
-                    click = Some(Click::Play(item.id.clone(), Some(ep.id.clone()), false));
-                }
-            }
-        }
-        // more like this
-        let similar: Vec<&Item> = lib
-            .all()
-            .filter(|i| i.id != item.id && i.genres.iter().any(|g| item.genres.contains(g)))
-            .take(20)
-            .collect();
-        if !similar.is_empty() {
-            let cards = self.poster_cards(similar.into_iter(), progress);
-            click = click.or(self.row(ui, "More like this", &cards, false, None, images));
-        }
-        click
-    }
-
     // ----------------------------------------------------------- playback
 
     fn play(
@@ -1198,7 +1200,7 @@ fn view_index(v: &View) -> usize {
         View::Home => 0,
         View::Movies => 1,
         View::Series => 2,
-        View::Details(_) => 3,
+        View::Details(_) | View::Episode(..) => 3,
     }
 }
 
@@ -1364,109 +1366,4 @@ fn grid(ui: &mut Ui, cards: &[Card], images: &mut Images) -> Option<Click> {
         ui.add_space(12.0);
     }
     click
-}
-
-fn episode_row(
-    ui: &mut Ui,
-    show: &Item,
-    ep: &crate::api::Episode,
-    entry: Option<&Entry>,
-    images: &mut Images,
-) -> bool {
-    let w = ui.available_width() - 2.0 * SIDE;
-    let h = 128.0;
-    let (outer, resp) =
-        ui.allocate_exact_size(vec2(ui.available_width(), h + 16.0), Sense::click());
-    if !ui.is_rect_visible(outer) {
-        return false;
-    }
-    let row = Rect::from_min_size(pos2(outer.left() + SIDE, outer.top() + 8.0), vec2(w, h));
-    let p = ui.painter();
-    let t = ui
-        .ctx()
-        .animate_bool_with_time(resp.id, resp.hovered(), 0.12);
-    if t > 0.0 {
-        p.rect_filled(row.expand(6.0), 8.0, SURFACE.gamma_multiply(t));
-    }
-    let thumb = Rect::from_min_size(row.min, vec2(h * 16.0 / 9.0, h));
-    let art = ep
-        .still
-        .as_ref()
-        .or(show.backdrop.as_ref())
-        .or(show.poster.as_ref());
-    match art.and_then(|u| images.get(u)) {
-        Some(tex) => image_cover(
-            p,
-            thumb,
-            &tex,
-            6,
-            if ep.still.is_some() {
-                Color32::WHITE
-            } else {
-                Color32::from_gray(150)
-            },
-        ),
-        None => placeholder(p, thumb, &format!("E{}", ep.number), 6),
-    }
-    p.circle_filled(
-        thumb.center(),
-        20.0,
-        Color32::from_black_alpha(110 + (60.0 * t) as u8),
-    );
-    p.text(
-        thumb.center() + vec2(2.0, 0.0),
-        Align2::CENTER_CENTER,
-        "▶",
-        FontId::proportional(18.0),
-        Color32::WHITE,
-    );
-    if let Some(e) = entry {
-        let f = if e.watched() { 1.0 } else { e.fraction() };
-        let bar = Rect::from_min_max(pos2(thumb.left(), thumb.bottom() - 4.0), thumb.max);
-        p.rect_filled(bar, 0.0, Color32::from_white_alpha(60));
-        p.rect_filled(
-            Rect::from_min_max(bar.min, pos2(bar.left() + bar.width() * f, bar.bottom())),
-            0.0,
-            ACCENT,
-        );
-    }
-
-    let text = Rect::from_min_max(pos2(thumb.right() + 18.0, row.top() + 4.0), row.max);
-    let mut child = ui.new_child(
-        UiBuilder::new()
-            .max_rect(text)
-            .layout(Layout::top_down(Align::Min)),
-    );
-    child.spacing_mut().item_spacing.y = 4.0;
-    child.add(
-        egui::Label::new(
-            RichText::new(format!("{}. {}", ep.number, ep.title))
-                .size(17.0)
-                .strong(),
-        )
-        .truncate()
-        .selectable(false),
-    );
-    let mut meta = Vec::new();
-    if let Some(d) = ep.duration.filter(|d| *d > 0.0) {
-        meta.push(fmt_runtime(d));
-    }
-    match entry {
-        Some(e) if e.watched() => meta.push("Watched".into()),
-        Some(e) if e.in_progress() => meta.push(format!("{} left", fmt_runtime(e.dur - e.pos))),
-        _ => {}
-    }
-    if !meta.is_empty() {
-        child.label(RichText::new(meta.join("  ·  ")).color(MUTED).size(13.0));
-    }
-    if !ep.overview.is_empty() {
-        child.add(
-            egui::Label::new(
-                RichText::new(shorten(&ep.overview, 260)).color(TEXT.gamma_multiply(0.8)),
-            )
-            .wrap()
-            .selectable(false),
-        );
-    }
-    resp.on_hover_cursor(CursorIcon::PointingHand).clicked()
 }
