@@ -26,6 +26,8 @@ pub enum Pick {
     Keep,
     Close,
     ChangeServer,
+    Refresh,
+    OpenFiles,
     SignOut,
     Quit,
     OpenSettings,
@@ -159,7 +161,7 @@ pub fn settings(
         match conn {
             Some(c) => {
                 row(ui, "Library", |ui| {
-                    if small_button(ui, "Change").clicked() {
+                    if small_button(ui, "Switch server").clicked() {
                         out = Pick::ChangeServer;
                     }
                     ui.add_space(6.0);
@@ -216,6 +218,11 @@ pub fn settings(
                 .color(MUTED),
         );
         changed |= before != cfg.skip_seconds;
+        row(ui, "Play a file from this computer", |ui| {
+            if small_button(ui, "Open file…").clicked() {
+                out = Pick::OpenFiles;
+            }
+        });
 
         section(ui, "Library");
         let before = cfg.refresh_minutes;
@@ -235,6 +242,11 @@ pub fn settings(
         changed |= before != cfg.refresh_minutes;
         changed |= check(ui, &mut cfg.genre_rows, "Show a row for each genre on Home");
         if let Some(c) = conn {
+            row(ui, "Reload the library now", |ui| {
+                if small_button(ui, "Refresh").clicked() {
+                    out = Pick::Refresh;
+                }
+            });
             row(ui, "Watch history", |ui| {
                 if st.confirm_clear {
                     if small_button(ui, "Yes, clear it").clicked() {

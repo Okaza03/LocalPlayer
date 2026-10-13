@@ -150,6 +150,14 @@ impl App {
             dialogs::Pick::Close => self.dialog = None,
             dialogs::Pick::OpenSettings => self.dialog = Some(Dialog::Settings),
             dialogs::Pick::Quit => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+            dialogs::Pick::Refresh => {
+                self.dialog = None;
+                self.handle(ctx, Action::Refresh);
+            }
+            dialogs::Pick::OpenFiles => {
+                self.dialog = None;
+                self.handle(ctx, Action::OpenFiles);
+            }
             dialogs::Pick::ChangeServer => {
                 self.dialog = None;
                 self.handle(ctx, Action::ChangeServer);
@@ -166,7 +174,12 @@ impl App {
 
     fn handle(&mut self, ctx: &egui::Context, action: Action) {
         match action {
-            Action::None | Action::Refresh => {}
+            Action::None => {}
+            Action::Refresh => {
+                if let Stage::Browse(b) = &mut self.stage {
+                    b.reload(ctx);
+                }
+            }
             Action::OpenSettings => self.dialog = Some(Dialog::Settings),
             Action::CheckUpdates => self.updates.check(ctx, true),
             Action::OpenProfile => self.dialog = Some(Dialog::Profile),

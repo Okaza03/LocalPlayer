@@ -122,7 +122,7 @@ impl Browse {
         b
     }
 
-    fn reload(&mut self, ctx: &egui::Context) {
+    pub fn reload(&mut self, ctx: &egui::Context) {
         let c = self.client.clone();
         self.loading = Some(Task::spawn(ctx, move || c.library()));
         self.error = None;
@@ -293,10 +293,6 @@ impl Browse {
             }
             None => {}
         }
-        if let Action::Refresh = action {
-            self.reload(ctx);
-            action = Action::None;
-        }
         if self.loading.is_none() {
             ctx.request_repaint_after(Duration::from_secs(1)); // hero rotation
         }
@@ -425,16 +421,11 @@ impl Browse {
                     }
                 };
                 pick(ui, "Profile", Action::OpenProfile);
-                pick(ui, "Settings", Action::OpenSettings);
                 if menu_item(ui, "Admin  ↗") {
                     chrome::open_url(&format!("{}/admin", self.client.base));
                     ui.memory_mut(|m| m.close_popup());
                 }
                 ui.separator();
-                pick(ui, "Refresh library", Action::Refresh);
-                pick(ui, "Play a local file…", Action::OpenFiles);
-                ui.separator();
-                pick(ui, "Switch server", Action::ChangeServer);
                 if self.client.token.is_some() {
                     pick(ui, "Sign out", Action::SignOut(self.client.clone()));
                 }
