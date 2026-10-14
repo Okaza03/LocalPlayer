@@ -26,6 +26,7 @@ use ui::chrome::{self, Icon};
 use ui::login::Login;
 use ui::settings::{self as dialogs, Conn, SettingsState};
 use ui::setup::Setup;
+use ui::splash::Splash;
 use ui::watch::{PlayItem, Watch};
 use ui::Action;
 use update::Updates;
@@ -116,6 +117,8 @@ struct App {
     /// A server check waiting for the user to sign in.
     pending_check: Option<Check>,
     watch: Option<Watch>,
+    /// The wordmark over the window after signing in.
+    splash: Option<Splash>,
     dialog: Option<Dialog>,
     settings: SettingsState,
     updates: Updates,
@@ -144,6 +147,7 @@ impl App {
             stage: Stage::Setup(setup),
             pending_check: None,
             watch,
+            splash: None,
             cfg,
             dialog: None,
             settings: SettingsState::default(),
@@ -158,6 +162,7 @@ impl App {
     fn browse(&mut self, ctx: &egui::Context, client: Client, user: Option<String>) {
         self.images.set_client(Some(client.clone()));
         self.stage = Stage::Browse(Box::new(Browse::new(ctx, client, user)));
+        self.splash = Some(Splash::new(ctx));
     }
 
     /// Save the address from the setup or check screen. A different server
@@ -436,6 +441,15 @@ impl eframe::App for App {
             ),
         };
         self.handle(ctx, action);
+        if let Some(s) = &mut self.splash {
+            let (ready, hold) = match &self.stage {
+                Stage::Browse(b) => (b.settled(), b.has_library()),
+                _ => (true, false),
+            };
+            if !s.ui(ctx, ready, hold) {
+                self.splash = None;
+            }
+        }
         self.updates.ui(ctx);
         self.dialogs(ctx);
         chrome::window_frame(ctx);

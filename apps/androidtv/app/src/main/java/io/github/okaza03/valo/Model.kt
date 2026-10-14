@@ -49,6 +49,8 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         private set
     var busy by mutableStateOf(false)
         private set
+    /** The wordmark over everything while a signed-in session loads. */
+    var splash by mutableStateOf(false)
 
     /** Bumped whenever progress changes, so screens showing it redraw. */
     var progressVersion by mutableIntStateOf(0)
@@ -66,7 +68,10 @@ class AppModel(app: Application) : AndroidViewModel(app) {
 
     init {
         val saved = prefs.server
-        if (saved == null) replace(Screen.Setup()) else connect(saved, startup = true)
+        if (saved == null) replace(Screen.Setup()) else {
+            splash = prefs.token != null
+            connect(saved, startup = true)
+        }
         viewModelScope.launch { syncLoop() }
     }
 
@@ -133,7 +138,10 @@ class AppModel(app: Application) : AndroidViewModel(app) {
 
     fun loadLibrary() {
         val c = client ?: return
-        if (library == null) replace(Screen.Loading("Loading ${c.name}…"))
+        if (library == null) {
+            splash = true
+            replace(Screen.Loading("Loading ${c.name}…"))
+        }
         busy = true
         viewModelScope.launch {
             val res = runCatching { withContext(Dispatchers.IO) { c.library() } }

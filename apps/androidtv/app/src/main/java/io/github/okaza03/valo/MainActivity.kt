@@ -5,6 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
+import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import coil3.ImageLoader
 import coil3.compose.setSingletonImageLoaderFactory
@@ -17,6 +18,7 @@ import io.github.okaza03.valo.ui.ValoTheme
 import io.github.okaza03.valo.ui.LoginScreen
 import io.github.okaza03.valo.ui.PlayerScreen
 import io.github.okaza03.valo.ui.SetupScreen
+import io.github.okaza03.valo.ui.Splash
 
 class MainActivity : ComponentActivity() {
     private val model: AppModel by viewModels()
@@ -38,7 +40,13 @@ class MainActivity : ComponentActivity() {
             }
             ValoTheme {
                 BackHandler { if (!model.back()) finish() }
-                App(model)
+                Box {
+                    App(model)
+                    if (model.splash) Splash(
+                        ready = model.screen !is Screen.Loading,
+                        hold = model.screen == Screen.Home,
+                    ) { model.splash = false }
+                }
             }
         }
     }

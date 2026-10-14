@@ -5,6 +5,7 @@ pub mod chrome;
 pub mod login;
 pub mod settings;
 pub mod setup;
+pub mod splash;
 pub mod watch;
 
 use std::sync::Arc;

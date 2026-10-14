@@ -189,6 +189,15 @@ impl Browse {
         self.user.as_deref()
     }
 
+    pub fn has_library(&self) -> bool {
+        self.lib.is_some()
+    }
+
+    /// The library has loaded, or failed to.
+    pub fn settled(&self) -> bool {
+        self.lib.is_some() || self.error.is_some()
+    }
+
     pub fn ui(
         &mut self,
         ctx: &egui::Context,
