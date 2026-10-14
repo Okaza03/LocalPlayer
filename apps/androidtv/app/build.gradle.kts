@@ -33,7 +33,8 @@ android {
             create("release") {
                 storeFile = file(keystore)
                 storePassword = System.getenv("LOCALPLAYER_KEYSTORE_PASSWORD")
-                keyAlias = System.getenv("LOCALPLAYER_KEY_ALIAS") ?: "valo"
+                // the key was made before the rename, under the old name
+                keyAlias = System.getenv("LOCALPLAYER_KEY_ALIAS") ?: "localplayer"
                 keyPassword = System.getenv("LOCALPLAYER_KEY_PASSWORD")
                     ?: System.getenv("LOCALPLAYER_KEYSTORE_PASSWORD")
             }

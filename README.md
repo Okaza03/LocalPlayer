@@ -1,3 +1,8 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="packaging/valo-dark.svg">
+  <img src="packaging/valo.svg" alt="" width="96">
+</picture>
+
 # Valo
 
 A desktop video player and media-library client (Rust, egui, FFmpeg).

@@ -288,8 +288,8 @@ class Client(val base: String, val info: ServerInfo, @Volatile var token: String
             if (base.length <= "http://".length) {
                 throw ServerError("Enter the server's address, e.g. 192.168.1.20:8080")
             }
-            val req = Request.Builder().url("$base/api/info").header("Accept", "application/json").build()
             val info = try {
+                val req = Request.Builder().url("$base/api/info").header("Accept", "application/json").build()
                 http.newCall(req).execute().use { r ->
                     if (!r.isSuccessful) null
                     else runCatching { json.decodeFromString<ServerInfo>(r.body!!.string()) }.getOrNull()
