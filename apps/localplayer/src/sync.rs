@@ -184,6 +184,17 @@ mod tests {
     }
 
     #[test]
+    fn nulls_count_as_missing() {
+        let list: Vec<Watched> = serde_json::from_str(
+            r#"[{"type":"movie","id":"370","position":8,"duration":null,"percent":null,"completed":false,"updated":1787403483},
+                {"type":"movie","id":"455","position":2720.8,"duration":7225.7,"percent":38,"completed":null,"updated":1791944033}]"#,
+        )
+        .unwrap();
+        assert_eq!(list[0].duration, 0.0);
+        assert!(!list[1].completed);
+    }
+
+    #[test]
     fn completed_counts_as_watched() {
         let (_, e) = entry(&w(r#"{"type":"movie","id":"1","position":2400,"duration":2640,"completed":true,"updated":5}"#)).unwrap();
         assert!(e.watched());

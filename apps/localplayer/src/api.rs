@@ -267,6 +267,16 @@ impl Library {
     }
 }
 
+/// A `null` where a number or flag belongs counts as missing ("duration": null
+/// when the server doesn't know it yet).
+fn null_as_default<'de, D, T>(d: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de> + Default,
+{
+    Ok(Option::<T>::deserialize(d)?.unwrap_or_default())
+}
+
 /// One title's watch state as `/api/progress` sends and takes it.
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(default)]
@@ -276,11 +286,15 @@ pub struct Watched {
     pub kind: String,
     /// The library's id for it; a number or a string.
     pub id: Value,
+    #[serde(deserialize_with = "null_as_default")]
     pub position: f64,
+    #[serde(deserialize_with = "null_as_default")]
     pub duration: f64,
     /// Watched to the end (the server decides where that is).
+    #[serde(deserialize_with = "null_as_default")]
     pub completed: bool,
     /// Unix time of the last change.
+    #[serde(deserialize_with = "null_as_default")]
     pub updated: i64,
 }
 
