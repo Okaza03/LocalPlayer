@@ -55,11 +55,14 @@ pub fn sync(enabled: bool) {
     let desktop = apps.join(ENTRY);
     let res = if enabled {
         let want = entry(&img);
-        if fs::read_to_string(&desktop).ok().as_deref() == Some(want.as_str()) {
+        // the icon is shared with `cargo xtask install`, whose uninstall removes it
+        let icon = data.join("icons/hicolor/scalable/apps/localplayer.svg");
+        if fs::read_to_string(&desktop).ok().as_deref() == Some(want.as_str())
+            && fs::read_to_string(&icon).ok().as_deref() == Some(ICON)
+        {
             return; // up to date
         }
         (|| -> io::Result<()> {
-            let icon = data.join("icons/hicolor/scalable/apps/localplayer.svg");
             fs::create_dir_all(icon.parent().unwrap())?;
             fs::write(&icon, ICON)?;
             fs::create_dir_all(&apps)?;
