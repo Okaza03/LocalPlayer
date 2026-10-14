@@ -48,8 +48,8 @@ In short, there are three options:
 1. **The bundled server.** `server/localplayer_server.py` implements the whole API with only the Python standard library. Metadata comes from `info.json` files and images next to the videos.
    ```sh
    python3 server/localplayer_server.py ~/Videos                 # Movies/ and Series/ inside
-   python3 server/localplayer_server.py ~/Videos --add-user noah # turn on sign-in
-   python3 server/localplayer_server.py ~/Videos --add-user noah --admin  # ...as an admin
+   python3 server/localplayer_server.py ~/Videos --add-user user # turn on sign-in
+   python3 server/localplayer_server.py ~/Videos --add-user user --admin  # ...as an admin
    ```
 2. **Your own app with the LocalPlayer API.** It needs four routes:
 

@@ -2,7 +2,7 @@
 """Minimal reference media server for LocalPlayer (Python 3.9+, standard library only).
 
     python3 localplayer_server.py ~/Videos                  # open library, port 8080
-    python3 localplayer_server.py ~/Videos --add-user noah  # enable sign-in
+    python3 localplayer_server.py ~/Videos --add-user user  # enable sign-in
 
 Expected layout (anything else is ignored):
 

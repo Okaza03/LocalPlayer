@@ -26,8 +26,8 @@ This guide is for whoever runs the media server. It covers what LocalPlayer asks
 ```sh
 python3 server/localplayer_server.py ~/Videos                     # port 8080, no sign-in
 python3 server/localplayer_server.py ~/Videos --port 9000 --name "Living room"
-python3 server/localplayer_server.py ~/Videos --add-user noah     # asks for a password, turns sign-in on
-python3 server/localplayer_server.py ~/Videos --add-user noah --admin
+python3 server/localplayer_server.py ~/Videos --add-user user     # asks for a password, turns sign-in on
+python3 server/localplayer_server.py ~/Videos --add-user user --admin
 ```
 
 `--add-user` creates the user and exits. Start the server again afterwards. Users, tokens and each user's watch progress are stored in `~/Videos/.localplayer/`. Sign-in is on as soon as one user exists.
@@ -198,13 +198,13 @@ This must answer without a token, even when `auth` is `true`.
 Request body:
 
 ```json
-{ "username": "noah", "password": "hunter2" }
+{ "username": "user", "password": "hunter2" }
 ```
 
 Success, `200`:
 
 ```json
-{ "token": "3f1c…", "name": "Noah", "admin": false }
+{ "token": "3f1c…", "name": "user", "admin": false }
 ```
 
 | Field | Type | |
@@ -432,7 +432,7 @@ const crypto = require("crypto");
 const app = express();
 app.use(express.json());
 
-const users = { noah: "hunter2" };   // use real password hashing
+const users = { user: "hunter2" };   // use real password hashing
 const tokens = new Map();            // token -> username
 const movies = [{ id: "1", title: "Inception", year: 2010, file: "/srv/videos/Inception.mkv",
                   poster: "/srv/videos/Inception.jpg" }];
@@ -516,7 +516,7 @@ curl -i $SERVER/api/library
 
 # Sign in and keep the token.
 TOKEN=$(curl -s -X POST $SERVER/api/login -H 'Content-Type: application/json' \
-        -d '{"username":"noah","password":"hunter2"}' | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')
+        -d '{"username":"user","password":"hunter2"}' | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')
 
 # Library loads? Expect JSON.
 curl -s -H "Authorization: Bearer $TOKEN" $SERVER/api/library | python3 -m json.tool | head -40
