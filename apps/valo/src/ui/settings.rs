@@ -19,7 +19,7 @@ pub struct Conn {
 
 impl Conn {
     pub fn prefix(&self) -> String {
-        format!("{}|", self.base)
+        crate::config::user_prefix(&self.base, self.user.as_deref())
     }
 }
 

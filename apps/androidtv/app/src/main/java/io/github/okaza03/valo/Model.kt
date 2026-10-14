@@ -305,7 +305,15 @@ class AppModel(app: Application) : AndroidViewModel(app) {
 
     // -------------------------------------------------------------- progress
 
-    private fun prefix() = client?.base.orEmpty() + "|"
+    /**
+     * Where one user's progress lives in progress.json: keys are this plus the
+     * item id. Each signed-in user of a server gets their own, like on the
+     * desktop (config::user_prefix).
+     */
+    private fun prefix(c: Client? = client): String {
+        val user = if (c?.info?.auth == true) prefs.user.orEmpty().lowercase() else ""
+        return c?.base.orEmpty() + "|@" + user + "|"
+    }
 
     fun entry(id: String): Entry? {
         // read so callers redraw when it changes
@@ -385,7 +393,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
             withTimeoutOrNull(PUSH_EVERY_MS) { wake.receive() }
             val c = client ?: continue
             if (syncOff || library == null) continue
-            val prefix = c.base + "|"
+            val prefix = prefix(c)
             withContext(Dispatchers.IO) { push(c, prefix) }
             val playing = screen is Screen.Player
             if (!playing && System.currentTimeMillis() - lastPull >= PULL_EVERY_MS) {

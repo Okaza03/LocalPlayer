@@ -157,8 +157,12 @@ impl Browse {
         self.missing = None;
     }
 
+    fn prefix(&self) -> String {
+        crate::config::user_prefix(&self.client.base, self.user.as_deref())
+    }
+
     fn key(&self, id: &str) -> String {
-        format!("{}|{id}", self.client.base)
+        format!("{}{id}", self.prefix())
     }
 
     fn go(&mut self, v: View) {
@@ -586,7 +590,7 @@ impl Browse {
         if !cont.is_empty() {
             click = click.or(self.row(ui, "Continue watching", &cont, true, None, images));
         }
-        let prefix = format!("{}|", self.client.base);
+        let prefix = self.prefix();
         let mine: Vec<&Item> = self
             .watchlist
             .ids(&prefix)
@@ -833,7 +837,7 @@ impl Browse {
     }
 
     fn continue_cards(&self, lib: &Library, progress: &Progress) -> Vec<Card> {
-        let prefix = format!("{}|", self.client.base);
+        let prefix = self.prefix();
         let mut seen_series = Vec::new();
         let mut out = Vec::new();
         for (id, e) in progress.recent(&prefix) {

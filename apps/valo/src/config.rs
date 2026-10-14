@@ -44,6 +44,13 @@ fn save<T: Serialize>(name: &str, v: &T) {
     }
 }
 
+/// Where one user's progress and list live in progress.json and
+/// watchlist.json: keys are this plus the item id. Each signed-in user of a
+/// server gets their own; `None` is a server without sign-in.
+pub fn user_prefix(base: &str, user: Option<&str>) -> String {
+    format!("{base}|@{}|", user.unwrap_or("").to_lowercase())
+}
+
 #[derive(Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {

@@ -35,8 +35,8 @@ pub struct Sync {
     last_push: Option<Instant>,
 }
 
-fn prefix(c: &Client) -> String {
-    format!("{}|", c.base)
+fn prefix(c: &Client, user: Option<&str>) -> String {
+    crate::config::user_prefix(&c.base, user)
 }
 
 /// The server's entry in the app's terms. A title the server calls
@@ -94,12 +94,13 @@ impl Sync {
         self.last_push = None;
     }
 
-    /// Call every frame while connected to `client`. `watching`: a video is
-    /// open, so leave its resume point alone.
+    /// Call every frame while connected to `client` as `user`. `watching`: a
+    /// video is open, so leave its resume point alone.
     pub fn tick(
         &mut self,
         ctx: &egui::Context,
         client: &Client,
+        user: Option<&str>,
         progress: &mut Progress,
         watching: bool,
     ) {
@@ -133,20 +134,23 @@ impl Sync {
         if self.pull.is_none() && !watching && due(self.last_pull, PULL_EVERY) {
             self.last_pull = Some(Instant::now());
             let c = client.clone();
-            self.pull = Some((prefix(client), Task::spawn(ctx, move || c.progress())));
+            self.pull = Some((prefix(client, user), Task::spawn(ctx, move || c.progress())));
         }
-        let unsent = progress.unsent(&prefix(client));
+        let unsent = progress.unsent(&prefix(client, user));
         if self.push.is_none() && !unsent.is_empty() && due(self.last_push, PUSH_EVERY) {
             self.last_push = Some(Instant::now());
             let c = client.clone();
-            self.push = Some((prefix(client), Task::spawn(ctx, move || send(&c, unsent))));
+            self.push = Some((
+                prefix(client, user),
+                Task::spawn(ctx, move || send(&c, unsent)),
+            ));
         }
         ctx.request_repaint_after(PUSH_EVERY);
     }
 
     /// On quit: send what's left, waiting a few seconds at most.
-    pub fn finish(&mut self, client: &Client, progress: &mut Progress) {
-        let prefix = prefix(client);
+    pub fn finish(&mut self, client: &Client, user: Option<&str>, progress: &mut Progress) {
+        let prefix = prefix(client, user);
         let unsent = progress.unsent(&prefix);
         if self.off || unsent.is_empty() {
             return;

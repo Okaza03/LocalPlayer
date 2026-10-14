@@ -355,7 +355,7 @@ impl eframe::App for App {
         if let Stage::Browse(b) = &self.stage {
             let watching = self.watch.is_some();
             self.sync
-                .tick(ctx, b.client(), &mut self.progress, watching);
+                .tick(ctx, b.client(), b.user(), &mut self.progress, watching);
         }
 
         if let Some(w) = self.watch.as_mut() {
@@ -461,7 +461,7 @@ impl eframe::App for App {
         }
         self.watch = None;
         if let Stage::Browse(b) = &self.stage {
-            self.sync.finish(b.client(), &mut self.progress);
+            self.sync.finish(b.client(), b.user(), &mut self.progress);
         }
         self.progress.flush();
         self.cfg.save();
