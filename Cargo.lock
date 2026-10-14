@@ -3730,6 +3730,7 @@ dependencies = [
  "sha2",
  "ureq",
  "winresource",
+ "zbus 5.19.0",
 ]
 
 [[package]]

@@ -5,6 +5,7 @@ mod api;
 mod audio;
 mod config;
 mod images;
+mod inhibit;
 mod integrate;
 mod player;
 mod sync;

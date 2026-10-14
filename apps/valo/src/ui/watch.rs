@@ -11,6 +11,7 @@ use super::chrome::{self, Icon};
 use super::{gradient, mono, ERROR, MUTED, TEXT};
 use crate::audio::AudioOut;
 use crate::config::{Config, Progress};
+use crate::inhibit::Inhibit;
 use crate::player::{Player, Source};
 use crate::util::{fmt_time, Task};
 
@@ -82,6 +83,8 @@ pub struct Watch {
     menu: Option<Menu>,
     /// Last time the pointer was over the volume button or its slider.
     vol_hover: Option<Instant>,
+    /// Keeps the screen from blanking or sleeping while playing.
+    inhibit: Inhibit,
 }
 
 impl Watch {
@@ -101,6 +104,7 @@ impl Watch {
             last_save: Instant::now(),
             menu: None,
             vol_hover: None,
+            inhibit: Inhibit::new(),
         }
     }
 
@@ -323,6 +327,7 @@ impl Watch {
             self.last_motion = now;
         }
         let playing = self.player.as_ref().is_some_and(|p| !p.paused);
+        self.inhibit.set(playing);
         let hide_ui = playing
             && self.last_motion.elapsed()
                 > Duration::from_millis(if fullscreen { 2500 } else { 3500 });
