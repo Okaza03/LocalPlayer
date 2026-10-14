@@ -96,7 +96,12 @@ fun HomeScreen(model: AppModel, lib: Library) {
     val target = model.homeFocus?.takeIf { k -> rows.any { r -> r.cards.any { it.key == k } } }
         ?: rows.firstOrNull()?.cards?.firstOrNull()?.key
     val requester = remember { FocusRequester() }
-    LaunchedEffect(Unit) { runCatching { requester.requestFocus() } }
+    LaunchedEffect(Unit) {
+        // bring the remembered card's row into view, or there's nothing to focus
+        val row = rows.indexOfFirst { r -> r.cards.any { it.key == target } }
+        if (row >= 0) model.homeList.scrollToItem(row)
+        runCatching { requester.requestFocus() }
+    }
 
     Box(Modifier.fillMaxSize().background(BG)) {
         Backdrop(focused?.backdrop ?: focused?.poster)
@@ -132,7 +137,7 @@ private fun TopBar(model: AppModel) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
-        modifier = Modifier.fillMaxWidth().padding(start = EDGE, end = EDGE, top = 24.dp),
+        modifier = Modifier.fillMaxWidth().padding(start = EDGE, end = EDGE, top = 16.dp),
     ) {
         Text(model.client?.name ?: "", color = MUTED, fontSize = 15.sp, modifier = Modifier.weight(1f))
         TvButton(if (model.busy) "Refreshing…" else "Refresh", { model.loadLibrary() }, enabled = !model.busy)
@@ -144,13 +149,13 @@ private fun TopBar(model: AppModel) {
 /** The focused title, large. */
 @Composable
 private fun Hero(item: Item?) {
-    Column(Modifier.fillMaxWidth().height(230.dp).padding(start = EDGE, top = 16.dp)) {
+    Column(Modifier.fillMaxWidth().height(190.dp).padding(start = EDGE, top = 8.dp)) {
         if (item == null) return@Column
         if (item.logo != null) {
             Art(item.logo, Modifier.height(80.dp).width(320.dp), scale = ContentScale.Fit)
         } else {
             Text(
-                item.title, fontSize = 36.sp, fontWeight = FontWeight.Bold, color = TEXT,
+                item.title, fontSize = 32.sp, fontWeight = FontWeight.Bold, color = TEXT,
                 maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth(0.55f),
             )
         }
@@ -186,7 +191,7 @@ private fun CardRow(
             items(row.cards, key = { it.key }) { card ->
                 ArtCard(
                     art = card.art, title = card.title, sub = card.sub,
-                    width = if (row.wide) 260.dp else 140.dp,
+                    width = if (row.wide) 200.dp else 112.dp,
                     ratio = if (row.wide) 16f / 9f else 2f / 3f,
                     progress = card.progress,
                     onClick = { onClick(card) },

@@ -129,6 +129,8 @@ fun PlayerScreen(model: AppModel, item: Item, screen: Screen.Player) {
     }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
+        // a fresh view per episode, so the remote keeps working after autoplay
+        androidx.compose.runtime.key(key) {
         AndroidView(
             factory = { ctx ->
                 PlayerView(ctx).apply {
@@ -147,6 +149,7 @@ fun PlayerScreen(model: AppModel, item: Item, screen: Screen.Player) {
             update = { it.player = player },
             modifier = Modifier.fillMaxSize(),
         )
+        }
         error?.let {
             Column(Modifier.align(Alignment.Center).width(640.dp)) {
                 Text(it, color = ERROR, fontSize = 18.sp)
