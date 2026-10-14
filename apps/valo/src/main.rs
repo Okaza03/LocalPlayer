@@ -24,7 +24,7 @@ use ui::browse::Browse;
 use ui::check::Check;
 use ui::chrome::{self, Icon};
 use ui::login::Login;
-use ui::settings::{self as dialogs, Conn, SettingsState};
+use ui::settings::{self as dialogs, Conn};
 use ui::setup::Setup;
 use ui::splash::Splash;
 use ui::watch::{PlayItem, Watch};
@@ -120,14 +120,12 @@ struct App {
     /// The wordmark over the window after signing in.
     splash: Option<Splash>,
     dialog: Option<Dialog>,
-    settings: SettingsState,
     updates: Updates,
 }
 
 #[derive(Clone, Copy, PartialEq)]
 enum Dialog {
     Settings,
-    Profile,
 }
 
 impl App {
@@ -150,7 +148,6 @@ impl App {
             splash: None,
             cfg,
             dialog: None,
-            settings: SettingsState::default(),
             updates: {
                 let mut u = Updates::default();
                 u.check(ctx, false); // quietly, once per start
@@ -189,7 +186,6 @@ impl App {
             base: c.base.clone(),
             user: user.map(str::to_owned),
             signed_in: c.token.is_some(),
-            admin: c.admin,
         };
         match &self.stage {
             Stage::Browse(b) => Some(conn(b.client(), b.user())),
@@ -202,20 +198,11 @@ impl App {
         let Some(d) = self.dialog else { return };
         let conn = self.conn();
         let out = match (d, &conn) {
-            (Dialog::Settings, _) => dialogs::settings(
-                ctx,
-                &mut self.settings,
-                &mut self.cfg,
-                &mut self.progress,
-                conn.as_ref(),
-            ),
-            (Dialog::Profile, Some(c)) => dialogs::profile(ctx, c, &self.progress),
-            (Dialog::Profile, None) => dialogs::Pick::Close,
+            (Dialog::Settings, _) => dialogs::settings(ctx, &mut self.cfg, conn.as_ref()),
         };
         match out {
             dialogs::Pick::Keep => {}
             dialogs::Pick::Close => self.dialog = None,
-            dialogs::Pick::OpenSettings => self.dialog = Some(Dialog::Settings),
             dialogs::Pick::Quit => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
             dialogs::Pick::Refresh => {
                 self.dialog = None;
@@ -251,7 +238,6 @@ impl App {
             Action::OpenSettings => self.dialog = Some(Dialog::Settings),
             Action::CheckUpdates => self.updates.check(ctx, true),
             Action::ShowUpdate => self.updates.show(),
-            Action::OpenProfile => self.dialog = Some(Dialog::Profile),
             Action::Quit => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
             Action::CheckServer(address) => {
                 self.pending_check = None;

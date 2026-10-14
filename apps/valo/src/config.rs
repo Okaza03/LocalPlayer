@@ -177,19 +177,6 @@ impl Progress {
         v
     }
 
-    /// Forget the watch history for one server (and, once synced, everywhere).
-    pub fn clear(&mut self, prefix: &str) {
-        let keys: Vec<String> = self
-            .entries
-            .iter()
-            .filter(|(k, e)| k.starts_with(prefix) && e.pos > 0.0)
-            .map(|(k, _)| k.clone())
-            .collect();
-        for k in keys {
-            self.set(&k, 0.0, 0.0);
-        }
-    }
-
     /// Take the server's copy of each entry it has a newer version of.
     /// Returns whether anything changed.
     pub fn merge(&mut self, prefix: &str, remote: Vec<(String, Entry)>) -> bool {
@@ -281,5 +268,29 @@ impl Watchlist {
         self.items
             .iter()
             .filter_map(move |k| k.strip_prefix(prefix))
+    }
+}
+
+/// Titles removed from "Continue watching", keyed like [`Progress`], with when.
+/// A title comes back once it's watched again after that.
+#[derive(Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Hidden {
+    items: HashMap<String, i64>,
+}
+
+impl Hidden {
+    pub fn load() -> Self {
+        load("hidden.json")
+    }
+
+    pub fn hide(&mut self, key: &str) {
+        self.items.insert(key.to_owned(), now_unix());
+        save("hidden.json", self);
+    }
+
+    /// Whether `key`, last watched at `updated`, was removed since.
+    pub fn hides(&self, key: &str, updated: i64) -> bool {
+        self.items.get(key).is_some_and(|t| updated <= *t)
     }
 }

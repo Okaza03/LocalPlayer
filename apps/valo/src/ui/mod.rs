@@ -465,7 +465,6 @@ pub enum Action {
     /// Re-show the "update available" notice.
     ShowUpdate,
     OpenSettings,
-    OpenProfile,
     Quit,
     Play(Vec<watch::PlayItem>),
 }

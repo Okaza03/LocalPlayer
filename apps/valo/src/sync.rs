@@ -222,9 +222,5 @@ mod tests {
         p.sent("s|", "movie:1", &unsent[0].1, Some(i64::MAX - 1));
         assert!(p.unsent("s|").is_empty());
         assert!(!p.merge("s|", vec![("movie:1".into(), e(70.0, i64::MAX - 1))]));
-        // clearing is a change like any other
-        p.clear("s|");
-        assert!(p.get("s|movie:1").is_none());
-        assert_eq!(p.unsent("s|").len(), 1);
     }
 }

@@ -6,6 +6,8 @@ use eframe::egui::{
     TextFormat, TextureHandle, Ui, UiBuilder,
 };
 
+use std::hash::{BuildHasher, RandomState};
+
 use super::{Browse, Click, Probe, Tab, View, GAP, SIDE};
 use crate::api::{CastMember, Episode, FileInfo, Item, Library};
 use crate::config::Progress;
@@ -15,12 +17,12 @@ use crate::ui::{black_font, bold, gradient, image_cover, mono, placeholder};
 use crate::ui::{BG, INK, LINE, LINE_HI, MUTED, TEXT};
 use crate::util::{color_for, fmt_runtime, fmt_time, percent_decode};
 
-const GOLD: Color32 = Color32::from_rgb(232, 196, 106);
-const TEAL: Color32 = Color32::from_rgb(110, 205, 190);
+pub(super) const GOLD: Color32 = Color32::from_rgb(232, 196, 106);
+pub(super) const TEAL: Color32 = Color32::from_rgb(110, 205, 190);
 const CARD_BG: Color32 = Color32::from_rgb(26, 28, 34);
 const MAX_W: f32 = 1420.0;
 /// Below this content width, side-by-side columns stack.
-const NARROW: f32 = 980.0;
+pub(super) const NARROW: f32 = 980.0;
 
 // ------------------------------------------------------------- formatting
 
@@ -135,14 +137,14 @@ fn sxe(season: u32, ep: u32) -> String {
 // ------------------------------------------------------------- layout
 
 /// Left margin and width of the centered content column.
-fn column(ui: &Ui) -> (f32, f32) {
+pub(super) fn column(ui: &Ui) -> (f32, f32) {
     let w = ui.available_width();
     let inner = (w - 2.0 * SIDE).clamp(200.0, MAX_W);
     ((w - inner) / 2.0, inner)
 }
 
 /// Run `add` inside the centered content column.
-fn padded<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
+pub(super) fn padded<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
     let (m, inner) = column(ui);
     let sp = ui.spacing().item_spacing.x;
     ui.horizontal_top(|ui| {
@@ -160,7 +162,7 @@ fn padded<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
 
 /// A child Ui over `r` whose content is pushed down by `align` (0 = top,
 /// 0.5 = centered, 1 = bottom) using last frame's content height.
-fn placed(ui: &mut Ui, r: Rect, salt: &str, align: f32, add: impl FnOnce(&mut Ui)) {
+pub(super) fn placed(ui: &mut Ui, r: Rect, salt: &str, align: f32, add: impl FnOnce(&mut Ui)) {
     let id = ui.id().with(salt);
     let prev: f32 = ui.data(|d| d.get_temp(id)).unwrap_or(r.height());
     let mut child = ui.new_child(
@@ -179,7 +181,7 @@ fn placed(ui: &mut Ui, r: Rect, salt: &str, align: f32, add: impl FnOnce(&mut Ui
 }
 
 /// Full-width artwork, darkened, fading into the page at the bottom.
-fn backdrop(p: &Painter, rect: Rect, art: Option<&TextureHandle>, title: &str, dim: u8) {
+pub(super) fn backdrop(p: &Painter, rect: Rect, art: Option<&TextureHandle>, title: &str, dim: u8) {
     p.rect_filled(rect, 0.0, BG);
     match art {
         Some(t) => image_cover(p, rect, t, 0, Color32::from_gray(dim)),
@@ -271,7 +273,13 @@ fn circle_button(ui: &mut Ui, icon: Icon, tip: &str) -> Response {
 }
 
 /// Text (with an optional leading/trailing icon) that lights up on hover.
-fn link(ui: &mut Ui, text: &str, size: f32, col: Color32, icon: Option<(Icon, bool)>) -> Response {
+pub(super) fn link(
+    ui: &mut Ui,
+    text: &str,
+    size: f32,
+    col: Color32,
+    icon: Option<(Icon, bool)>,
+) -> Response {
     let galley = ui
         .painter()
         .layout_no_wrap(text.to_owned(), FontId::proportional(size), col);
@@ -313,11 +321,11 @@ fn tag(ui: &mut Ui, text: &str) {
     p.galley(r.min + vec2(6.0, 3.0), galley, TEXT);
 }
 
-fn dot(ui: &mut Ui) {
+pub(super) fn dot(ui: &mut Ui) {
     ui.label(RichText::new("·").color(MUTED));
 }
 
-fn caps(ui: &mut Ui, text: &str, col: Color32) {
+pub(super) fn caps(ui: &mut Ui, text: &str, col: Color32) {
     ui.label(mono(text, 11.0).color(col));
 }
 
@@ -335,7 +343,7 @@ fn clamp_text(ui: &mut Ui, text: &str, size: f32, col: Color32, rows: usize) {
 }
 
 /// `tex` cropped to a circle (faces sit near the top of headshots).
-fn image_circle(p: &Painter, c: egui::Pos2, r: f32, tex: &TextureHandle) {
+pub(super) fn image_circle(p: &Painter, c: egui::Pos2, r: f32, tex: &TextureHandle) {
     let sz = tex.size_vec2();
     let side = sz.x.min(sz.y);
     let (du, dv) = (side / sz.x, side / sz.y);
@@ -362,19 +370,36 @@ fn image_circle(p: &Painter, c: egui::Pos2, r: f32, tex: &TextureHandle) {
     p.add(m);
 }
 
-/// Headshots in a grid, name and character under each.
-fn cast_grid(ui: &mut Ui, cast: &[CastMember], images: &mut Images, cell_w: f32, r: f32) {
+/// Headshots in a grid, name and character under each. Returns whose
+/// person page to open.
+fn cast_grid(
+    ui: &mut Ui,
+    cast: &[CastMember],
+    images: &mut Images,
+    cell_w: f32,
+    r: f32,
+) -> Option<Click> {
+    let mut click = None;
     let w = ui.available_width();
     let cols = ((w / cell_w).floor() as usize).max(1);
     let cell_w = w / cols as f32;
-    for row in cast.chunks(cols) {
+    for (ri, row) in cast.chunks(cols).enumerate() {
         let (rect, _) = ui.allocate_exact_size(vec2(w, 2.0 * r + 52.0), Sense::hover());
-        let p = ui.painter();
         for (i, m) in row.iter().enumerate() {
-            let c = pos2(rect.left() + cell_w * (i as f32 + 0.5), rect.top() + r);
+            let cell = Rect::from_min_size(
+                pos2(rect.left() + cell_w * i as f32, rect.top()),
+                vec2(cell_w, rect.height()),
+            );
+            let resp = ui.interact(cell, ui.id().with(("cast", ri, i)), Sense::click());
+            let hot = resp.hovered();
+            let p = ui.painter();
+            let c = pos2(cell.center().x, rect.top() + r);
             match m.photo.as_ref().and_then(|u| images.get(u)) {
                 Some(t) => image_circle(p, c, r, &t),
                 None => chrome::avatar(p, c, r, &m.name),
+            }
+            if hot {
+                p.circle_stroke(c, r + 3.0, Stroke::new(2.0f32, TEXT));
             }
             // one line each, shortened with "…" to fit the cell
             let line = |text: &str, font: FontId, col: Color32, y: f32| {
@@ -386,17 +411,51 @@ fn cast_grid(ui: &mut Ui, cast: &[CastMember], images: &mut Images, cell_w: f32,
                 let g = p.layout_job(job);
                 p.galley(pos2(c.x - g.size().x / 2.0, y), g, col);
             };
-            line(&m.name, FontId::proportional(14.0), TEXT, c.y + r + 12.0);
+            let name_col = if hot { TEXT } else { TEXT.gamma_multiply(0.9) };
+            line(
+                &m.name,
+                FontId::proportional(14.0),
+                name_col,
+                c.y + r + 12.0,
+            );
             if let Some(ch) = &m.character {
                 line(ch, FontId::monospace(11.0), MUTED, c.y + r + 32.0);
+            }
+            if resp
+                .on_hover_cursor(CursorIcon::PointingHand)
+                .on_hover_text("See their movies and shows")
+                .clicked()
+            {
+                click = Some(Click::Nav(View::Person(m.name.clone())));
             }
         }
         ui.add_space(14.0);
     }
+    click
+}
+
+/// Names as links to their person pages, separated by commas.
+fn people_links(ui: &mut Ui, names: &[&str], size: f32) -> Option<Click> {
+    let mut click = None;
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing.x = 0.0;
+        for (i, n) in names.iter().enumerate() {
+            if i > 0 {
+                ui.label(RichText::new(", ").size(size).color(MUTED));
+            }
+            if link(ui, n, size, TEXT, None)
+                .on_hover_text("See their movies and shows")
+                .clicked()
+            {
+                click = Some(Click::Nav(View::Person((*n).to_owned())));
+            }
+        }
+    });
+    click
 }
 
 /// Rounded panel used for metadata, critics, info.
-fn panel<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
+pub(super) fn panel<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
     egui::Frame::new()
         .fill(CARD_BG)
         .stroke(Stroke::new(1.0f32, LINE))
@@ -410,7 +469,7 @@ fn panel<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
 }
 
 /// Label on the left, value on the right, a hairline under each row.
-fn kv_rows(ui: &mut Ui, rows: &[(&str, String, Color32, f32)]) {
+pub(super) fn kv_rows(ui: &mut Ui, rows: &[(&str, String, Color32, f32)]) {
     for (i, (k, v, col, size)) in rows.iter().enumerate() {
         ui.add_space(10.0);
         ui.horizontal(|ui| {
@@ -471,7 +530,14 @@ fn title_art(ui: &mut Ui, item: &Item, images: &mut Images, max: egui::Vec2, siz
 }
 
 /// A poster with title and year under it.
-fn poster_tile(ui: &mut Ui, item: &Item, w: f32, images: &mut Images) -> bool {
+/// `sub` goes under the title (the year, a character).
+pub(super) fn poster_tile(
+    ui: &mut Ui,
+    item: &Item,
+    sub: Option<&str>,
+    w: f32,
+    images: &mut Images,
+) -> bool {
     let art_h = w * 1.5;
     let (rect, resp) = ui.allocate_exact_size(vec2(w, art_h + 44.0), Sense::click());
     if !ui.is_rect_visible(rect) {
@@ -499,16 +565,18 @@ fn poster_tile(ui: &mut Ui, item: &Item, w: f32, images: &mut Images) -> bool {
         FontId::proportional(13.5),
         TEXT,
     );
-    if let Some(y) = item.year {
+    if let Some(s) = sub {
         clip.text(
             pos2(art.left(), art.bottom() + 28.0),
             Align2::LEFT_TOP,
-            y.to_string(),
+            s,
             FontId::proportional(11.5),
             MUTED,
         );
     }
-    resp.on_hover_cursor(CursorIcon::PointingHand).clicked()
+    let resp = resp.on_hover_cursor(CursorIcon::PointingHand);
+    resp.clone().on_hover_text_at_pointer(&item.title);
+    resp.clicked()
 }
 
 /// Wide artwork with the title and year on it ("Related").
@@ -552,12 +620,16 @@ fn wide_tile(ui: &mut Ui, item: &Item, size: egui::Vec2, images: &mut Images) ->
     resp.on_hover_cursor(CursorIcon::PointingHand).clicked()
 }
 
-/// Items sharing a genre with `item`.
-fn similar<'a>(lib: &'a Library, item: &'a Item, n: usize) -> Vec<&'a Item> {
-    lib.all()
+/// `n` random items sharing a genre with `item`, the same ones each time
+/// for one `shuffle`.
+fn similar<'a>(lib: &'a Library, item: &'a Item, n: usize, shuffle: &RandomState) -> Vec<&'a Item> {
+    let mut v: Vec<&Item> = lib
+        .all()
         .filter(|i| i.id != item.id && i.genres.iter().any(|g| item.genres.contains(g)))
-        .take(n)
-        .collect()
+        .collect();
+    v.sort_by_cached_key(|i| shuffle.hash_one((&item.id, &i.id)));
+    v.truncate(n);
+    v
 }
 
 /// (season index, episode index) of every episode, in order.
@@ -788,11 +860,14 @@ impl Browse {
                     tag(ui, r);
                 }
             });
-            if let Some(d) = &item.director {
+            let directors: Vec<&str> = super::makers(item).collect();
+            if !directors.is_empty() {
                 ui.add_space(14.0);
                 ui.horizontal(|ui| {
                     ui.label(RichText::new("Director").size(14.0).color(MUTED));
-                    ui.label(RichText::new(d).size(14.0).color(TEXT));
+                    if let Some(c) = people_links(ui, &directors, 14.0) {
+                        click = Some(c);
+                    }
                 });
             }
             ui.add_space(24.0);
@@ -857,10 +932,12 @@ impl Browse {
                     ui.label(bold("Top billed", 24.0));
                     ui.add_space(16.0);
                     let n = item.cast.len().min(10);
-                    cast_grid(ui, &item.cast[..n], images, 150.0, 50.0);
+                    if let Some(c) = cast_grid(ui, &item.cast[..n], images, 150.0, 50.0) {
+                        click = Some(c);
+                    }
                     ui.add_space(24.0);
                 }
-                let more = similar(lib, item, 10);
+                let more = similar(lib, item, 10, &self.shuffle);
                 if !more.is_empty() {
                     caps(ui, "From your library", TEAL);
                     ui.add_space(4.0);
@@ -872,7 +949,8 @@ impl Browse {
                         ui.horizontal_top(|ui| {
                             ui.spacing_mut().item_spacing.x = GAP;
                             for i in row {
-                                if poster_tile(ui, i, tw, images) {
+                                let year = i.year.map(|y| y.to_string());
+                                if poster_tile(ui, i, year.as_deref(), tw, images) {
                                     click = Some(Click::Open(i.id.clone()));
                                 }
                             }
@@ -1107,11 +1185,10 @@ impl Browse {
                 ui.add_space(14.0);
                 ui.horizontal(|ui| {
                     ui.label(RichText::new("Created by").size(14.0).color(MUTED));
-                    ui.label(
-                        RichText::new(item.creators.join(", "))
-                            .size(14.0)
-                            .color(TEXT),
-                    );
+                    let names: Vec<&str> = item.creators.iter().map(String::as_str).collect();
+                    if let Some(c) = people_links(ui, &names, 14.0) {
+                        click = Some(c);
+                    }
                 });
             }
         });
@@ -1157,7 +1234,7 @@ impl Browse {
         let c = match self.tab {
             Tab::Episodes => padded(ui, |ui| self.episodes_tab(ui, item, images, progress)),
             Tab::Related => padded(ui, |ui| {
-                let more = similar(lib, item, 20);
+                let more = similar(lib, item, 20, &self.shuffle);
                 if more.is_empty() {
                     ui.label(RichText::new("Nothing similar in your library yet.").color(MUTED));
                     return None;
@@ -1177,10 +1254,7 @@ impl Browse {
                 });
                 c
             }),
-            Tab::Details => {
-                padded(ui, |ui| self.series_details_tab(ui, item));
-                None
-            }
+            Tab::Details => padded(ui, |ui| self.series_details_tab(ui, item, images)),
         };
         click.or(c)
     }
@@ -1305,7 +1379,7 @@ impl Browse {
         click
     }
 
-    fn series_details_tab(&self, ui: &mut Ui, item: &Item) {
+    fn series_details_tab(&self, ui: &mut Ui, item: &Item, images: &mut Images) -> Option<Click> {
         let w = ui.available_width();
         let narrow = w < 900.0;
         let cw = if narrow {
@@ -1404,6 +1478,16 @@ impl Browse {
                 });
             });
         }
+        if item.cast.is_empty() {
+            return None;
+        }
+        ui.add_space(30.0);
+        caps(ui, "Cast", TEAL);
+        ui.add_space(4.0);
+        ui.label(bold("Series cast", 22.0));
+        ui.add_space(16.0);
+        let n = item.cast.len().min(20);
+        cast_grid(ui, &item.cast[..n], images, 150.0, 46.0)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1728,7 +1812,9 @@ impl Browse {
                     caps(ui, "Series cast", MUTED);
                     ui.add_space(12.0);
                     let n = series.cast.len().min(10);
-                    cast_grid(ui, &series.cast[..n], images, 160.0, 40.0);
+                    if let Some(c) = cast_grid(ui, &series.cast[..n], images, 160.0, 40.0) {
+                        click = Some(c);
+                    }
                 }
                 if narrow {
                     ui.add_space(20.0);

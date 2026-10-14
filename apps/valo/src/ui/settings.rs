@@ -1,12 +1,10 @@
-//! The Settings and Profile dialogs.
+//! The Settings dialog.
 use eframe::egui::{self, vec2, Align, Color32, Layout, RichText, Sense, Stroke, Ui};
 
-use super::chrome::avatar;
 use super::{
-    bold, mono, primary_button, section, segmented, small_button, ACCENT, BG, LINE, MUTED, TEXT,
+    bold, mono, primary_button, section, segmented, small_button, ACCENT, BG, LINE, MUTED,
 };
-use crate::config::{Config, Progress};
-use crate::util::fmt_runtime;
+use crate::config::Config;
 
 /// The connection the dialogs describe.
 pub struct Conn {
@@ -14,13 +12,6 @@ pub struct Conn {
     pub base: String,
     pub user: Option<String>,
     pub signed_in: bool,
-    pub admin: bool,
-}
-
-impl Conn {
-    pub fn prefix(&self) -> String {
-        crate::config::user_prefix(&self.base, self.user.as_deref())
-    }
 }
 
 pub enum Pick {
@@ -31,12 +22,6 @@ pub enum Pick {
     OpenFiles,
     SignOut,
     Quit,
-    OpenSettings,
-}
-
-#[derive(Default)]
-pub struct SettingsState {
-    confirm_clear: bool,
 }
 
 fn dialog<R>(
@@ -142,13 +127,7 @@ fn check(ui: &mut Ui, value: &mut bool, label: &str) -> bool {
     changed
 }
 
-pub fn settings(
-    ctx: &egui::Context,
-    st: &mut SettingsState,
-    cfg: &mut Config,
-    progress: &mut Progress,
-    conn: Option<&Conn>,
-) -> Pick {
+pub fn settings(ctx: &egui::Context, cfg: &mut Config, conn: Option<&Conn>) -> Pick {
     let mut out = Pick::Keep;
     let mut changed = false;
     let (_, close) = dialog(ctx, "settings", 500.0, |ui| {
@@ -238,33 +217,12 @@ pub fn settings(
         });
         changed |= before != cfg.refresh_minutes;
         changed |= check(ui, &mut cfg.genre_rows, "Show a row for each genre on Home");
-        if let Some(c) = conn {
+        if conn.is_some() {
             row(ui, "Reload the library now", |ui| {
                 if small_button(ui, "Refresh").clicked() {
                     out = Pick::Refresh;
                 }
             });
-            row(ui, "Watch history", |ui| {
-                if st.confirm_clear {
-                    if small_button(ui, "Yes, clear it").clicked() {
-                        progress.clear(&c.prefix());
-                        progress.flush();
-                        st.confirm_clear = false;
-                    }
-                    if small_button(ui, "Cancel").clicked() {
-                        st.confirm_clear = false;
-                    }
-                } else if small_button(ui, "Clear").clicked() {
-                    st.confirm_clear = true;
-                }
-            });
-            if st.confirm_clear {
-                ui.label(
-                    RichText::new("Forget every resume point and watched mark for this server?")
-                        .small()
-                        .color(MUTED),
-                );
-            }
         }
 
         section(ui, "Appearance");
@@ -304,101 +262,6 @@ pub fn settings(
     if changed {
         cfg.save();
     }
-    if close && matches!(out, Pick::Keep) {
-        out = Pick::Close;
-    }
-    if !matches!(out, Pick::Keep) {
-        st.confirm_clear = false;
-    }
-    out
-}
-
-pub fn profile(ctx: &egui::Context, conn: &Conn, progress: &Progress) -> Pick {
-    let mut out = Pick::Keep;
-    let entries = progress.recent(&conn.prefix());
-    let finished = |kind: &str| {
-        entries
-            .iter()
-            .filter(|(id, e)| id.starts_with(kind) && e.watched())
-            .count()
-    };
-    let in_progress = entries.iter().filter(|(_, e)| e.in_progress()).count();
-    let secs: f64 = entries
-        .iter()
-        .map(|(_, e)| if e.dur > 0.0 { e.pos.min(e.dur) } else { e.pos })
-        .sum();
-    let name = conn.user.clone().unwrap_or_else(|| "Guest".into());
-
-    let (_, close) = dialog(ctx, "profile", 460.0, |ui| {
-        ui.horizontal(|ui| {
-            let (r, _) = ui.allocate_exact_size(vec2(56.0, 56.0), Sense::hover());
-            avatar(ui.painter(), r.center(), 28.0, &name);
-            ui.add_space(6.0);
-            ui.vertical(|ui| {
-                ui.spacing_mut().item_spacing.y = 2.0;
-                ui.add_space(6.0);
-                ui.label(bold(&name, 24.0));
-                let how = if conn.signed_in {
-                    "Signed in to"
-                } else {
-                    "Connected to"
-                };
-                ui.label(mono(format!("{how} {}", conn.name), 11.0).color(MUTED));
-            });
-        });
-
-        section(ui, "Watching");
-        egui::Grid::new("stats")
-            .num_columns(2)
-            .spacing([24.0, 10.0])
-            .show(ui, |ui| {
-                for (label, value) in [
-                    ("Movies finished", finished("movie:").to_string()),
-                    ("Episodes finished", finished("episode:").to_string()),
-                    ("In progress", in_progress.to_string()),
-                    (
-                        "Time watched",
-                        if secs > 0.0 {
-                            fmt_runtime(secs)
-                        } else {
-                            "—".into()
-                        },
-                    ),
-                ] {
-                    ui.label(RichText::new(label).size(15.0));
-                    ui.label(bold(value, 16.0).color(TEXT));
-                    ui.end_row();
-                }
-            });
-        ui.add_space(4.0);
-        ui.label(
-            RichText::new("Counted from this computer's watch history.")
-                .small()
-                .color(MUTED),
-        );
-
-        section(ui, "Server");
-        ui.label(mono(&conn.base, 11.0).color(MUTED));
-        ui.add_space(6.0);
-        ui.horizontal(|ui| {
-            if conn.admin && small_button(ui, "Open admin ↗").clicked() {
-                super::chrome::open_url(&format!("{}/admin", conn.base));
-            }
-            if small_button(ui, "Settings").clicked() {
-                out = Pick::OpenSettings;
-            }
-            if conn.signed_in && small_button(ui, "Sign out").clicked() {
-                out = Pick::SignOut;
-            }
-        });
-
-        ui.add_space(22.0);
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if primary_button(ui, "   Done   ", true).clicked() {
-                out = Pick::Close;
-            }
-        });
-    });
     if close && matches!(out, Pick::Keep) {
         out = Pick::Close;
     }

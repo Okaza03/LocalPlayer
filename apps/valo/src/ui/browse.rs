@@ -1,7 +1,9 @@
 //! The media library: home page, movie/series grids, search and details.
 mod details;
+mod people;
 
 use std::collections::HashMap;
+use std::hash::{BuildHasher, RandomState};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -14,11 +16,11 @@ use eframe::egui::{
 use super::chrome::{self, Icon};
 use super::{
     bold, gradient, image_cover, menu_item, mono, placeholder, primary_button, secondary_button,
-    segmented, tab,
+    segmented, small_button, tab,
 };
 use super::{ACCENT, BG, ERROR, MUTED, SURFACE, SURFACE_HI, TEXT};
 use crate::api::{Client, Item, Kind, Library, Missing, Mode, Unauthorized};
-use crate::config::{Config, Entry, Progress, Watchlist};
+use crate::config::{Config, Entry, Hidden, Progress, Watchlist};
 use crate::images::Images;
 use crate::player::Source;
 use crate::ui::watch::PlayItem;
@@ -40,6 +42,10 @@ enum View {
     Details(String),
     /// series id, episode id
     Episode(String, String),
+    /// A cast member, director or creator, by name.
+    Person(String),
+    /// The signed-in user's watching stats.
+    Profile,
 }
 
 /// Background probe of a stream's file info (see `player::probe`).
@@ -70,6 +76,7 @@ enum Sort {
     Title,
     Year,
     Added,
+    Director,
 }
 
 /// What a card or button asked for.
@@ -80,6 +87,8 @@ enum Click {
     Play(String, Option<String>, bool),
     Nav(View),
     Back,
+    /// Remove an item from Continue watching.
+    Hide(String),
 }
 
 struct NextUp<'a> {
@@ -96,6 +105,8 @@ struct Card {
     sub: Option<String>,
     art: Option<String>,
     progress: Option<f32>,
+    /// Has a "⋮" menu to remove it from Continue watching.
+    removable: bool,
 }
 
 pub struct Browse {
@@ -109,6 +120,8 @@ pub struct Browse {
     history: Vec<View>,
     search: String,
     sort: Sort,
+    /// Sort direction.
+    desc: bool,
     genre: Option<String>,
     season: usize,
     hero_idx: usize,
@@ -118,6 +131,9 @@ pub struct Browse {
     loaded_at: Option<Instant>,
     tab: Tab,
     watchlist: Watchlist,
+    hidden: Hidden,
+    /// Orders Featured and "You might also like": random, but the same all session.
+    shuffle: RandomState,
     /// By stream URL.
     probes: HashMap<String, Probe>,
 }
@@ -135,6 +151,7 @@ impl Browse {
             history: Vec::new(),
             search: String::new(),
             sort: Sort::Title,
+            desc: false,
             genre: None,
             season: 0,
             hero_idx: 0,
@@ -144,6 +161,8 @@ impl Browse {
             loaded_at: None,
             tab: Tab::Episodes,
             watchlist: Watchlist::load(),
+            hidden: Hidden::load(),
+            shuffle: RandomState::new(),
             probes: HashMap::new(),
         };
         b.reload(ctx);
@@ -167,7 +186,10 @@ impl Browse {
 
     fn go(&mut self, v: View) {
         if v != self.view {
-            if matches!(v, View::Details(_) | View::Episode(..)) {
+            if matches!(
+                v,
+                View::Details(_) | View::Episode(..) | View::Person(_) | View::Profile
+            ) {
                 self.history.push(self.view.clone());
                 if let View::Details(_) = v {
                     self.season = usize::MAX; // pick the one with the next episode
@@ -299,6 +321,7 @@ impl Browse {
                 let scroll_id = match &self.view {
                     View::Details(id) => format!("details{id}"),
                     View::Episode(_, ep) => format!("episode{ep}"),
+                    View::Person(name) => format!("person{name}"),
                     _ if !self.search.is_empty() => "search".to_owned(),
                     v => format!("{}", view_index(v)),
                 };
@@ -332,6 +355,12 @@ impl Browse {
                                     }
                                     None => Some(Click::Nav(View::Home)),
                                 },
+                                View::Person(name) => {
+                                    self.person_page(ui, &lib, &name, images, progress)
+                                }
+                                View::Profile => {
+                                    self.profile_page(ui, &lib, images, progress, &mut action)
+                                }
                             }
                         };
                         ui.add_space(40.0);
@@ -342,6 +371,10 @@ impl Browse {
             Some(Click::Open(id)) => self.go(View::Details(id)),
             Some(Click::Nav(v)) => self.go(v),
             Some(Click::Back) => self.back(),
+            Some(Click::Hide(id)) => {
+                let key = self.key(&id);
+                self.hidden.hide(&key);
+            }
             Some(Click::Play(id, ep, restart)) => {
                 if let Some(lib) = self.lib.clone() {
                     if let Some(a) =
@@ -364,9 +397,13 @@ impl Browse {
     fn top_bar(&mut self, ctx: &egui::Context, action: &mut Action, updates: &Updates) {
         let mut nav = None;
         let mut back = false;
-        let in_details = matches!(self.view, View::Details(_) | View::Episode(..));
+        let in_details = matches!(
+            self.view,
+            View::Details(_) | View::Episode(..) | View::Person(_) | View::Profile
+        );
         let (current, searching) = (self.view.clone(), !self.search.is_empty());
         let name = self.client.info.name.clone();
+        let mut open_profile = false;
         chrome::title_bar(
             ctx,
             &name,
@@ -390,7 +427,7 @@ impl Browse {
                 }
             },
             |ui| {
-                self.profile_menu(ui, action);
+                self.profile_menu(ui, action, &mut open_profile);
                 chrome::vsep(ui);
                 if chrome::icon_button(ui, Icon::Settings, "Settings").clicked() {
                     *action = Action::OpenSettings;
@@ -421,13 +458,16 @@ impl Browse {
         if back {
             self.back();
         }
+        if open_profile {
+            nav = Some(View::Profile);
+        }
         if let Some(v) = nav {
             self.go(v);
             self.search.clear();
         }
     }
 
-    fn profile_menu(&mut self, ui: &mut Ui, action: &mut Action) {
+    fn profile_menu(&mut self, ui: &mut Ui, action: &mut Action, profile: &mut bool) {
         let name = self.user.clone().unwrap_or_else(|| "Guest".to_owned());
         let label =
             ui.fonts(|f| f.layout_no_wrap(name.to_uppercase(), FontId::monospace(11.5), TEXT));
@@ -482,7 +522,10 @@ impl Browse {
                         ui.memory_mut(|m| m.close_popup());
                     }
                 };
-                pick(ui, "Profile", Action::OpenProfile);
+                if menu_item(ui, "Profile") {
+                    *profile = true;
+                    ui.memory_mut(|m| m.close_popup());
+                }
                 if self.client.admin && menu_item(ui, "Admin  ↗") {
                     chrome::open_url(&format!("{}/admin", self.client.base));
                     ui.memory_mut(|m| m.close_popup());
@@ -563,7 +606,7 @@ impl Browse {
             return None;
         }
 
-        let featured = featured(lib);
+        let featured = featured(lib, &self.shuffle);
         if !featured.is_empty() {
             if self.hero_since.elapsed() > HERO_ROTATE {
                 self.hero_idx = (self.hero_idx + 1) % featured.len();
@@ -845,7 +888,7 @@ impl Browse {
                 break;
             }
             if let Some(m) = lib.movies.iter().find(|m| m.id == id) {
-                if e.in_progress() {
+                if e.in_progress() && !self.hidden.hides(&self.key(&m.id), e.updated) {
                     out.push(Card {
                         item: m.id.clone(),
                         episode: None,
@@ -853,6 +896,7 @@ impl Browse {
                         sub: Some(format!("{} left", fmt_runtime(e.dur - e.pos))),
                         art: m.backdrop.clone().or(m.poster.clone()),
                         progress: Some(e.fraction()),
+                        removable: true,
                     });
                 }
             } else if let Some((s, _, _)) = lib.find_episode(id) {
@@ -860,6 +904,10 @@ impl Browse {
                     continue;
                 }
                 seen_series.push(s.id.clone());
+                // newest first, so `e` is the series' latest watch
+                if self.hidden.hides(&self.key(&s.id), e.updated) {
+                    continue;
+                }
                 if let Some(n) = self.next_up(s, progress) {
                     let season = &s.seasons[n.si];
                     let ep = &season.episodes[n.ei];
@@ -870,6 +918,7 @@ impl Browse {
                         sub: Some(format!("S{} E{} · {}", season.number, ep.number, ep.title)),
                         art: ep.still.clone().or(s.backdrop.clone()).or(s.poster.clone()),
                         progress: Some(n.resume.map_or(0.0, Entry::fraction)),
+                        removable: true,
                     });
                 }
             }
@@ -897,6 +946,7 @@ impl Browse {
                             .map(Entry::fraction)
                     })
                     .flatten(),
+                removable: false,
             })
             .collect()
     }
@@ -1030,11 +1080,20 @@ impl Browse {
             .filter(|(_, s)| self.filter == Filter::All || **s == self.filter)
             .map(|(i, _)| *i)
             .collect();
+        let desc = self.desc;
         match self.sort {
+            // the library comes sorted by title
+            Sort::Title if desc => items.reverse(),
             Sort::Title => {}
-            Sort::Year => items.sort_by_key(|i| std::cmp::Reverse(i.year)),
-            Sort::Added => items.sort_by_key(|i| std::cmp::Reverse(i.added)),
+            Sort::Year => sort_by(&mut items, desc, |i| i.year),
+            Sort::Added => sort_by(&mut items, desc, |i| i.added),
+            Sort::Director => sort_by(&mut items, desc, |i| maker(i).map(str::to_lowercase)),
         }
+        let maker_label = if kind == Kind::Movie {
+            "Director"
+        } else {
+            "Creator"
+        };
 
         ui.add_space(18.0);
         ui.horizontal(|ui| {
@@ -1064,12 +1123,26 @@ impl Browse {
                     ui.label(mono("Genre", 11.0).color(MUTED));
                     ui.add_space(14.0);
                 }
+                let arrow = if self.desc {
+                    "↓  Descending"
+                } else {
+                    "↑  Ascending"
+                };
+                if small_button(ui, arrow)
+                    .on_hover_text("Sort direction")
+                    .clicked()
+                {
+                    self.desc = !self.desc;
+                }
+                ui.add_space(6.0);
+                let before = self.sort;
                 egui::ComboBox::from_id_salt("sort")
                     .width(170.0)
                     .selected_text(match self.sort {
                         Sort::Title => "A – Z",
                         Sort::Year => "Release year",
                         Sort::Added => "Recently added",
+                        Sort::Director => maker_label,
                     })
                     .show_ui(ui, |ui| {
                         ui.selectable_value(&mut self.sort, Sort::Title, "A – Z");
@@ -1077,7 +1150,14 @@ impl Browse {
                         if all.iter().any(|i| i.added.is_some()) {
                             ui.selectable_value(&mut self.sort, Sort::Added, "Recently added");
                         }
+                        if all.iter().any(|i| maker(i).is_some()) {
+                            ui.selectable_value(&mut self.sort, Sort::Director, maker_label);
+                        }
                     });
+                if self.sort != before {
+                    // newest first, names A to Z
+                    self.desc = matches!(self.sort, Sort::Year | Sort::Added);
+                }
                 ui.label(mono("Sort", 11.0).color(MUTED));
             });
         });
@@ -1088,7 +1168,12 @@ impl Browse {
             return None;
         }
         ui.add_space(16.0);
-        let cards = self.poster_cards(items.into_iter(), progress);
+        let mut cards = self.poster_cards(items.iter().copied(), progress);
+        if self.sort == Sort::Director {
+            for (c, i) in cards.iter_mut().zip(&items) {
+                c.sub = maker(i).map(str::to_owned);
+            }
+        }
         grid(ui, &cards, images)
     }
 
@@ -1131,14 +1216,36 @@ impl Browse {
                 i.title.to_lowercase().contains(&q)
                     || i.genres.iter().any(|g| g.to_lowercase() == q)
                     || i.year.is_some_and(|y| y.to_string() == q)
+                    || makers(i).any(|d| d.to_lowercase().contains(&q))
             })
             .collect();
+        let mut people: Vec<&str> = hits
+            .iter()
+            .flat_map(|i| makers(i))
+            .filter(|d| d.to_lowercase().contains(&q))
+            .collect();
+        people.sort_by_key(|d| d.to_lowercase());
+        people.dedup();
         ui.add_space(24.0);
         ui.horizontal(|ui| {
             ui.add_space(SIDE);
             ui.label(mono(format!("Results for “{}”", self.search.trim()), 13.0));
             ui.label(mono(hits.len().to_string(), 13.0).color(MUTED));
         });
+        let mut click = None;
+        if !people.is_empty() {
+            ui.add_space(10.0);
+            ui.horizontal_wrapped(|ui| {
+                ui.add_space(SIDE);
+                ui.label(mono("Directors & creators", 11.0).color(MUTED));
+                ui.add_space(6.0);
+                for d in people {
+                    if secondary_button(ui, d).clicked() {
+                        click = Some(Click::Nav(View::Person(d.to_owned())));
+                    }
+                }
+            });
+        }
         ui.add_space(16.0);
         if hits.is_empty() {
             ui.add_space(40.0);
@@ -1146,7 +1253,7 @@ impl Browse {
             return None;
         }
         let cards = self.poster_cards(hits.into_iter(), progress);
-        grid(ui, &cards, images)
+        grid(ui, &cards, images).or(click)
     }
 
     // -------------------------------------------------------------- details
@@ -1235,12 +1342,44 @@ fn view_index(v: &View) -> usize {
         View::Home => 0,
         View::Movies => 1,
         View::Series => 2,
-        View::Details(_) | View::Episode(..) => 3,
+        View::Details(_) | View::Episode(..) | View::Person(_) => 3,
+        View::Profile => 4,
     }
 }
 
-/// Items for the home banner: ones with a backdrop first.
-fn featured(lib: &Library) -> Vec<&Item> {
+/// Sort `items` by `key`, ascending or descending; ties keep their order and
+/// items without a key go last either way.
+fn sort_by<K: Ord>(items: &mut [&Item], desc: bool, key: impl Fn(&Item) -> Option<K>) {
+    let mut keyed: Vec<(Option<K>, &Item)> = items.iter().map(|i| (key(i), *i)).collect();
+    keyed.sort_by(|(a, _), (b, _)| match (a, b) {
+        (Some(a), Some(b)) if desc => b.cmp(a),
+        (Some(a), Some(b)) => a.cmp(b),
+        _ => a.is_none().cmp(&b.is_none()),
+    });
+    for (slot, (_, i)) in items.iter_mut().zip(keyed) {
+        *slot = i;
+    }
+}
+
+/// The movie's director, else the series' first creator.
+fn maker(i: &Item) -> Option<&str> {
+    i.director
+        .as_deref()
+        .or(i.creators.first().map(String::as_str))
+}
+
+/// Everyone who directed or created `i` ("A, B" directors are split).
+fn makers(i: &Item) -> impl Iterator<Item = &str> {
+    i.director
+        .iter()
+        .flat_map(|d| d.split(','))
+        .chain(i.creators.iter().map(String::as_str))
+        .map(str::trim)
+        .filter(|d| !d.is_empty())
+}
+
+/// Items for the home banner, in random order: ones with a backdrop first.
+fn featured<'a>(lib: &'a Library, shuffle: &RandomState) -> Vec<&'a Item> {
     let mut v: Vec<&Item> = lib.all().filter(|i| i.backdrop.is_some()).collect();
     if v.is_empty() {
         v = lib.all().filter(|i| i.poster.is_some()).collect();
@@ -1248,7 +1387,7 @@ fn featured(lib: &Library) -> Vec<&Item> {
     if v.is_empty() {
         v = lib.all().collect();
     }
-    v.sort_by_key(|i| std::cmp::Reverse(i.added.unwrap_or(0)));
+    v.sort_by_cached_key(|i| shuffle.hash_one(&i.id));
     v.truncate(6);
     v
 }
@@ -1302,9 +1441,9 @@ fn card(ui: &mut Ui, c: &Card, wide: bool, images: &mut Images) -> Option<Click>
     if !ui.is_rect_visible(rect) {
         return None;
     }
-    let t = ui
-        .ctx()
-        .animate_bool_with_time(resp.id, resp.hovered(), 0.12);
+    // the buttons on it cover part of the card, so count them as hovering it
+    let hot = resp.hovered() || resp.contains_pointer();
+    let t = ui.ctx().animate_bool_with_time(resp.id, hot, 0.12);
     let art = Rect::from_min_size(rect.min, size).expand(t * 4.0);
     let p = ui.painter();
     match c.art.as_ref().and_then(|u| images.get(u)) {
@@ -1373,6 +1512,71 @@ fn card(ui: &mut Ui, c: &Card, wide: bool, images: &mut Images) -> Option<Click>
             MUTED,
         );
     }
+    if hot {
+        let font = FontId::new(12.0, egui::FontFamily::Name("bold".into()));
+        let g = ui
+            .painter()
+            .layout_no_wrap("More info".to_owned(), font, TEXT);
+        let lift = if c.progress.is_some() { 16.0 } else { 8.0 };
+        let ir = Rect::from_min_size(
+            pos2(art.left() + 8.0, art.bottom() - lift - 26.0),
+            vec2(g.size().x + 20.0, 26.0),
+        );
+        let info = ui.interact(ir, resp.id.with("info"), Sense::click());
+        let a = if info.hovered() { 235 } else { 170 };
+        let p = ui.painter();
+        p.rect_filled(ir, 13.0, Color32::from_black_alpha(a));
+        p.rect_stroke(
+            ir,
+            13.0,
+            Stroke::new(
+                1.0f32,
+                TEXT.gamma_multiply(if info.hovered() { 0.9 } else { 0.4 }),
+            ),
+            egui::StrokeKind::Inside,
+        );
+        p.galley(ir.center() - g.size() / 2.0, g, TEXT);
+        if info.on_hover_cursor(CursorIcon::PointingHand).clicked() {
+            return Some(Click::Open(c.item.clone()));
+        }
+    }
+    if c.removable {
+        let menu = resp.id.with("menu");
+        let open = ui.memory(|m| m.is_popup_open(menu));
+        if hot || open {
+            let dr =
+                Rect::from_min_size(pos2(art.right() - 38.0, art.top() + 8.0), vec2(30.0, 30.0));
+            let dots = ui.interact(dr, menu.with("button"), Sense::click());
+            let a = if dots.hovered() || open { 230 } else { 150 };
+            ui.painter()
+                .circle_filled(dr.center(), 15.0, Color32::from_black_alpha(a));
+            chrome::draw_icon(ui.painter(), dr.center(), Icon::More, TEXT);
+            let dots = dots
+                .on_hover_text("More")
+                .on_hover_cursor(CursorIcon::PointingHand);
+            if dots.clicked() {
+                ui.memory_mut(|m| m.toggle_popup(menu));
+                return None;
+            }
+            let mut hide = false;
+            egui::popup::popup_below_widget(
+                ui,
+                menu,
+                &dots,
+                egui::PopupCloseBehavior::CloseOnClickOutside,
+                |ui| {
+                    ui.set_min_width(240.0);
+                    if menu_item(ui, "Remove from Continue watching") {
+                        hide = true;
+                        ui.memory_mut(|m| m.close_popup());
+                    }
+                },
+            );
+            if hide {
+                return Some(Click::Hide(c.item.clone()));
+            }
+        }
+    }
     let resp = resp.on_hover_cursor(CursorIcon::PointingHand);
     if !wide {
         resp.clone().on_hover_text_at_pointer(&c.title);
@@ -1401,4 +1605,29 @@ fn grid(ui: &mut Ui, cards: &[Card], images: &mut Images) -> Option<Click> {
         ui.add_space(12.0);
     }
     click
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sorts_both_ways_with_blanks_last() {
+        let item = |id: &str, year: Option<u32>| Item {
+            id: id.into(),
+            year,
+            ..Default::default()
+        };
+        let all = [
+            item("a", Some(2001)),
+            item("b", None),
+            item("c", Some(1999)),
+        ];
+        let ids = |v: &[&Item]| v.iter().map(|i| i.id.as_str()).collect::<String>();
+        let mut v: Vec<&Item> = all.iter().collect();
+        sort_by(&mut v, false, |i| i.year);
+        assert_eq!(ids(&v), "cab");
+        sort_by(&mut v, true, |i| i.year);
+        assert_eq!(ids(&v), "acb");
+    }
 }
