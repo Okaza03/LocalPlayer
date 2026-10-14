@@ -7,6 +7,7 @@ mod config;
 mod images;
 mod integrate;
 mod player;
+mod sync;
 mod ui;
 mod update;
 mod util;
@@ -96,6 +97,7 @@ enum Stage {
 struct App {
     cfg: Config,
     progress: Progress,
+    sync: sync::Sync,
     audio: AudioOut,
     images: Images,
     muted: bool,
@@ -124,6 +126,7 @@ impl App {
             .then(|| Watch::new(files.into_iter().map(PlayItem::local).collect()));
         Self {
             progress: Progress::load(),
+            sync: sync::Sync::default(),
             audio: AudioOut::new(),
             images: Images::new(ctx),
             muted: false,
@@ -227,6 +230,7 @@ impl App {
                 if let Stage::Browse(b) = &mut self.stage {
                     b.reload(ctx);
                 }
+                self.sync.pull_now();
             }
             Action::OpenSettings => self.dialog = Some(Dialog::Settings),
             Action::CheckUpdates => self.updates.check(ctx, true),
@@ -332,6 +336,12 @@ impl eframe::App for App {
             ctx.set_zoom_factor(self.cfg.ui_scale.clamp(0.5, 2.0));
         }
 
+        if let Stage::Browse(b) = &self.stage {
+            let watching = self.watch.is_some();
+            self.sync
+                .tick(ctx, b.client(), &mut self.progress, watching);
+        }
+
         if let Some(w) = self.watch.as_mut() {
             if w.ui(
                 ctx,
@@ -342,6 +352,7 @@ impl eframe::App for App {
             ) {
                 self.watch = None;
                 self.cfg.save();
+                self.sync.push_now();
                 ctx.send_viewport_cmd(egui::ViewportCommand::Title("LocalPlayer".into()));
             }
             chrome::window_frame(ctx);
@@ -424,6 +435,9 @@ impl eframe::App for App {
             w.save_progress(&mut self.progress);
         }
         self.watch = None;
+        if let Stage::Browse(b) = &self.stage {
+            self.sync.finish(b.client(), &mut self.progress);
+        }
         self.progress.flush();
         self.cfg.save();
     }

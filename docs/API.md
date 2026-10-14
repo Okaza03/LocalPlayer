@@ -30,7 +30,7 @@ python3 server/localplayer_server.py ~/Videos --add-user noah     # asks for a p
 python3 server/localplayer_server.py ~/Videos --add-user noah --admin
 ```
 
-`--add-user` creates the user and exits. Start the server again afterwards. Users and tokens are stored in `~/Videos/.localplayer/`. Sign-in is on as soon as one user exists.
+`--add-user` creates the user and exits. Start the server again afterwards. Users, tokens and each user's watch progress are stored in `~/Videos/.localplayer/`. Sign-in is on as soon as one user exists.
 
 Put your files in `Movies/` and `Series/` (`Films/`, `TV/`, `TV Shows/` and `Shows/` also work):
 
@@ -92,7 +92,7 @@ A cast `photo` can be a URL or an image file next to `info.json`. The server wor
 
 ### Option 2: your own API
 
-Add the [endpoints](#endpoints) below to an existing app. Only `/api/info`, `/api/library` and the stream URLs are required. Add `/api/login` if the library should be private. See [Examples](#examples) for Laravel, Express and Flask.
+Add the [endpoints](#endpoints) below to an existing app. Only `/api/info`, `/api/library` and the stream URLs are required. Add `/api/login` if the library should be private, and `/api/progress` to sync watch progress between devices. See [Examples](#examples) for Laravel, Express and Flask.
 
 ### Option 3: a plain folder listing
 
@@ -161,7 +161,7 @@ Under **Metadata** the app shows a bar for each field, e.g. `Poster 48/52`. Fiel
 
 | Group | Fields |
 |---|---|
-| Movies and series | Title, Description (`overview`), Poster, Backdrop, Year, Genres, Age rating (`rating`), Date added (`added`), Title logo (`logo`), Cast, Release date (`released`), Score, Reviews |
+| Movies and series | Title, Description (`overview`), Poster, Backdrop, Year, Genres, Age rating (`rating`), Date added (`added`), Title logo (`logo`), Cast, Release date (`released`), Score |
 | Movies | Runtime (`duration`), Director, Budget, Box office (`revenue`), File info (`file`) |
 | Series | Creators, Network, Status |
 | Episodes | Title, Description (`overview`), Thumbnail (`still`), Runtime (`duration`), Air date (`aired`), Score, File info (`file`) |
@@ -217,6 +217,37 @@ Sent with the bearer token when the user signs out. Invalidate the token. The an
 ### `GET /api/library`: required
 
 Returns the whole catalog ([format below](#the-library-json)). When `auth` is `true`, answer `401` without a valid token. Any `401` while the app is running sends the user back to the sign-in screen.
+
+### `GET /api/progress`: optional
+
+The signed-in user's watch progress, most recently watched first. With these two endpoints, resume points and watched marks follow the user between the app on every device and your website.
+
+```json
+[{ "type": "episode", "id": "42", "position": 812.5, "duration": 2640,
+   "percent": 31, "completed": false, "updated": 1760400000 }]
+```
+
+| Field | Type | |
+|---|---|---|
+| `type` | string | `"movie"` or `"episode"` |
+| `id` | string or int | The `id` the library gives that movie or episode |
+| `position` | number | Seconds |
+| `duration` | number | Seconds, `0` if unknown |
+| `completed` | bool | Watched to the end. The app shows it as watched whatever the position. |
+| `updated` | int | Unix time of the last change, set by the server |
+| `percent` | int | Ignored by the app |
+
+The app asks for this on start, every minute while nothing is playing, and on *Refresh*. When an entry here is newer than the app's own copy, the server's copy wins. Answer `401` when there's no signed-in user (for example with sign-in off). `401`, `404`, `405` or `501` turn syncing off for the session, and progress stays on the device.
+
+### `POST /api/progress`: optional
+
+Saves one entry. The app sends it every 15 seconds while something plays, when the player closes, and on quit. Changes made offline are sent once the server answers again.
+
+```json
+{ "type": "movie", "id": 123, "position": 812.5, "duration": 2640 }
+```
+
+Ids that are whole numbers are sent as numbers, others as strings. Store one entry per user and item, set `updated` to the current time, and answer with the saved entry in the `GET` shape. Answer `404` for an unknown id and `422` for an invalid body; the app drops that change instead of retrying it. `"position": 0` means the user cleared their watch history.
 
 ### Stream URLs: required
 
@@ -380,6 +411,8 @@ Route::post('/login', function (Request $r) {
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', fn (Request $r) => $r->user()->currentAccessToken()->delete());
     Route::get('/library', [LocalPlayerController::class, 'library']);           // builds the JSON above
+    Route::get('/progress', [ProgressController::class, 'index']);               // optional: watch progress sync
+    Route::post('/progress', [ProgressController::class, 'store']);
     Route::get('/stream/{type}/{id}', [LocalPlayerController::class, 'stream']); // return response()->file($path)
 });
 ```

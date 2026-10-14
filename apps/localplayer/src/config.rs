@@ -1,6 +1,6 @@
 //! Settings and watch progress, stored as JSON in ~/.config/localplayer
 //! (%APPDATA%\localplayer on Windows).
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::PathBuf;
 
@@ -129,10 +129,14 @@ impl Entry {
     }
 }
 
-/// Resume points keyed by "<server>|<stream id>".
+/// Resume points keyed by "<server>|<stream id>". An entry at position 0 is a
+/// cleared one, kept so the clearing reaches the server (see sync.rs).
 #[derive(Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Progress {
     entries: HashMap<String, Entry>,
+    /// Keys changed here that the server hasn't been told about yet.
+    unsent: HashSet<String>,
     #[serde(skip)]
     dirty: bool,
 }
@@ -143,7 +147,7 @@ impl Progress {
     }
 
     pub fn get(&self, key: &str) -> Option<&Entry> {
-        self.entries.get(key)
+        self.entries.get(key).filter(|e| e.pos > 0.0)
     }
 
     pub fn set(&mut self, key: &str, pos: f64, dur: f64) {
@@ -155,6 +159,7 @@ impl Progress {
                 updated: now_unix(),
             },
         );
+        self.unsent.insert(key.to_owned());
         self.dirty = true;
     }
 
@@ -163,16 +168,76 @@ impl Progress {
         let mut v: Vec<_> = self
             .entries
             .iter()
+            .filter(|(_, e)| e.pos > 0.0)
             .filter_map(|(k, e)| k.strip_prefix(prefix).map(|id| (id, e)))
             .collect();
         v.sort_by_key(|(_, e)| std::cmp::Reverse(e.updated));
         v
     }
 
-    /// Forget the watch history for one server.
+    /// Forget the watch history for one server (and, once synced, everywhere).
     pub fn clear(&mut self, prefix: &str) {
-        self.entries.retain(|k, _| !k.starts_with(prefix));
-        self.dirty = true;
+        let keys: Vec<String> = self
+            .entries
+            .iter()
+            .filter(|(k, e)| k.starts_with(prefix) && e.pos > 0.0)
+            .map(|(k, _)| k.clone())
+            .collect();
+        for k in keys {
+            self.set(&k, 0.0, 0.0);
+        }
+    }
+
+    /// Take the server's copy of each entry it has a newer version of.
+    /// Returns whether anything changed.
+    pub fn merge(&mut self, prefix: &str, remote: Vec<(String, Entry)>) -> bool {
+        let mut changed = false;
+        for (id, e) in remote {
+            let key = format!("{prefix}{id}");
+            if self
+                .entries
+                .get(&key)
+                .is_some_and(|l| l.updated >= e.updated)
+            {
+                continue;
+            }
+            self.unsent.remove(&key);
+            self.entries.insert(key, e);
+            changed = true;
+        }
+        self.dirty |= changed;
+        changed
+    }
+
+    /// Changes for one server that still have to be sent.
+    pub fn unsent(&self, prefix: &str) -> Vec<(String, Entry)> {
+        self.unsent
+            .iter()
+            .filter_map(|k| {
+                Some((
+                    k.strip_prefix(prefix)?.to_owned(),
+                    self.entries.get(k)?.clone(),
+                ))
+            })
+            .collect()
+    }
+
+    /// The server has `id` as it was in `sent`. Unless it changed here in the
+    /// meantime, stop sending it and take the server's timestamp, so the next
+    /// pull doesn't mistake the server's copy for a newer one.
+    pub fn sent(&mut self, prefix: &str, id: &str, sent: &Entry, server_updated: Option<i64>) {
+        let key = format!("{prefix}{id}");
+        if let Some(l) = self
+            .entries
+            .get_mut(&key)
+            .filter(|l| l.updated == sent.updated)
+        {
+            if let Some(t) = server_updated {
+                l.updated = t;
+            }
+            self.unsent.remove(&key);
+            self.dirty = true;
+        }
     }
 
     pub fn flush(&mut self) {

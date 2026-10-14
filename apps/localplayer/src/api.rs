@@ -11,6 +11,7 @@ use std::time::Duration;
 
 use anyhow::{anyhow, bail, Context, Result};
 use serde::Deserialize;
+use serde_json::Value;
 
 use crate::util::percent_decode;
 
@@ -263,6 +264,54 @@ impl Library {
         let by_title = |a: &Item, b: &Item| a.title.to_lowercase().cmp(&b.title.to_lowercase());
         self.movies.sort_by(by_title);
         self.series.sort_by(by_title);
+    }
+}
+
+/// One title's watch state as `/api/progress` sends and takes it.
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct Watched {
+    /// "movie" or "episode"
+    #[serde(rename = "type")]
+    pub kind: String,
+    /// The library's id for it; a number or a string.
+    pub id: Value,
+    pub position: f64,
+    pub duration: f64,
+    /// Watched to the end (the server decides where that is).
+    pub completed: bool,
+    /// Unix time of the last change.
+    pub updated: i64,
+}
+
+impl Watched {
+    /// The id the rest of the app uses ("movie:42"; see [`Library::finish`]).
+    pub fn key(&self) -> Option<String> {
+        let id = match &self.id {
+            Value::String(s) => s.clone(),
+            Value::Number(n) => n.to_string(),
+            _ => return None,
+        };
+        matches!(self.kind.as_str(), "movie" | "episode").then(|| format!("{}:{id}", self.kind))
+    }
+
+    /// The reverse of [`Watched::key`]. Ids that look like numbers go out as numbers.
+    pub fn from_key(key: &str, position: f64, duration: f64) -> Option<Self> {
+        let (kind, id) = key.split_once(':')?;
+        if !matches!(kind, "movie" | "episode") {
+            return None;
+        }
+        let id = match id.parse::<u64>() {
+            Ok(n) if n.to_string() == id => Value::from(n),
+            _ => Value::from(id),
+        };
+        Some(Self {
+            kind: kind.to_owned(),
+            id,
+            position,
+            duration,
+            ..Default::default()
+        })
     }
 }
 
@@ -574,6 +623,47 @@ impl Client {
             .context("the server sent a library this app doesn't understand")?,
             Mode::Directory => self.crawl()?,
         })
+    }
+
+    /// Everyone's watch state for the signed-in user (`GET /api/progress`).
+    /// `Ok(None)`: this server doesn't keep progress.
+    pub fn progress(&self) -> Result<Option<Vec<Watched>>> {
+        if self.info.mode != Mode::Api {
+            return Ok(None);
+        }
+        match self
+            .get(&format!("{}/api/progress", self.base))
+            .set("Accept", "application/json")
+            .call()
+        {
+            Ok(r) => Ok(Some(
+                r.into_json()
+                    .context("the server sent progress this app doesn't understand")?,
+            )),
+            // 401 also covers servers without sign-in, which have no user to keep it for
+            Err(ureq::Error::Status(401 | 404 | 405 | 501, _)) => Ok(None),
+            Err(e) => Err(status_err(e, "can't load watch progress")),
+        }
+    }
+
+    /// Save one entry (`POST /api/progress`). The server answers with what it
+    /// stored, or `Ok(None)` when it doesn't know the item or rejects it.
+    pub fn save_progress(&self, w: &Watched) -> Result<Option<Watched>> {
+        let mut r = self
+            .agent
+            .post(&format!("{}/api/progress", self.base))
+            .set("Accept", "application/json");
+        if let Some(h) = self.auth_header() {
+            r = r.set("Authorization", &h);
+        }
+        let body = serde_json::json!({
+            "type": w.kind, "id": w.id, "position": w.position, "duration": w.duration,
+        });
+        match r.send_json(body) {
+            Ok(r) => Ok(r.into_json().ok()),
+            Err(ureq::Error::Status(404 | 422, _)) => Ok(None),
+            Err(e) => Err(status_err(e, "can't save watch progress")),
+        }
     }
 
     /// Download an image (poster, backdrop) with our credentials.

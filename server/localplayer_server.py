@@ -15,6 +15,9 @@ photo being a URL or an image file next to info.json), released, end_year,
 network, status, budget, revenue, score, score_source, reviews. A series can add
 "episodes": {"S01E01": {"title", "overview", "aired", "score"}}. A logo.png
 next to the video is used as title artwork.
+
+With sign-in on, each user's watch progress is kept in .localplayer/progress.json
+and served from /api/progress, so it follows them between devices.
 """
 import argparse
 import getpass
@@ -232,7 +235,46 @@ class Users:
                 self.save("tokens.json", self.tokens)
 
 
-def make_handler(lib, users, name):
+class Progress:
+    """progress.json: {"user": {"movie:<id>": {"position", "duration", "updated"}}}."""
+
+    def __init__(self, folder):
+        self.path = folder / "progress.json"
+        self.data = read_info(self.path)
+        self.lock = threading.Lock()
+
+    @staticmethod
+    def entry(key, e):
+        kind, id = key.split(":", 1)
+        pos, dur = e["position"], e["duration"]
+        pct = round(100 * pos / dur) if dur > 0 else 0
+        return {"type": kind, "id": id, "position": pos, "duration": dur,
+                "percent": min(pct, 100), "completed": pct >= 90, "updated": e["updated"]}
+
+    def list(self, user):
+        mine = self.data.get(user, {})
+        out = [self.entry(k, e) for k, e in mine.items()]
+        return sorted(out, key=lambda e: -e["updated"])
+
+    def record(self, user, kind, id, position, duration):
+        key = f"{kind}:{id}"
+        with self.lock:
+            e = {"position": position, "duration": duration, "updated": int(time.time())}
+            self.data.setdefault(user, {})[key] = e
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self.path.write_text(json.dumps(self.data, indent=2))
+            self.path.chmod(0o600)
+        return self.entry(key, e)
+
+
+def library_ids(lib, kind):
+    data = lib.get()
+    if kind == "movie":
+        return {m["id"] for m in data["movies"]}
+    return {e["id"] for s in data["series"] for season in s["seasons"] for e in season["episodes"]}
+
+
+def make_handler(lib, users, progress, name):
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
 
@@ -257,6 +299,10 @@ def make_handler(lib, users, name):
         def authorized(self):
             return not users.users or self.token() in users.tokens
 
+        def user(self):
+            """The signed-in user; None without sign-in, where progress has no owner."""
+            return users.tokens.get(self.token())
+
         def do_POST(self):
             path = urlparse(self.path).path
             length = int(self.headers.get("Content-Length") or 0)
@@ -275,6 +321,21 @@ def make_handler(lib, users, name):
             if path == "/api/logout":
                 users.logout(self.token())
                 return self.send_json({})
+            if path == "/api/progress":
+                user = self.user()
+                if not user:
+                    return self.send_json({"error": "sign in required"}, 401)
+                try:
+                    req = json.loads(body)
+                    kind, id = req["type"], str(req["id"])
+                    position, duration = float(req["position"]), float(req.get("duration") or 0)
+                    if kind not in ("movie", "episode") or position < 0 or duration < 0:
+                        raise ValueError
+                except (ValueError, KeyError, TypeError):
+                    return self.send_json({"error": "bad request"}, 422)
+                if id not in library_ids(lib, kind):
+                    return self.send_json({"error": "not found"}, 404)
+                return self.send_json(progress.record(user, kind, id, position, duration))
             self.send_json({"error": "not found"}, 404)
 
         def do_HEAD(self):
@@ -288,6 +349,11 @@ def make_handler(lib, users, name):
                 return self.send_json({"error": "sign in required"}, 401)
             if path == "/api/library":
                 return self.send_json(lib.get())
+            if path == "/api/progress":
+                user = self.user()
+                if not user:
+                    return self.send_json({"error": "sign in required"}, 401)
+                return self.send_json(progress.list(user))
             for prefix in ("/media/", "/art/"):
                 if path.startswith(prefix):
                     f = (lib.root / unquote(path[len(prefix):])).resolve()
@@ -357,7 +423,8 @@ def main():
         print(f"User {a.add_user} saved ({role}). Sign-in is now required.")
         return
     name = a.name or f"{os.uname().nodename} media"
-    srv = ThreadingHTTPServer((a.host, a.port), make_handler(Library(root), users, name))
+    progress = Progress(root / ".localplayer")
+    srv = ThreadingHTTPServer((a.host, a.port), make_handler(Library(root), users, progress, name))
     print(f"Serving {root} on http://{a.host}:{a.port}  (sign-in {'on' if users.users else 'off'})")
     try:
         srv.serve_forever()
