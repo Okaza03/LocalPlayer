@@ -220,17 +220,34 @@ fn download(rel: &Release, dir: &Path, progress: &AtomicU32) -> Result<PathBuf> 
 }
 
 /// Download the new AppImage next to `dest` and swap it in.
-fn install_appimage(rel: &Release, dest: &Path, progress: &AtomicU32) -> Result<()> {
+/// Where the updated AppImage goes: a name with this version in it gets the
+/// new one ("valo-v0.5.0-x86_64.AppImage" -> "valo-v0.5.1-x86_64.AppImage"),
+/// any other name is kept.
+fn updated_path(dest: &Path, from: &str, to: &str) -> PathBuf {
+    match dest.file_name().and_then(|n| n.to_str()) {
+        Some(name) if name.contains(from) => dest.with_file_name(name.replace(from, to)),
+        _ => dest.to_owned(),
+    }
+}
+
+/// Returns where the new AppImage is (see [`updated_path`]).
+fn install_appimage(rel: &Release, dest: &Path, progress: &AtomicU32) -> Result<PathBuf> {
     // same folder as the AppImage, so the final rename can't cross filesystems
     let tmp = download(rel, dest.parent().unwrap_or(Path::new(".")), progress)?;
     #[cfg(unix)]
     fs::set_permissions(&tmp, fs::Permissions::from_mode(0o755))?;
+    let new = updated_path(dest, VERSION, &rel.version);
     // the running copy stays mounted from the old file until we exit
-    let res = fs::rename(&tmp, dest).with_context(|| format!("can't replace {}", dest.display()));
+    let res = fs::rename(&tmp, &new).with_context(|| format!("can't write {}", new.display()));
     if res.is_err() {
         let _ = fs::remove_file(&tmp);
+        return res.map(|()| new);
     }
-    res
+    if new != dest {
+        // the menu entry follows the new name when it starts (integrate::sync)
+        let _ = fs::remove_file(dest);
+    }
+    Ok(new)
 }
 
 /// Download the new installer and start it. It closes this copy if it's still
@@ -347,8 +364,8 @@ impl Updates {
         self.installing = Some((
             Task::spawn(ctx, move || match install {
                 Install::AppImage(dest) => {
-                    install_appimage(&rel, &dest, &p)?;
-                    relaunch(&dest)
+                    let new = install_appimage(&rel, &dest, &p)?;
+                    relaunch(&new)
                 }
                 Install::WindowsSetup => run_setup(&rel, &p),
                 Install::Flatpak | Install::Other => bail!("this copy can't update itself"),
@@ -500,6 +517,29 @@ impl Updates {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn appimage_name_follows_version() {
+        let p = |s: &str| PathBuf::from(s);
+        assert_eq!(
+            updated_path(&p("/home/u/valo-v0.5.0-x86_64.AppImage"), "0.5.0", "0.5.1"),
+            p("/home/u/valo-v0.5.1-x86_64.AppImage")
+        );
+        assert_eq!(
+            updated_path(&p("/home/u/Valo 0.5.0.AppImage"), "0.5.0", "0.6.0"),
+            p("/home/u/Valo 0.6.0.AppImage")
+        );
+        // a name without the version is the user's choice
+        assert_eq!(
+            updated_path(&p("/home/u/valo.AppImage"), "0.5.0", "0.5.1"),
+            p("/home/u/valo.AppImage")
+        );
+        // only the file name changes, not a folder that happens to match
+        assert_eq!(
+            updated_path(&p("/opt/0.5.0/valo.AppImage"), "0.5.0", "0.5.1"),
+            p("/opt/0.5.0/valo.AppImage")
+        );
+    }
 
     #[test]
     fn versions() {
