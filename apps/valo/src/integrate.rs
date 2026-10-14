@@ -1,6 +1,6 @@
 //! When running as an AppImage, put Valo in the desktop's app menu
 //! (~/.local/share/applications), pointing at wherever the AppImage lives.
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 use std::{env, fs, io};
 
@@ -51,23 +51,12 @@ fn entry(img: &str) -> String {
         .replace("StartupWMClass=valo", &format!("StartupWMClass={APP_ID}"))
 }
 
-/// Remove the menu entry and icon this app installed while it was called
-/// LocalPlayer, so the menu doesn't show both. The icon stays while a
-/// `cargo xtask install` of the old name still uses it.
-fn forget_old_name(data: &Path) {
-    let _ = fs::remove_file(data.join("applications/localplayer-appimage.desktop"));
-    if !data.join("applications/localplayer.desktop").exists() {
-        let _ = fs::remove_file(data.join("icons/hicolor/scalable/apps/localplayer.svg"));
-    }
-}
-
 /// Add, refresh, or remove the menu entry. No-op unless running as an AppImage.
 pub fn sync(enabled: bool) {
     let (Some(img), Some(data)) = (appimage(), data_home()) else {
         return;
     };
     let apps = data.join("applications");
-    forget_old_name(&data);
     let desktop = apps.join(ENTRY);
     let res = if enabled {
         let want = entry(&img);

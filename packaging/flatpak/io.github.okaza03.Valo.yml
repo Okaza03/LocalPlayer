@@ -15,8 +15,6 @@ finish-args:
   - --socket=pulseaudio    # ALSA output goes through the runtime's pulse plugin
   - --device=dri
   - --filesystem=xdg-videos:ro   # other files come in via the file-chooser portal
-  # settings and progress from before the rename (config.rs reads them once)
-  - --filesystem=~/.var/app/io.github.okaza03.LocalPlayer/config:ro
 modules:
   - name: valo
     buildsystem: simple

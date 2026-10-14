@@ -33,10 +33,6 @@ name = "valo"
 section = "video"
 priority = "optional"
 depends = "$auto"
-# the app was called LocalPlayer before 0.5
-conflicts = "localplayer"
-replaces = "localplayer"
-provides = "localplayer"
 extended-description = "A small, fast video player built with egui and FFmpeg."
 assets = [
   ["target/release/valo", "usr/bin/", "755"],

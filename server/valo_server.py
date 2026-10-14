@@ -510,9 +510,6 @@ def main():
     a = ap.parse_args()
     root = a.media.expanduser().resolve()
     data = root / ".valo"
-    # users, tokens and progress from when the app was called LocalPlayer
-    if not data.exists() and (root / ".localplayer").is_dir():
-        (root / ".localplayer").rename(data)
     users = Users(data)
     if a.add_user:
         pw = getpass.getpass(f"Password for {a.add_user}: ")

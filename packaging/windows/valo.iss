@@ -48,12 +48,6 @@ RestartApplications=no
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
-[InstallDelete]
-; left by versions called LocalPlayer
-Type: files; Name: "{app}\localplayer.exe"
-Type: files; Name: "{autoprograms}\LocalPlayer.lnk"
-Type: files; Name: "{autodesktop}\LocalPlayer.lnk"
-
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
 
@@ -62,22 +56,6 @@ Name: "{autoprograms}\Valo"; Filename: "{app}\valo.exe"
 Name: "{autodesktop}\Valo"; Filename: "{app}\valo.exe"; Tasks: desktopicon
 
 [Registry]
-; "Open with" entries from versions called LocalPlayer
-Root: HKA; Subkey: "Software\Classes\LocalPlayer.Video"; ValueType: none; Flags: deletekey
-Root: HKA; Subkey: "Software\Classes\Applications\localplayer.exe"; ValueType: none; Flags: deletekey
-Root: HKA; Subkey: "Software\Classes\.mp4\OpenWithProgids"; ValueType: none; ValueName: "LocalPlayer.Video"; Flags: deletevalue
-Root: HKA; Subkey: "Software\Classes\.mkv\OpenWithProgids"; ValueType: none; ValueName: "LocalPlayer.Video"; Flags: deletevalue
-Root: HKA; Subkey: "Software\Classes\.webm\OpenWithProgids"; ValueType: none; ValueName: "LocalPlayer.Video"; Flags: deletevalue
-Root: HKA; Subkey: "Software\Classes\.avi\OpenWithProgids"; ValueType: none; ValueName: "LocalPlayer.Video"; Flags: deletevalue
-Root: HKA; Subkey: "Software\Classes\.mov\OpenWithProgids"; ValueType: none; ValueName: "LocalPlayer.Video"; Flags: deletevalue
-Root: HKA; Subkey: "Software\Classes\.m4v\OpenWithProgids"; ValueType: none; ValueName: "LocalPlayer.Video"; Flags: deletevalue
-Root: HKA; Subkey: "Software\Classes\.flv\OpenWithProgids"; ValueType: none; ValueName: "LocalPlayer.Video"; Flags: deletevalue
-Root: HKA; Subkey: "Software\Classes\.wmv\OpenWithProgids"; ValueType: none; ValueName: "LocalPlayer.Video"; Flags: deletevalue
-Root: HKA; Subkey: "Software\Classes\.mpg\OpenWithProgids"; ValueType: none; ValueName: "LocalPlayer.Video"; Flags: deletevalue
-Root: HKA; Subkey: "Software\Classes\.mpeg\OpenWithProgids"; ValueType: none; ValueName: "LocalPlayer.Video"; Flags: deletevalue
-Root: HKA; Subkey: "Software\Classes\.ogv\OpenWithProgids"; ValueType: none; ValueName: "LocalPlayer.Video"; Flags: deletevalue
-Root: HKA; Subkey: "Software\Classes\.ts\OpenWithProgids"; ValueType: none; ValueName: "LocalPlayer.Video"; Flags: deletevalue
-Root: HKA; Subkey: "Software\Classes\.3gp\OpenWithProgids"; ValueType: none; ValueName: "LocalPlayer.Video"; Flags: deletevalue
 ; "Open with > Valo" for videos, without taking over the default player
 Root: HKA; Subkey: "Software\Classes\Valo.Video"; ValueType: string; ValueData: "Video"; Flags: uninsdeletekey
 Root: HKA; Subkey: "Software\Classes\Valo.Video\DefaultIcon"; ValueType: string; ValueData: "{app}\valo.exe,0"
