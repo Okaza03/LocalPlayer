@@ -147,6 +147,8 @@ The steps, in order:
 | Server name | `name` in `/api/info` | | `name` is missing; the app shows the host instead |
 | Sign-in required | `auth` in `/api/info` | | `auth` is `false`: anyone on the network can watch |
 | Sign-in API | `POST /api/login` with an empty username and password | Anything but 400/401/403/422, or a non-JSON answer | It signs in with an empty username and password |
+| Sign-out API | `POST /api/logout` without a token | | 404/405/501: signing out only forgets the token on the device, and it keeps working on the server |
+| Progress API | `GET /api/progress` *without* a token | | It answers without a token even though `auth` is `true` |
 | Library API | `GET /api/library` *without* a token | 404/405/501 | It answers without a token even though `auth` is `true` |
 | *(sign-in screen, if `auth` is `true`)* | | | |
 | Library | `GET /api/library` with the token, parsed | Error status, `401` with a fresh token, or JSON the app can't read | |
@@ -154,7 +156,10 @@ The steps, in order:
 | Series and episodes | Each series has episodes, each episode a `stream` | No episodes, or none has a `stream` | Some series have no episodes, or some episodes have no `stream` |
 | Something to watch | At least one playable movie or episode | The library would be empty | |
 | Streaming | `GET <first stream>` with `Range: bytes=0-1` | Error status, or an HTML/JSON answer instead of a video | Answers `200` instead of `206`: seeking and resuming won't work |
-| Artwork | Downloads and decodes the first poster | | No posters at all, or the poster can't be loaded |
+| Artwork | Downloads and decodes the first poster, backdrop, title logo and episode thumbnail | | No posters at all, or one of them can't be loaded |
+| Progress sync (read) | `GET /api/progress` with the token, parsed | | Missing (404/405/501), the token is turned down, the answer isn't a list the app can read, or entries name ids that aren't in the library. Progress then stays on each device. Without sign-in there's no user to keep it for, so this always warns |
+| Progress sync (write) | `POST /api/progress` with `{"type": "localplayer-check"}`, which no server should store, so your real progress is left alone | | Anything but `400`/`422`: missing, the token is turned down, or it stored the invalid entry |
+| Admin page | `GET /admin`, only when the sign-in said `"admin": true` | | 404/405/501: the Admin buttons would lead nowhere |
 | Metadata | Counts how many titles have each field (below) | No title has a `title` | Any field is missing on some or all titles |
 
 Under **Metadata** the app shows a bar for each field, e.g. `Poster 48/52`. Fields on every title pass. Fields on some or none are warnings. These are the fields it counts:
@@ -537,4 +542,7 @@ curl -s -o /dev/null -D - -H "Authorization: Bearer $TOKEN" -H 'Range: bytes=0-1
 | Streaming *sent text/html instead of a video* | The stream URL redirects to a login page, or isn't checking the bearer token. |
 | Streaming *ignores Range requests* | Serve the file with a Range-aware helper (see [Streams and images](#streams-and-images)). `python -m http.server` can't do this. Use the bundled server or nginx. |
 | Artwork *Couldn't load …* | The image URL needs the same bearer token as the API, or it must be public. Use JPEG, PNG or WebP. |
+| Progress sync *don't match a movie or episode in the library* | `id` in `/api/progress` must be the same `id` the library gives that movie or episode, and `type` must be `"movie"` or `"episode"`. |
+| Progress sync *not a list the app can read* | Return a JSON array in the shape under [`GET /api/progress`](#get-apiprogress-optional). Send `0` for an unknown `duration`. |
+| Progress sync *accepted an entry with "type": "localplayer-check"* | Validate the body and answer `422` when it can't be stored. |
 | Metadata bars | Add the missing fields to the library JSON (or to `info.json` with the bundled server). Each one shows up on the details pages as soon as it's there. |

@@ -281,6 +281,52 @@ impl Run {
             }
         });
 
+        self.step("Sign-out API · POST /api/logout", || {
+            let r = agent
+                .post(&format!("{base}/api/logout"))
+                .set("Accept", "application/json")
+                .call();
+            match r {
+                Ok(_) | Err(ureq::Error::Status(400 | 401 | 403 | 419 | 422, _)) => {
+                    (Pass, "Found.".to_owned(), ())
+                }
+                Err(ureq::Error::Status(404 | 405 | 501, _)) => {
+                    let msg = "Missing, so signing out only forgets the token on this device \
+                               and it keeps working on the server. Add POST /api/logout to \
+                               invalidate it."
+                        .to_owned();
+                    (Warn, msg, ())
+                }
+                Err(ureq::Error::Status(code, r)) => {
+                    let msg = format!("It answered {code} {}.", r.status_text());
+                    (Warn, msg, ())
+                }
+                Err(e) => (Warn, format!("{e}"), ()),
+            }
+        });
+
+        self.step("Progress API · GET /api/progress", || {
+            match agent
+                .get(&format!("{base}/api/progress"))
+                .set("Accept", "application/json")
+                .call()
+            {
+                Err(ureq::Error::Status(401 | 403, _)) => (
+                    Later,
+                    "Protected. Checked after you sign in.".to_owned(),
+                    (),
+                ),
+                // some frameworks hide protected routes, so look again signed in
+                Err(_) => (Later, "Checked after you sign in.".to_owned(), ()),
+                Ok(_) => {
+                    let msg = "Anyone can read watch progress without signing in. Return 401 \
+                               without a valid token."
+                        .to_owned();
+                    (Warn, msg, ())
+                }
+            }
+        });
+
         self.step("Library API · GET /api/library", || {
             match agent
                 .get(&format!("{base}/api/library"))
@@ -457,21 +503,66 @@ impl Run {
         }
 
         self.step("Artwork", || {
-            let Some(url) = lib.all().find_map(|i| i.poster.clone()) else {
-                let msg = "No title has a poster, so tiles show colored placeholders.";
-                return (Warn, msg.to_owned(), ());
-            };
-            let img = client
-                .fetch(&url)
-                .and_then(|b| image::load_from_memory(&b).map_err(Into::into));
-            match img {
-                Ok(i) => {
-                    let msg = format!("Posters load ({}×{}).", i.width(), i.height());
-                    (Pass, msg, ())
+            let still = lib
+                .series
+                .iter()
+                .flat_map(|s| &s.seasons)
+                .flat_map(|s| &s.episodes)
+                .find_map(|e| e.still.clone());
+            let kinds = [
+                ("posters", lib.all().find_map(|i| i.poster.clone())),
+                ("backdrops", lib.all().find_map(|i| i.backdrop.clone())),
+                ("title logos", lib.all().find_map(|i| i.logo.clone())),
+                ("episode thumbnails", still),
+            ];
+            let no_posters = kinds[0].1.is_none();
+            let (mut ok, mut bad) = (Vec::new(), Vec::new());
+            for (name, url) in kinds {
+                let Some(url) = url else { continue };
+                let img = client
+                    .fetch(&url)
+                    .and_then(|b| image::load_from_memory(&b).map_err(Into::into));
+                match img {
+                    Ok(_) => ok.push(name),
+                    Err(e) => bad.push(format!("Couldn't load {url}: {e:#}.")),
                 }
-                Err(e) => (Warn, format!("Couldn't load {url}: {e:#}"), ()),
             }
+            let failed = !bad.is_empty();
+            let mut msg = Vec::new();
+            if no_posters {
+                msg.push("No title has a poster, so tiles show colored placeholders.".to_owned());
+            }
+            msg.append(&mut bad);
+            if !ok.is_empty() {
+                let mut s = list(&ok);
+                s[..1].make_ascii_uppercase();
+                msg.push(format!("{s} load."));
+            }
+            let level = if no_posters || failed { Warn } else { Pass };
+            (level, msg.join(" "), ())
         });
+
+        if client.info.mode == Mode::Api {
+            self.progress(client, &lib);
+        }
+
+        if client.admin {
+            self.step("Admin page · GET /admin", || {
+                let url = format!("{}/admin", client.base);
+                match client.agent.get(&url).call() {
+                    Err(ureq::Error::Status(404 | 405 | 501, _)) => {
+                        let msg = format!(
+                            "You signed in as an admin, but {url} doesn't exist, so the Admin \
+                             button leads nowhere."
+                        );
+                        (Warn, msg, ())
+                    }
+                    Err(ureq::Error::Transport(e)) => (Warn, format!("{url}: {e}"), ()),
+                    // a login page (401/403, or a redirect to one) means it's there
+                    _ => (Pass, "Found.".to_owned(), ()),
+                }
+            });
+        }
 
         let groups = coverage(&lib, client.info.mode);
         let fields = || groups.iter().flat_map(|g| &g.fields);
@@ -492,6 +583,136 @@ impl Run {
             };
             (level, msg, ())
         });
+    }
+}
+
+impl Run {
+    /// Watch progress sync, signed in: reading it, and that the server takes
+    /// changes. The write test sends an entry no server should store, so the
+    /// user's real progress is left alone.
+    fn progress(&mut self, client: &Client, lib: &Library) {
+        use Level::*;
+        let url = format!("{}/api/progress", client.base);
+        let found = self.step("Progress sync · GET /api/progress", || {
+            let r = client.get(&url).set("Accept", "application/json").call();
+            let list = match r {
+                Err(ureq::Error::Status(401 | 403, _)) if !client.info.auth => {
+                    let msg = "Without a sign-in there's no user to keep watch progress for, \
+                               so resume points stay on each device."
+                        .to_owned();
+                    return (Warn, msg, false);
+                }
+                Err(ureq::Error::Status(code @ (401 | 403), _)) => {
+                    let msg = format!(
+                        "It turned down the sign-in token ({code}), so resume points and \
+                         watched marks stay on this device. Accept Authorization: Bearer \
+                         <token> on /api/progress like on /api/library."
+                    );
+                    return (Warn, msg, false);
+                }
+                Err(ureq::Error::Status(404 | 405 | 501, _)) => {
+                    let msg = "Missing, so resume points and watched marks stay on this \
+                               device. Add GET and POST /api/progress to sync them between \
+                               devices."
+                        .to_owned();
+                    return (Warn, msg, false);
+                }
+                Err(ureq::Error::Status(code, r)) => {
+                    let msg = format!(
+                        "It answered {code} {}, so progress won't sync.",
+                        r.status_text()
+                    );
+                    return (Warn, msg, false);
+                }
+                Err(e) => return (Warn, format!("{e}"), false),
+                Ok(r) => r.into_json::<Vec<super::Watched>>(),
+            };
+            let list = match list {
+                Ok(l) => l,
+                Err(e) => {
+                    let msg = format!(
+                        "It answered, but not with a list the app can read ({e}), so progress \
+                         won't sync."
+                    );
+                    return (Warn, msg, true);
+                }
+            };
+            let mut ids: std::collections::HashSet<&str> =
+                lib.movies.iter().map(|m| m.id.as_str()).collect();
+            ids.extend(
+                lib.series
+                    .iter()
+                    .flat_map(|s| &s.seasons)
+                    .flat_map(|s| &s.episodes)
+                    .map(|e| e.id.as_str()),
+            );
+            let unknown = list
+                .iter()
+                .filter(|w| w.key().is_none_or(|k| !ids.contains(k.as_str())))
+                .count();
+            let n = plural(list.len(), "entry", "entries");
+            if unknown > 0 {
+                let msg = format!(
+                    "{unknown} of {n} don't match a movie or episode in the library and are \
+                     ignored. \"type\" must be \"movie\" or \"episode\" and \"id\" the \
+                     library's id for it."
+                );
+                (Warn, msg, true)
+            } else {
+                (Pass, format!("{n} for your account."), true)
+            }
+        });
+        if !found {
+            return;
+        }
+
+        self.step("Progress sync · POST /api/progress", || {
+            let mut r = client.agent.post(&url).set("Accept", "application/json");
+            if let Some(h) = client.auth_header() {
+                r = r.set("Authorization", &h);
+            }
+            match r.send_json(serde_json::json!({ "type": "localplayer-check" })) {
+                Err(ureq::Error::Status(400 | 422, _)) => {
+                    let msg = "Found; it turns down an invalid entry.".to_owned();
+                    (Pass, msg, ())
+                }
+                Err(ureq::Error::Status(code @ (404 | 405 | 501), _)) => {
+                    let msg = format!(
+                        "It answered {code}, so progress made in the app never reaches the \
+                         server. Add POST /api/progress, and answer 422 for a body it can't \
+                         store."
+                    );
+                    (Warn, msg, ())
+                }
+                Err(ureq::Error::Status(code @ (401 | 403), _)) => {
+                    let msg = format!(
+                        "It turned down the sign-in token ({code}), so progress made in the \
+                         app never reaches the server."
+                    );
+                    (Warn, msg, ())
+                }
+                Err(ureq::Error::Status(code, r)) => {
+                    let msg = format!("It answered {code} {}.", r.status_text());
+                    (Warn, msg, ())
+                }
+                Err(e) => (Warn, format!("{e}"), ()),
+                Ok(_) => {
+                    let msg = "It accepted an entry with \"type\": \"localplayer-check\" and \
+                               no id. Answer 422 for a body it can't store."
+                        .to_owned();
+                    (Warn, msg, ())
+                }
+            }
+        });
+    }
+}
+
+/// "a", "a and b", "a, b and c"
+fn list(items: &[&str]) -> String {
+    match items {
+        [] => String::new(),
+        [one] => (*one).to_owned(),
+        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
     }
 }
 
@@ -599,6 +820,12 @@ fn coverage(lib: &Library, mode: Mode) -> Vec<Group> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lists() {
+        assert_eq!(list(&["posters"]), "posters");
+        assert_eq!(list(&["a", "b", "c"]), "a, b and c");
+    }
 
     #[test]
     fn metadata_levels() {
