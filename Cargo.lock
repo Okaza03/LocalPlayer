@@ -1966,7 +1966,7 @@ checksum = "4744e383959f0db86ede514b809b1c53251889093803c05267acc7d4e7030d70"
 
 [[package]]
 name = "localplayer"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "anyhow",
  "cpal",
@@ -4642,7 +4642,7 @@ checksum = "e450f9b2ed1dff33c94c12589a87338689467b9c4f5d8a5710bd09a847d2c8a7"
 
 [[package]]
 name = "xtask"
-version = "0.4.0"
+version = "0.4.1"
 
 [[package]]
 name = "yoke"
