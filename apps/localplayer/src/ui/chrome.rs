@@ -489,7 +489,14 @@ pub fn window_frame(ctx: &egui::Context) {
 
 /// Open a link in the user's browser.
 pub fn open_url(url: &str) {
-    if let Err(e) = std::process::Command::new("xdg-open").arg(url).spawn() {
+    // `cmd /c start` would treat `&` in the URL as a command separator
+    #[cfg(windows)]
+    let res = std::process::Command::new("rundll32")
+        .args(["url.dll,FileProtocolHandler", url])
+        .spawn();
+    #[cfg(not(windows))]
+    let res = std::process::Command::new("xdg-open").arg(url).spawn();
+    if let Err(e) = res {
         eprintln!("can't open {url}: {e}");
     }
 }

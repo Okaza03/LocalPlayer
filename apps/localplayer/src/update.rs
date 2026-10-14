@@ -1,7 +1,9 @@
 //! "Is there a newer LocalPlayer?" — asks GitHub for the latest release, and
-//! when running as an AppImage, installs it in place and restarts.
+//! when running as an AppImage or from the Windows installer, installs it in
+//! place and restarts.
 use std::fs;
 use std::io::{Read, Write};
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -24,8 +26,9 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub struct Release {
     pub version: String,
     pub url: String,
-    /// (file name, download URL) of this machine's AppImage.
-    appimage: Option<(String, String)>,
+    /// (file name, download URL) of this machine's AppImage, or of the
+    /// installer on Windows.
+    package: Option<(String, String)>,
     /// Download URL of SHA256SUMS.txt.
     sums: Option<String>,
 }
@@ -49,6 +52,9 @@ struct GhAsset {
 pub enum Install {
     /// Replace the file and restart.
     AppImage(PathBuf),
+    /// Installed by the Windows installer: run the new one, which replaces
+    /// this copy and starts it again.
+    WindowsSetup,
     /// Read-only sandbox: the user installs the new .flatpak.
     Flatpak,
     /// .deb, tarball, from source: send them to the release page.
@@ -59,11 +65,31 @@ impl Install {
     pub fn detect() -> Self {
         if let Some(p) = crate::integrate::appimage() {
             Install::AppImage(p.into())
+        } else if cfg!(windows) && installed_by_setup() {
+            Install::WindowsSetup
         } else if std::env::var_os("FLATPAK_ID").is_some() {
             Install::Flatpak
         } else {
             Install::Other
         }
+    }
+}
+
+/// The installer leaves its uninstaller next to the exe; the portable zip doesn't.
+fn installed_by_setup() -> bool {
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| Some(exe.parent()?.join("unins000.exe").is_file()))
+        .unwrap_or(false)
+}
+
+/// End of the name of the release file this platform updates itself from.
+fn package_suffix() -> String {
+    let arch = std::env::consts::ARCH;
+    if cfg!(windows) {
+        format!("-{arch}-setup.exe")
+    } else {
+        format!("-{arch}.AppImage")
     }
 }
 
@@ -107,19 +133,19 @@ fn latest() -> Result<Option<Release>> {
         Err(e) => return Err(anyhow!("can't reach GitHub ({e})")),
     };
     let version = r.tag_name.trim_start_matches(['v', 'V']).to_owned();
-    let suffix = format!("-{}.AppImage", std::env::consts::ARCH);
+    let suffix = package_suffix();
     let asset = |f: &dyn Fn(&str) -> bool| {
         r.assets
             .iter()
             .find(|a| f(&a.name))
             .map(|a| (a.name.clone(), a.browser_download_url.clone()))
     };
-    let appimage = asset(&|n| n.ends_with(&suffix));
+    let package = asset(&|n| n.ends_with(&suffix));
     let sums = asset(&|n| n == "SHA256SUMS.txt").map(|(_, u)| u);
     Ok(newer(&version, VERSION).then_some(Release {
         version,
         url: r.html_url,
-        appimage,
+        package,
         sums,
     }))
 }
@@ -133,11 +159,11 @@ fn expected_hash(sums: &str, name: &str) -> Option<String> {
     })
 }
 
-/// Download the release's AppImage next to `dest`, check it against
-/// SHA256SUMS.txt, and swap it in. `progress` is per-mille.
-fn install_appimage(rel: &Release, dest: &Path, progress: &AtomicU32) -> Result<()> {
-    let (Some((name, url)), Some(sums_url)) = (&rel.appimage, &rel.sums) else {
-        bail!("this release has no AppImage to update to");
+/// Download the release's package into `dir` as `name.part`, check it
+/// against SHA256SUMS.txt, and rename it to `name`. `progress` is per-mille.
+fn download(rel: &Release, dir: &Path, progress: &AtomicU32) -> Result<PathBuf> {
+    let (Some((name, url)), Some(sums_url)) = (&rel.package, &rel.sums) else {
+        bail!("this release has nothing to update this copy with");
     };
     let agent = agent(None);
     let sums = agent
@@ -156,8 +182,6 @@ fn install_appimage(rel: &Release, dest: &Path, progress: &AtomicU32) -> Result<
         .header("Content-Length")
         .and_then(|l| l.parse().ok())
         .unwrap_or(0);
-    // same folder as the AppImage, so the final rename can't cross filesystems
-    let dir = dest.parent().unwrap_or(Path::new("."));
     let tmp = dir.join(format!(".{name}.part"));
     let res = (|| -> Result<()> {
         let mut out =
@@ -187,14 +211,45 @@ fn install_appimage(rel: &Release, dest: &Path, progress: &AtomicU32) -> Result<
         if got != want {
             bail!("the download is corrupt (checksum mismatch), nothing was changed");
         }
-        fs::set_permissions(&tmp, fs::Permissions::from_mode(0o755))?;
-        // the running copy stays mounted from the old file until we exit
-        fs::rename(&tmp, dest).with_context(|| format!("can't replace {}", dest.display()))
+        Ok(())
     })();
     if res.is_err() {
         let _ = fs::remove_file(&tmp);
     }
+    res.map(|()| tmp)
+}
+
+/// Download the new AppImage next to `dest` and swap it in.
+fn install_appimage(rel: &Release, dest: &Path, progress: &AtomicU32) -> Result<()> {
+    // same folder as the AppImage, so the final rename can't cross filesystems
+    let tmp = download(rel, dest.parent().unwrap_or(Path::new(".")), progress)?;
+    #[cfg(unix)]
+    fs::set_permissions(&tmp, fs::Permissions::from_mode(0o755))?;
+    // the running copy stays mounted from the old file until we exit
+    let res = fs::rename(&tmp, dest).with_context(|| format!("can't replace {}", dest.display()));
+    if res.is_err() {
+        let _ = fs::remove_file(&tmp);
+    }
     res
+}
+
+/// Download the new installer and start it. It closes this copy if it's still
+/// running, replaces the files, and starts the new version.
+fn run_setup(rel: &Release, progress: &AtomicU32) -> Result<()> {
+    let tmp = download(rel, &std::env::temp_dir(), progress)?;
+    // Windows only runs it under its .exe name
+    let exe = tmp.with_extension("");
+    fs::rename(&tmp, &exe).with_context(|| format!("can't write {}", exe.display()))?;
+    Command::new(&exe)
+        .args([
+            "/SILENT",
+            "/SUPPRESSMSGBOXES",
+            "/NORESTART",
+            "/CLOSEAPPLICATIONS",
+        ])
+        .spawn()
+        .with_context(|| format!("can't start {}", exe.display()))?;
+    Ok(())
 }
 
 /// Start the (new) AppImage with our arguments; the caller then closes this window.
@@ -277,20 +332,26 @@ impl Updates {
 
     /// Whether the update button installs in place (vs. opening the release page).
     fn in_place(&self, rel: &Release) -> bool {
-        matches!(self.install, Install::AppImage(_)) && rel.appimage.is_some() && rel.sums.is_some()
+        matches!(self.install, Install::AppImage(_) | Install::WindowsSetup)
+            && rel.package.is_some()
+            && rel.sums.is_some()
     }
 
     fn start_install(&mut self, ctx: &egui::Context) {
-        let (Install::AppImage(dest), Some(rel)) = (&self.install, &self.available) else {
+        let Some(rel) = self.available.clone() else {
             return;
         };
-        let (dest, rel) = (dest.clone(), rel.clone());
+        let install = self.install.clone();
         let progress = Arc::new(AtomicU32::new(0));
         let p = progress.clone();
         self.installing = Some((
-            Task::spawn(ctx, move || {
-                install_appimage(&rel, &dest, &p)?;
-                relaunch(&dest)
+            Task::spawn(ctx, move || match install {
+                Install::AppImage(dest) => {
+                    install_appimage(&rel, &dest, &p)?;
+                    relaunch(&dest)
+                }
+                Install::WindowsSetup => run_setup(&rel, &p),
+                Install::Flatpak | Install::Other => bail!("this copy can't update itself"),
             }),
             progress,
         ));

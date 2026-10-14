@@ -14,7 +14,9 @@ You can still play local files: pass them on the command line, drag them onto th
 cargo run --release -p localplayer
 ```
 
-Settings and resume points are stored in `~/.config/localplayer/`.
+On Windows, first run `cargo xtask ffmpeg` once. It downloads a prebuilt LGPL FFmpeg into `target/ffmpeg`, which Windows builds link against (Linux builds compile FFmpeg from source). You also need LLVM (`winget install LLVM.LLVM`) for bindgen.
+
+Settings and resume points are stored in `~/.config/localplayer/` (`%APPDATA%\localplayer\` on Windows).
 
 ## Installing
 
@@ -23,6 +25,10 @@ Each [release](https://github.com/Okaza03/LocalPlayer/releases) has:
 - **AppImage**: `chmod +x` it and run it. The first launch adds LocalPlayer to your app menu (you can turn this off in Settings). Updates are one click: the app downloads the new AppImage, verifies it against `SHA256SUMS.txt`, replaces itself and restarts.
 - **Flatpak**: `flatpak install --user localplayer-vX.Y.Z-x86_64.flatpak`. To update, install the newer file the same way, since sandboxed apps can't replace themselves. The manifest is in `packaging/flatpak/`.
 - **.deb** and **.tar.gz**: the app tells you when an update is out and opens the release page.
+- **Windows installer** (`localplayer-vX.Y.Z-x86_64-setup.exe`, or `-aarch64-setup.exe` for ARM64 PCs such as Snapdragon laptops): installs for your user only, so no admin prompt. Adds a Start menu entry and *Open with → LocalPlayer* for video files. Updates are one click: the app downloads the next installer, verifies it against `SHA256SUMS.txt`, and runs it, which restarts LocalPlayer. Windows SmartScreen may warn on the first run because the installer isn't code-signed.
+- **Windows zip**: portable. Unzip and run `localplayer.exe`, keeping the FFmpeg DLLs next to it. Updates open the release page.
+
+Windows builds are made with `cargo xtask dist [arch]` (zip) and `cargo xtask installer [arch]` (needs [Inno Setup 6](https://jrsoftware.org/isinfo.php)), where `arch` is `x86_64` (default) or `aarch64`. The installer script is `packaging/windows/localplayer.iss`. Build ARM64 with the native ARM64 Rust toolchain and LLVM 19 or newer: older libclang can't parse MSVC's ARM64 headers.
 
 ## Releasing
 

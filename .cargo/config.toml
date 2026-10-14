@@ -8,3 +8,6 @@ xtask = "run --package xtask --release --"
 [env]
 FFMPEG_MARCH = ""
 FFMPEG_MTUNE = ""
+# Windows links the prebuilt FFmpeg that `cargo xtask ffmpeg` unpacks here.
+# Linux builds FFmpeg from source and ignores this.
+FFMPEG_DIR = { value = "target/ffmpeg", relative = true, force = false }

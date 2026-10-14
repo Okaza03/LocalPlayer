@@ -1,4 +1,5 @@
-//! Settings and watch progress, stored as JSON in ~/.config/localplayer.
+//! Settings and watch progress, stored as JSON in ~/.config/localplayer
+//! (%APPDATA%\localplayer on Windows).
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
@@ -7,6 +8,12 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use crate::util::now_unix;
 
+#[cfg(windows)]
+fn config_home() -> Option<PathBuf> {
+    std::env::var_os("APPDATA").map(PathBuf::from)
+}
+
+#[cfg(not(windows))]
 fn config_home() -> Option<PathBuf> {
     std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)

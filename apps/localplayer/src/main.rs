@@ -1,3 +1,6 @@
+// no console window behind the app on Windows (debug builds keep it for logs)
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 mod api;
 mod audio;
 mod config;
@@ -32,8 +35,13 @@ fn main() -> eframe::Result<()> {
         .map(PathBuf::from)
         .filter(|p| p.is_file())
         .collect();
+    // Linux desktops take the icon from the .desktop file named by the app id
+    #[cfg(windows)]
+    let viewport = egui::ViewportBuilder::default().with_icon(window_icon());
+    #[cfg(not(windows))]
+    let viewport = egui::ViewportBuilder::default();
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
+        viewport: viewport
             .with_inner_size([1280.0, 780.0])
             .with_min_inner_size([560.0, 400.0])
             .with_title("LocalPlayer")
@@ -52,8 +60,23 @@ fn main() -> eframe::Result<()> {
     )
 }
 
+/// Title bar, taskbar and Alt+Tab icon.
+#[cfg(windows)]
+fn window_icon() -> egui::IconData {
+    let png = include_bytes!("../../../packaging/windows/localplayer.png");
+    let img = image::load_from_memory(png)
+        .expect("bundled icon is a valid PNG")
+        .into_rgba8();
+    egui::IconData {
+        width: img.width(),
+        height: img.height(),
+        rgba: img.into_raw(),
+    }
+}
+
 pub fn pick_files() -> Option<Vec<PathBuf>> {
-    let start = std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Videos"));
+    let home = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+    let start = std::env::var_os(home).map(|h| PathBuf::from(h).join("Videos"));
     let mut dlg = rfd::FileDialog::new()
         .add_filter("Video", api::VIDEO_EXTS)
         .add_filter("All files", &["*"]);
