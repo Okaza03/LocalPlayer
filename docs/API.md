@@ -13,11 +13,11 @@ This guide is for whoever runs the media server. It covers what LocalPlayer asks
 
 ## Three ways to serve a library
 
-| | Setup | Metadata | Sign-in |
-|---|---|---|---|
-| **Bundled Python server** | One command, no code | Everything, from `info.json` files | Optional |
-| **Your own API** | Add four routes to an existing app | Everything you send | Optional |
-| **Plain folder listing** | Turn on nginx/Apache/Caddy directory listings | Titles, years and artwork guessed from file names | None |
+|                           | Setup                                         | Metadata                                          | Sign-in  |
+| ------------------------- | --------------------------------------------- | ------------------------------------------------- | -------- |
+| **Bundled Python server** | One command, no code                          | Everything, from `info.json` files                | Optional |
+| **Your own API**          | Add four routes to an existing app            | Everything you send                               | Optional |
+| **Plain folder listing**  | Turn on nginx/Apache/Caddy directory listings | Titles, years and artwork guessed from file names | None     |
 
 ### Option 1: the bundled Python server
 
@@ -26,8 +26,8 @@ This guide is for whoever runs the media server. It covers what LocalPlayer asks
 ```sh
 python3 server/localplayer_server.py ~/Videos                     # port 8080, no sign-in
 python3 server/localplayer_server.py ~/Videos --port 9000 --name "Living room"
-python3 server/localplayer_server.py ~/Videos --add-user noah     # asks for a password, turns sign-in on
-python3 server/localplayer_server.py ~/Videos --add-user noah --admin
+python3 server/localplayer_server.py ~/Videos --add-user user     # asks for a password, turns sign-in on
+python3 server/localplayer_server.py ~/Videos --add-user user --admin
 ```
 
 `--add-user` creates the user and exits. Start the server again afterwards. Users, tokens and each user's watch progress are stored in `~/Videos/.localplayer/`. Sign-in is on as soon as one user exists.
@@ -64,13 +64,21 @@ Everything else comes from `info.json`. Every key is optional:
   "rating": "PG-13",
   "duration": 8880,
   "director": "Christopher Nolan",
-  "cast": [{ "name": "Leonardo DiCaprio", "character": "Cobb", "photo": "dicaprio.jpg" }],
+  "cast": [
+    {
+      "name": "Leonardo DiCaprio",
+      "character": "Cobb",
+      "photo": "dicaprio.jpg"
+    }
+  ],
   "released": "2010-07-16",
   "budget": 160000000,
   "revenue": 836800000,
   "score": 8.4,
   "score_source": "TMDB",
-  "reviews": [{ "quote": "A wildly ambitious…", "source": "Empire", "score": "5 / 5" }]
+  "reviews": [
+    { "quote": "A wildly ambitious…", "source": "Empire", "score": "5 / 5" }
+  ]
 }
 ```
 
@@ -83,7 +91,12 @@ A series' `info.json` can also have `creators`, `network`, `status`, `end_year` 
   "status": "Ended",
   "end_year": 2013,
   "episodes": {
-    "S01E01": { "title": "Pilot", "overview": "…", "aired": "2005-03-24", "score": 7.5 }
+    "S01E01": {
+      "title": "Pilot",
+      "overview": "…",
+      "aired": "2005-03-24",
+      "score": 7.5
+    }
   }
 }
 ```
@@ -134,46 +147,46 @@ A folder listing can't give descriptions, genres, ratings, cast or a sign-in, so
 When someone adds a server in LocalPlayer, the app checks each part of the API in turn before it shows the library. Each step ends as one of:
 
 - **PASS**: works.
-- **WARN**: LocalPlayer can use the server, but something is missing. The user has to click *I know this is missing, continue* to go on.
+- **WARN**: LocalPlayer can use the server, but something is missing. The user has to click _I know this is missing, continue_ to go on.
 - **FAIL**: LocalPlayer can't use the server until this is fixed. The user can only try again or copy a report for you.
 - **LATER**: needs a sign-in first; checked again after signing in.
 
 The steps, in order:
 
-| Step | Checks | FAIL when | WARN when |
-|---|---|---|---|
-| Reach the server | `GET /` answers at all | Nothing answers (wrong address/port, server down, firewall) | |
-| LocalPlayer API | `GET /api/info` returns JSON | Neither `/api/info` nor a folder listing exists | No `/api/info`, but there's a folder listing to fall back to |
-| Server name | `name` in `/api/info` | | `name` is missing; the app shows the host instead |
-| Sign-in required | `auth` in `/api/info` | | `auth` is `false`: anyone on the network can watch |
-| Sign-in API | `POST /api/login` with an empty username and password | Anything but 400/401/403/422, or a non-JSON answer | It signs in with an empty username and password |
-| Sign-out API | `POST /api/logout` without a token | | 404/405/501: signing out only forgets the token on the device, and it keeps working on the server |
-| Progress API | `GET /api/progress` *without* a token | | It answers without a token even though `auth` is `true` |
-| Library API | `GET /api/library` *without* a token | 404/405/501 | It answers without a token even though `auth` is `true` |
-| *(sign-in screen, if `auth` is `true`)* | | | |
-| Library | `GET /api/library` with the token, parsed | Error status, `401` with a fresh token, or JSON the app can't read | |
-| Movies | Each movie has a `stream` | No movie has a `stream` | Some movies have no `stream` (they're hidden) |
-| Series and episodes | Each series has episodes, each episode a `stream` | No episodes, or none has a `stream` | Some series have no episodes, or some episodes have no `stream` |
-| Something to watch | At least one playable movie or episode | The library would be empty | |
-| Streaming | `GET <first stream>` with `Range: bytes=0-1` | Error status, or an HTML/JSON answer instead of a video | Answers `200` instead of `206`: seeking and resuming won't work |
-| Artwork | Downloads and decodes the first poster, backdrop, title logo and episode thumbnail | | No posters at all, or one of them can't be loaded |
-| Progress sync (read) | `GET /api/progress` with the token, parsed | | Missing (404/405/501), the token is turned down, the answer isn't a list the app can read, or entries name ids that aren't in the library. Progress then stays on each device. Without sign-in there's no user to keep it for, so this always warns |
-| Progress sync (write) | `POST /api/progress` with `{"type": "localplayer-check"}`, which no server should store, so your real progress is left alone | | Anything but `400`/`422`: missing, the token is turned down, or it stored the invalid entry |
-| Admin page | `GET /admin`, only when the sign-in said `"admin": true` | | 404/405/501: the Admin buttons would lead nowhere |
-| Metadata | Counts how many titles have each field (below) | No title has a `title` | Any field is missing on some or all titles |
+| Step                                    | Checks                                                                                                                       | FAIL when                                                          | WARN when                                                                                                                                                                                                                                           |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Reach the server                        | `GET /` answers at all                                                                                                       | Nothing answers (wrong address/port, server down, firewall)        |                                                                                                                                                                                                                                                     |
+| LocalPlayer API                         | `GET /api/info` returns JSON                                                                                                 | Neither `/api/info` nor a folder listing exists                    | No `/api/info`, but there's a folder listing to fall back to                                                                                                                                                                                        |
+| Server name                             | `name` in `/api/info`                                                                                                        |                                                                    | `name` is missing; the app shows the host instead                                                                                                                                                                                                   |
+| Sign-in required                        | `auth` in `/api/info`                                                                                                        |                                                                    | `auth` is `false`: anyone on the network can watch                                                                                                                                                                                                  |
+| Sign-in API                             | `POST /api/login` with an empty username and password                                                                        | Anything but 400/401/403/422, or a non-JSON answer                 | It signs in with an empty username and password                                                                                                                                                                                                     |
+| Sign-out API                            | `POST /api/logout` without a token                                                                                           |                                                                    | 404/405/501: signing out only forgets the token on the device, and it keeps working on the server                                                                                                                                                   |
+| Progress API                            | `GET /api/progress` _without_ a token                                                                                        |                                                                    | It answers without a token even though `auth` is `true`                                                                                                                                                                                             |
+| Library API                             | `GET /api/library` _without_ a token                                                                                         | 404/405/501                                                        | It answers without a token even though `auth` is `true`                                                                                                                                                                                             |
+| _(sign-in screen, if `auth` is `true`)_ |                                                                                                                              |                                                                    |                                                                                                                                                                                                                                                     |
+| Library                                 | `GET /api/library` with the token, parsed                                                                                    | Error status, `401` with a fresh token, or JSON the app can't read |                                                                                                                                                                                                                                                     |
+| Movies                                  | Each movie has a `stream`                                                                                                    | No movie has a `stream`                                            | Some movies have no `stream` (they're hidden)                                                                                                                                                                                                       |
+| Series and episodes                     | Each series has episodes, each episode a `stream`                                                                            | No episodes, or none has a `stream`                                | Some series have no episodes, or some episodes have no `stream`                                                                                                                                                                                     |
+| Something to watch                      | At least one playable movie or episode                                                                                       | The library would be empty                                         |                                                                                                                                                                                                                                                     |
+| Streaming                               | `GET <first stream>` with `Range: bytes=0-1`                                                                                 | Error status, or an HTML/JSON answer instead of a video            | Answers `200` instead of `206`: seeking and resuming won't work                                                                                                                                                                                     |
+| Artwork                                 | Downloads and decodes the first poster, backdrop, title logo and episode thumbnail                                           |                                                                    | No posters at all, or one of them can't be loaded                                                                                                                                                                                                   |
+| Progress sync (read)                    | `GET /api/progress` with the token, parsed                                                                                   |                                                                    | Missing (404/405/501), the token is turned down, the answer isn't a list the app can read, or entries name ids that aren't in the library. Progress then stays on each device. Without sign-in there's no user to keep it for, so this always warns |
+| Progress sync (write)                   | `POST /api/progress` with `{"type": "localplayer-check"}`, which no server should store, so your real progress is left alone |                                                                    | Anything but `400`/`422`: missing, the token is turned down, or it stored the invalid entry                                                                                                                                                         |
+| Admin page                              | `GET /admin`, only when the sign-in said `"admin": true`                                                                     |                                                                    | 404/405/501: the Admin buttons would lead nowhere                                                                                                                                                                                                   |
+| Metadata                                | Counts how many titles have each field (below)                                                                               | No title has a `title`                                             | Any field is missing on some or all titles                                                                                                                                                                                                          |
 
 Under **Metadata** the app shows a bar for each field, e.g. `Poster 48/52`. Fields on every title pass. Fields on some or none are warnings. These are the fields it counts:
 
-| Group | Fields |
-|---|---|
+| Group             | Fields                                                                                                                                                                    |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Movies and series | Title, Description (`overview`), Poster, Backdrop, Year, Genres, Age rating (`rating`), Date added (`added`), Title logo (`logo`), Cast, Release date (`released`), Score |
-| Movies | Runtime (`duration`), Director, Budget, Box office (`revenue`), File info (`file`) |
-| Series | Creators, Network, Status |
-| Episodes | Title, Description (`overview`), Thumbnail (`still`), Runtime (`duration`), Air date (`aired`), Score, File info (`file`) |
+| Movies            | Runtime (`duration`), Director, Budget, Box office (`revenue`), File info (`file`)                                                                                        |
+| Series            | Creators, Network, Status                                                                                                                                                 |
+| Episodes          | Title, Description (`overview`), Thumbnail (`still`), Runtime (`duration`), Air date (`aired`), Score, File info (`file`)                                                 |
 
 With a folder listing only Title, Poster, Backdrop, Year and episode Title are counted, because nothing else can be guessed from file names.
 
-*Copy report* on the check screen copies every result as plain text. Users can send it to you. The check runs once, when a server is added. After that the app reconnects without it.
+_Copy report_ on the check screen copies every result as plain text. Users can send it to you. The check runs once, when a server is added. After that the app reconnects without it.
 
 ## Endpoints
 
@@ -185,11 +198,11 @@ All API requests are sent with `Accept: application/json`. All paths are relativ
 { "name": "Living-room server", "auth": true, "version": 1 }
 ```
 
-| Field | Type | |
-|---|---|---|
-| `name` | string | Shown in the title bar. Missing: the check warns and the host is shown. |
-| `auth` | bool | `true` shows the sign-in screen. `false` (or missing): the check warns that the library is open. |
-| `version` | int | Send `1`. |
+| Field     | Type   |                                                                                                  |
+| --------- | ------ | ------------------------------------------------------------------------------------------------ |
+| `name`    | string | Shown in the title bar. Missing: the check warns and the host is shown.                          |
+| `auth`    | bool   | `true` shows the sign-in screen. `false` (or missing): the check warns that the library is open. |
+| `version` | int    | Send `1`.                                                                                        |
 
 This must answer without a token, even when `auth` is `true`.
 
@@ -198,20 +211,20 @@ This must answer without a token, even when `auth` is `true`.
 Request body:
 
 ```json
-{ "username": "noah", "password": "hunter2" }
+{ "username": "user", "password": "hunter2" }
 ```
 
 Success, `200`:
 
 ```json
-{ "token": "3f1c…", "name": "Noah", "admin": false }
+{ "token": "3f1c…", "name": "user", "admin": false }
 ```
 
-| Field | Type | |
-|---|---|---|
-| `token` | string | Required. Sent back as `Authorization: Bearer <token>` on every later request, including streams and images. |
-| `name` | string | Display name. Defaults to the username. |
-| `admin` | bool | `true` shows the app's Admin buttons, which open `<server>/admin` in the browser. Hiding the buttons is only a convenience, so `/admin` must check permissions itself. |
+| Field   | Type   |                                                                                                                                                                        |
+| ------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `token` | string | Required. Sent back as `Authorization: Bearer <token>` on every later request, including streams and images.                                                           |
+| `name`  | string | Display name. Defaults to the username.                                                                                                                                |
+| `admin` | bool   | `true` shows the app's Admin buttons, which open `<server>/admin` in the browser. Hiding the buttons is only a convenience, so `/admin` must check permissions itself. |
 
 A wrong username or password must get `401` (`400`, `403` and `422` work too). Don't answer `200` with an error message in it. The check sends an empty username and password and expects one of those codes, so a validation error for empty fields (Laravel's `422`) is fine.
 
@@ -228,21 +241,30 @@ Returns the whole catalog ([format below](#the-library-json)). When `auth` is `t
 The signed-in user's watch progress, most recently watched first. With these two endpoints, resume points and watched marks follow the user between the app on every device and your website.
 
 ```json
-[{ "type": "episode", "id": "42", "position": 812.5, "duration": 2640,
-   "percent": 31, "completed": false, "updated": 1760400000 }]
+[
+  {
+    "type": "episode",
+    "id": "42",
+    "position": 812.5,
+    "duration": 2640,
+    "percent": 31,
+    "completed": false,
+    "updated": 1760400000
+  }
+]
 ```
 
-| Field | Type | |
-|---|---|---|
-| `type` | string | `"movie"` or `"episode"` |
-| `id` | string or int | The `id` the library gives that movie or episode |
-| `position` | number | Seconds |
-| `duration` | number | Seconds, `0` if unknown |
-| `completed` | bool | Watched to the end. The app shows it as watched whatever the position. |
-| `updated` | int | Unix time of the last change, set by the server |
-| `percent` | int | Ignored by the app |
+| Field       | Type          |                                                                        |
+| ----------- | ------------- | ---------------------------------------------------------------------- |
+| `type`      | string        | `"movie"` or `"episode"`                                               |
+| `id`        | string or int | The `id` the library gives that movie or episode                       |
+| `position`  | number        | Seconds                                                                |
+| `duration`  | number        | Seconds, `0` if unknown                                                |
+| `completed` | bool          | Watched to the end. The app shows it as watched whatever the position. |
+| `updated`   | int           | Unix time of the last change, set by the server                        |
+| `percent`   | int           | Ignored by the app                                                     |
 
-The app asks for this on start, every minute while nothing is playing, and on *Refresh*. When an entry here is newer than the app's own copy, the server's copy wins. Answer `401` when there's no signed-in user (for example with sign-in off). `401`, `404`, `405` or `501` turn syncing off for the session, and progress stays on the device.
+The app asks for this on start, every minute while nothing is playing, and on _Refresh_. When an entry here is newer than the app's own copy, the server's copy wins. Answer `401` when there's no signed-in user (for example with sign-in off). `401`, `404`, `405` or `501` turn syncing off for the session, and progress stays on the device.
 
 ### `POST /api/progress`: optional
 
@@ -275,64 +297,64 @@ Either list can be empty, missing or `null`. Any field can be left out or set to
 
 ### Movie
 
-| Field | Type | Needed | Shown | Example |
-|---|---|---|---|---|
-| `title` | string | **required** | everywhere | `"Inception"` |
-| `stream` | URL | **required** | play button | `"/api/stream/movie/42"` |
-| `id` | string | recommended | keeps resume points and *My list* stable | `"42"` |
-| `year` | int | | tiles, details | `2010` |
-| `overview` | string | | details, banner | `"A thief who…"` |
-| `poster` | URL | | tiles (2:3) | `"/art/42/poster.jpg"` |
-| `backdrop` | URL | | banner, details (16:9) | `"/art/42/backdrop.jpg"` |
-| `logo` | URL | | replaces the title text (transparent PNG) | `"/art/42/logo.png"` |
-| `genres` | string[] | | genre rows and filter | `["Sci-Fi"]` |
-| `rating` | string | | age rating badge | `"PG-13"` |
-| `duration` | number | | runtime, in seconds | `8880` |
-| `added` | int | | *Recently added*, Unix time | `1760000000` |
-| `released` | string | | details, `YYYY-MM-DD` | `"2010-07-16"` |
-| `director` | string | | details | `"Christopher Nolan"` |
-| `cast` | [Cast](#cast-member)[] | | cast row | |
-| `score` | number | | out of 10 | `8.4` |
-| `score_source` | string | | next to the score | `"TMDB"` |
-| `reviews` | [Review](#review)[] | | critics' quotes | |
-| `budget` | int | | US dollars | `160000000` |
-| `revenue` | int | | box office, US dollars | `836800000` |
-| `file` | [File](#file-info) | | file details (read from the video when missing) | |
+| Field          | Type                   | Needed       | Shown                                           | Example                  |
+| -------------- | ---------------------- | ------------ | ----------------------------------------------- | ------------------------ |
+| `title`        | string                 | **required** | everywhere                                      | `"Inception"`            |
+| `stream`       | URL                    | **required** | play button                                     | `"/api/stream/movie/42"` |
+| `id`           | string                 | recommended  | keeps resume points and _My list_ stable        | `"42"`                   |
+| `year`         | int                    |              | tiles, details                                  | `2010`                   |
+| `overview`     | string                 |              | details, banner                                 | `"A thief who…"`         |
+| `poster`       | URL                    |              | tiles (2:3)                                     | `"/art/42/poster.jpg"`   |
+| `backdrop`     | URL                    |              | banner, details (16:9)                          | `"/art/42/backdrop.jpg"` |
+| `logo`         | URL                    |              | replaces the title text (transparent PNG)       | `"/art/42/logo.png"`     |
+| `genres`       | string[]               |              | genre rows and filter                           | `["Sci-Fi"]`             |
+| `rating`       | string                 |              | age rating badge                                | `"PG-13"`                |
+| `duration`     | number                 |              | runtime, in seconds                             | `8880`                   |
+| `added`        | int                    |              | _Recently added_, Unix time                     | `1760000000`             |
+| `released`     | string                 |              | details, `YYYY-MM-DD`                           | `"2010-07-16"`           |
+| `director`     | string                 |              | details                                         | `"Christopher Nolan"`    |
+| `cast`         | [Cast](#cast-member)[] |              | cast row                                        |                          |
+| `score`        | number                 |              | out of 10                                       | `8.4`                    |
+| `score_source` | string                 |              | next to the score                               | `"TMDB"`                 |
+| `reviews`      | [Review](#review)[]    |              | critics' quotes                                 |                          |
+| `budget`       | int                    |              | US dollars                                      | `160000000`              |
+| `revenue`      | int                    |              | box office, US dollars                          | `836800000`              |
+| `file`         | [File](#file-info)     |              | file details (read from the video when missing) |                          |
 
 ### Series
 
 Same as a movie, minus `stream`, `director`, `budget`, `revenue` and `duration`, plus:
 
-| Field | Type | Needed | Shown | Example |
-|---|---|---|---|---|
-| `seasons` | [Season](#season)[] | **required** (at least one episode) | season picker | |
-| `creators` | string[] | | details | `["Greg Daniels"]` |
-| `network` | string | | details | `"NBC"` |
-| `status` | string | | details | `"Ended"`, `"Returning Series"` |
-| `end_year` | int | | `2005–2013` | `2013` |
+| Field      | Type                | Needed                              | Shown         | Example                         |
+| ---------- | ------------------- | ----------------------------------- | ------------- | ------------------------------- |
+| `seasons`  | [Season](#season)[] | **required** (at least one episode) | season picker |                                 |
+| `creators` | string[]            |                                     | details       | `["Greg Daniels"]`              |
+| `network`  | string              |                                     | details       | `"NBC"`                         |
+| `status`   | string              |                                     | details       | `"Ended"`, `"Returning Series"` |
+| `end_year` | int                 |                                     | `2005–2013`   | `2013`                          |
 
 ### Season
 
-| Field | Type | |
-|---|---|---|
-| `number` | int | `0` is shown as *Specials* |
-| `title` | string | Optional. Replaces "Season N". |
-| `episodes` | [Episode](#episode)[] | |
+| Field      | Type                  |                                |
+| ---------- | --------------------- | ------------------------------ |
+| `number`   | int                   | `0` is shown as _Specials_     |
+| `title`    | string                | Optional. Replaces "Season N". |
+| `episodes` | [Episode](#episode)[] |                                |
 
 ### Episode
 
-| Field | Type | Needed | |
-|---|---|---|---|
-| `stream` | URL | **required** | |
-| `number` | int | recommended | Episodes are sorted by this |
-| `id` | string | recommended | Keeps resume points stable |
-| `title` | string | recommended | |
-| `overview` | string | | |
-| `still` | URL | | Thumbnail, 16:9 |
-| `duration` | number | | Seconds |
-| `aired` | string | | `YYYY-MM-DD` |
-| `score` | number | | Out of 10 |
-| `file` | [File](#file-info) | | |
+| Field      | Type               | Needed       |                             |
+| ---------- | ------------------ | ------------ | --------------------------- |
+| `stream`   | URL                | **required** |                             |
+| `number`   | int                | recommended  | Episodes are sorted by this |
+| `id`       | string             | recommended  | Keeps resume points stable  |
+| `title`    | string             | recommended  |                             |
+| `overview` | string             |              |                             |
+| `still`    | URL                |              | Thumbnail, 16:9             |
+| `duration` | number             |              | Seconds                     |
+| `aired`    | string             |              | `YYYY-MM-DD`                |
+| `score`    | number             |              | Out of 10                   |
+| `file`     | [File](#file-info) |              |                             |
 
 ### Cast member
 
@@ -350,9 +372,15 @@ Same as a movie, minus `stream`, `director`, `budget`, `revenue` and `duration`,
 
 ```json
 {
-  "quality": "1080p", "container": "mp4", "video_codec": "h264",
-  "audio_codec": "aac", "audio_channels": 6, "bitrate": 2600000,
-  "size": 2090000000, "name": "28.Days.Later.2002.1080p.mp4", "path": "/movies/28 Days Later"
+  "quality": "1080p",
+  "container": "mp4",
+  "video_codec": "h264",
+  "audio_codec": "aac",
+  "audio_channels": 6,
+  "bitrate": 2600000,
+  "size": 2090000000,
+  "name": "28.Days.Later.2002.1080p.mp4",
+  "path": "/movies/28 Days Later"
 }
 ```
 
@@ -362,21 +390,49 @@ Same as a movie, minus `stream`, `director`, `budget`, `revenue` and `duration`,
 
 ```json
 {
-  "movies": [{
-    "id": "42", "title": "Inception", "year": 2010,
-    "overview": "…", "genres": ["Sci-Fi"], "rating": "PG-13",
-    "duration": 8880, "added": 1760000000,
-    "poster": "/art/42/poster.jpg", "backdrop": "/art/42/backdrop.jpg",
-    "stream": "/api/stream/movie/42"
-  }],
-  "series": [{
-    "id": "7", "title": "The Office", "year": 2005, "overview": "…", "genres": ["Comedy"],
-    "poster": "/art/7/poster.jpg", "backdrop": "/art/7/backdrop.jpg", "added": 1760000000,
-    "seasons": [{ "number": 1, "episodes": [
-      { "id": "7-1-1", "number": 1, "title": "Pilot", "overview": "…",
-        "duration": 1380, "still": "/art/7/1/1.jpg", "stream": "/api/stream/episode/123" }
-    ]}]
-  }]
+  "movies": [
+    {
+      "id": "42",
+      "title": "Inception",
+      "year": 2010,
+      "overview": "…",
+      "genres": ["Sci-Fi"],
+      "rating": "PG-13",
+      "duration": 8880,
+      "added": 1760000000,
+      "poster": "/art/42/poster.jpg",
+      "backdrop": "/art/42/backdrop.jpg",
+      "stream": "/api/stream/movie/42"
+    }
+  ],
+  "series": [
+    {
+      "id": "7",
+      "title": "The Office",
+      "year": 2005,
+      "overview": "…",
+      "genres": ["Comedy"],
+      "poster": "/art/7/poster.jpg",
+      "backdrop": "/art/7/backdrop.jpg",
+      "added": 1760000000,
+      "seasons": [
+        {
+          "number": 1,
+          "episodes": [
+            {
+              "id": "7-1-1",
+              "number": 1,
+              "title": "Pilot",
+              "overview": "…",
+              "duration": 1380,
+              "still": "/art/7/1/1.jpg",
+              "stream": "/api/stream/episode/123"
+            }
+          ]
+        }
+      ]
+    }
+  ]
 }
 ```
 
@@ -432,16 +488,26 @@ const crypto = require("crypto");
 const app = express();
 app.use(express.json());
 
-const users = { noah: "hunter2" };   // use real password hashing
-const tokens = new Map();            // token -> username
-const movies = [{ id: "1", title: "Inception", year: 2010, file: "/srv/videos/Inception.mkv",
-                  poster: "/srv/videos/Inception.jpg" }];
+const users = { user: "hunter2" }; // use real password hashing
+const tokens = new Map(); // token -> username
+const movies = [
+  {
+    id: "1",
+    title: "Inception",
+    year: 2010,
+    file: "/srv/videos/Inception.mkv",
+    poster: "/srv/videos/Inception.jpg",
+  },
+];
 
-app.get("/api/info", (req, res) => res.json({ name: "Node server", auth: true, version: 1 }));
+app.get("/api/info", (req, res) =>
+  res.json({ name: "Node server", auth: true, version: 1 }),
+);
 
 app.post("/api/login", (req, res) => {
   const { username, password } = req.body || {};
-  if (!username || users[username] !== password) return res.status(401).json({ error: "wrong" });
+  if (!username || users[username] !== password)
+    return res.status(401).json({ error: "wrong" });
   const token = crypto.randomBytes(32).toString("hex");
   tokens.set(token, username);
   res.json({ token, name: username });
@@ -457,15 +523,26 @@ app.post("/api/logout", auth, (req, res) => {
   res.json({});
 });
 
-app.get("/api/library", auth, (req, res) => res.json({
-  movies: movies.map(m => ({ id: m.id, title: m.title, year: m.year,
-    poster: `/art/movie/${m.id}`, stream: `/api/stream/movie/${m.id}` })),
-  series: [],
-}));
+app.get("/api/library", auth, (req, res) =>
+  res.json({
+    movies: movies.map((m) => ({
+      id: m.id,
+      title: m.title,
+      year: m.year,
+      poster: `/art/movie/${m.id}`,
+      stream: `/api/stream/movie/${m.id}`,
+    })),
+    series: [],
+  }),
+);
 
-const byId = id => movies.find(m => m.id === id);
-app.get("/api/stream/movie/:id", auth, (req, res) => res.sendFile(byId(req.params.id).file)); // Range-aware
-app.get("/art/movie/:id", auth, (req, res) => res.sendFile(byId(req.params.id).poster));
+const byId = (id) => movies.find((m) => m.id === id);
+app.get("/api/stream/movie/:id", auth, (req, res) =>
+  res.sendFile(byId(req.params.id).file),
+); // Range-aware
+app.get("/art/movie/:id", auth, (req, res) =>
+  res.sendFile(byId(req.params.id).poster),
+);
 
 app.listen(8080, "0.0.0.0");
 ```
@@ -516,7 +593,7 @@ curl -i $SERVER/api/library
 
 # Sign in and keep the token.
 TOKEN=$(curl -s -X POST $SERVER/api/login -H 'Content-Type: application/json' \
-        -d '{"username":"noah","password":"hunter2"}' | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')
+        -d '{"username":"user","password":"hunter2"}' | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')
 
 # Library loads? Expect JSON.
 curl -s -H "Authorization: Bearer $TOKEN" $SERVER/api/library | python3 -m json.tool | head -40
@@ -528,21 +605,21 @@ curl -s -o /dev/null -D - -H "Authorization: Bearer $TOKEN" -H 'Range: bytes=0-1
 
 ## Troubleshooting
 
-| Check says | Fix |
-|---|---|
-| *No answer from …* | Check the IP and port. Bind the server to `0.0.0.0`, not `127.0.0.1`, so other machines can reach it. Open the port in the firewall (`sudo ufw allow 8080/tcp`). |
-| *…doesn't share a folder listing either* | Add `/api/info`, or turn on directory listings. If you added the API, check that the app isn't behind a path prefix the user didn't type. |
-| *It answered, but not with JSON* | A web app is serving its HTML page for every unknown path. Register the API routes before the catch-all route. |
-| Sign-in API *404/405* | Add `POST /api/login`, or return `"auth": false` from `/api/info` if the library doesn't need to be private. |
-| Sign-in API *signed in with an empty username* | Return `401` for wrong credentials instead of `200`. |
-| Library API *anyone can read the library* | Put `/api/library`, streams and images behind the token check. |
-| Library *the server turned down the sign-in token* | Accept `Authorization: Bearer <token>` on `/api/library`, not only cookies. |
-| Library *a library this app doesn't understand* | The error names the field and line. Usually a number sent as a string (`"year": "2010"`) or an object where a list is expected. |
-| Movies *no "stream" URL* | Every movie needs `stream`. Movies without it are hidden. |
-| Streaming *sent text/html instead of a video* | The stream URL redirects to a login page, or isn't checking the bearer token. |
-| Streaming *ignores Range requests* | Serve the file with a Range-aware helper (see [Streams and images](#streams-and-images)). `python -m http.server` can't do this. Use the bundled server or nginx. |
-| Artwork *Couldn't load …* | The image URL needs the same bearer token as the API, or it must be public. Use JPEG, PNG or WebP. |
-| Progress sync *don't match a movie or episode in the library* | `id` in `/api/progress` must be the same `id` the library gives that movie or episode, and `type` must be `"movie"` or `"episode"`. |
-| Progress sync *not a list the app can read* | Return a JSON array in the shape under [`GET /api/progress`](#get-apiprogress-optional). Send `0` for an unknown `duration`. |
-| Progress sync *accepted an entry with "type": "localplayer-check"* | Validate the body and answer `422` when it can't be stored. |
-| Metadata bars | Add the missing fields to the library JSON (or to `info.json` with the bundled server). Each one shows up on the details pages as soon as it's there. |
+| Check says                                                         | Fix                                                                                                                                                               |
+| ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| _No answer from …_                                                 | Check the IP and port. Bind the server to `0.0.0.0`, not `127.0.0.1`, so other machines can reach it. Open the port in the firewall (`sudo ufw allow 8080/tcp`).  |
+| _…doesn't share a folder listing either_                           | Add `/api/info`, or turn on directory listings. If you added the API, check that the app isn't behind a path prefix the user didn't type.                         |
+| _It answered, but not with JSON_                                   | A web app is serving its HTML page for every unknown path. Register the API routes before the catch-all route.                                                    |
+| Sign-in API _404/405_                                              | Add `POST /api/login`, or return `"auth": false` from `/api/info` if the library doesn't need to be private.                                                      |
+| Sign-in API _signed in with an empty username_                     | Return `401` for wrong credentials instead of `200`.                                                                                                              |
+| Library API _anyone can read the library_                          | Put `/api/library`, streams and images behind the token check.                                                                                                    |
+| Library _the server turned down the sign-in token_                 | Accept `Authorization: Bearer <token>` on `/api/library`, not only cookies.                                                                                       |
+| Library _a library this app doesn't understand_                    | The error names the field and line. Usually a number sent as a string (`"year": "2010"`) or an object where a list is expected.                                   |
+| Movies _no "stream" URL_                                           | Every movie needs `stream`. Movies without it are hidden.                                                                                                         |
+| Streaming _sent text/html instead of a video_                      | The stream URL redirects to a login page, or isn't checking the bearer token.                                                                                     |
+| Streaming _ignores Range requests_                                 | Serve the file with a Range-aware helper (see [Streams and images](#streams-and-images)). `python -m http.server` can't do this. Use the bundled server or nginx. |
+| Artwork _Couldn't load …_                                          | The image URL needs the same bearer token as the API, or it must be public. Use JPEG, PNG or WebP.                                                                |
+| Progress sync _don't match a movie or episode in the library_      | `id` in `/api/progress` must be the same `id` the library gives that movie or episode, and `type` must be `"movie"` or `"episode"`.                               |
+| Progress sync _not a list the app can read_                        | Return a JSON array in the shape under [`GET /api/progress`](#get-apiprogress-optional). Send `0` for an unknown `duration`.                                      |
+| Progress sync _accepted an entry with "type": "localplayer-check"_ | Validate the body and answer `422` when it can't be stored.                                                                                                       |
+| Metadata bars                                                      | Add the missing fields to the library JSON (or to `info.json` with the bundled server). Each one shows up on the details pages as soon as it's there.             |
