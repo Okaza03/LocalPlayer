@@ -1,0 +1,306 @@
+// App state: which screen is up, the server session, the library, and
+// keeping watch progress in step with the server (`/api/progress`).
+package io.github.okaza03.localplayer
+
+import android.app.Application
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import java.io.File
+
+sealed interface Screen {
+    data class Loading(val message: String) : Screen
+    data class Setup(val error: String? = null) : Screen
+    data class Login(val error: String? = null) : Screen
+    data object Home : Screen
+    data class Details(val itemId: String) : Screen
+    /** `episodeId` for series; `fromStart` ignores the resume point. */
+    data class Player(val itemId: String, val episodeId: String? = null, val fromStart: Boolean = false) : Screen
+}
+
+/** What to play next in a series, and where in it. */
+data class NextUp(val episode: Episode, val season: Season, val resume: Entry?, val started: Boolean)
+
+/** Send our changes at most this often; playback saves every few seconds. */
+private const val PUSH_EVERY_MS = 15_000L
+/** Look for changes made elsewhere this often (not during playback). */
+private const val PULL_EVERY_MS = 60_000L
+
+class AppModel(app: Application) : AndroidViewModel(app) {
+    val prefs = Prefs(app)
+    private val progress = Progress(File(app.filesDir, "progress.json"))
+
+    private val stack = mutableStateListOf<Screen>(Screen.Loading("Starting…"))
+    val screen get() = stack.last()
+
+    var client: Client? by mutableStateOf(null)
+        private set
+    var library: Library? by mutableStateOf(null)
+        private set
+    var busy by mutableStateOf(false)
+        private set
+
+    /** Bumped whenever progress changes, so screens showing it redraw. */
+    var progressVersion by mutableIntStateOf(0)
+        private set
+
+    /** Kept across screens so going back lands where you were. */
+    val homeList = LazyListState()
+    val homeRows = HashMap<String, LazyListState>()
+    var homeFocus: String? = null
+
+    // sync state for the current session
+    private var syncOff = false
+    private var lastPull = 0L
+    private val wake = Channel<Unit>(Channel.CONFLATED)
+
+    init {
+        val saved = prefs.server
+        if (saved == null) replace(Screen.Setup()) else connect(saved, startup = true)
+        viewModelScope.launch { syncLoop() }
+    }
+
+    // ------------------------------------------------------------ navigation
+
+    fun push(s: Screen) {
+        stack += s
+    }
+
+    /** Returns false when there's nothing to go back to. */
+    fun back(): Boolean {
+        if (stack.size <= 1) return false
+        stack.removeAt(stack.lastIndex)
+        return true
+    }
+
+    private fun replace(s: Screen) {
+        stack.clear()
+        stack += s
+    }
+
+    /** Swap the top screen, e.g. the player moving on to the next episode. */
+    fun swap(s: Screen) {
+        stack[stack.lastIndex] = s
+    }
+
+    // --------------------------------------------------------------- session
+
+    fun connect(address: String, startup: Boolean = false) {
+        busy = true
+        if (startup) replace(Screen.Loading("Connecting to ${normalize(address).substringAfter("://")}…"))
+        viewModelScope.launch {
+            val res = runCatching { withContext(Dispatchers.IO) { Client.connect(address) } }
+            busy = false
+            res.onFailure { replace(Screen.Setup(it.message)); return@launch }
+            val c = res.getOrThrow()
+            if (prefs.server != c.base) {
+                prefs.server = c.base
+                prefs.token = null
+                prefs.user = null
+            }
+            c.token = prefs.token
+            client = c
+            resetSync()
+            if (c.info.auth && c.token == null) replace(Screen.Login()) else loadLibrary()
+        }
+    }
+
+    fun login(user: String, password: String) {
+        val c = client ?: return
+        busy = true
+        viewModelScope.launch {
+            val res = runCatching { withContext(Dispatchers.IO) { c.login(user, password) } }
+            busy = false
+            res.onFailure { replace(Screen.Login(it.message)); return@launch }
+            val s = res.getOrThrow()
+            c.token = s.token
+            prefs.token = s.token
+            prefs.user = s.name ?: user
+            resetSync()
+            loadLibrary()
+        }
+    }
+
+    fun loadLibrary() {
+        val c = client ?: return
+        if (library == null) replace(Screen.Loading("Loading ${c.name}…"))
+        busy = true
+        viewModelScope.launch {
+            val res = runCatching { withContext(Dispatchers.IO) { c.library() } }
+            busy = false
+            res.onSuccess {
+                val first = library == null
+                library = it
+                if (first) replace(Screen.Home)
+                pullNow()
+            }.onFailure {
+                when {
+                    it is Unauthorized -> signedOut(it.message)
+                    library == null -> replace(Screen.Setup(it.message))
+                }
+            }
+        }
+    }
+
+    private fun signedOut(message: String?) {
+        client?.token = null
+        prefs.token = null
+        library = null
+        replace(Screen.Login(message))
+    }
+
+    fun signOut() {
+        val c = client ?: return
+        viewModelScope.launch(Dispatchers.IO) { c.logout() }
+        if (c.info.auth) signedOut(null) else changeServer()
+    }
+
+    fun changeServer() {
+        client?.let { c -> viewModelScope.launch(Dispatchers.IO) { c.logout() } }
+        client = null
+        library = null
+        prefs.token = null
+        replace(Screen.Setup())
+    }
+
+    // -------------------------------------------------------------- progress
+
+    private fun prefix() = client?.base.orEmpty() + "|"
+
+    fun entry(id: String): Entry? {
+        // read so callers redraw when it changes
+        progressVersion
+        return progress.get(prefix() + id)
+    }
+
+    fun save(id: String, pos: Double, dur: Double) {
+        progress.set(prefix() + id, pos, dur)
+        progress.flush()
+    }
+
+    /** Progress was saved by the player; show it and send it now. */
+    fun playerClosed() {
+        progressVersion++
+        pushNow()
+    }
+
+    fun nextUp(series: Item): NextUp? {
+        val eps = series.seasons.flatMap { s -> s.episodes.map { s to it } }
+        if (eps.isEmpty()) return null
+        val seen = eps.withIndex().mapNotNull { (i, se) -> entry(se.second.id)?.let { i to it } }
+            .maxByOrNull { it.second.updated }
+        fun at(i: Int, resume: Entry?, started: Boolean) = NextUp(eps[i].second, eps[i].first, resume, started)
+        return when {
+            seen == null -> at(0, null, false)
+            seen.second.inProgress -> at(seen.first, seen.second, true)
+            seen.first + 1 < eps.size -> at(seen.first + 1, null, true)
+            else -> at(0, null, true)
+        }
+    }
+
+    /** The episode after `episodeId`, across seasons. */
+    fun episodeAfter(series: Item, episodeId: String): Episode? {
+        val eps = series.episodes
+        val i = eps.indexOfFirst { it.id == episodeId }
+        return eps.getOrNull(i + 1).takeIf { i >= 0 }
+    }
+
+    /** Continue watching: unfinished movies, and the next episode of each series. */
+    fun continueWatching(lib: Library): List<Pair<Item, NextUp?>> {
+        progressVersion
+        val seenSeries = HashSet<String>()
+        val out = ArrayList<Pair<Item, NextUp?>>()
+        for ((id, e) in progress.recent(prefix())) {
+            if (out.size >= 20) break
+            val movie = lib.movies.find { it.id == id }
+            if (movie != null) {
+                if (e.inProgress) out += movie to null
+                continue
+            }
+            val s = lib.seriesOf(id) ?: continue
+            if (!seenSeries.add(s.id)) continue
+            nextUp(s)?.let { out += s to it }
+        }
+        return out
+    }
+
+    // ------------------------------------------------------------------ sync
+
+    private fun resetSync() {
+        syncOff = false
+        lastPull = 0
+    }
+
+    fun pullNow() {
+        lastPull = 0
+        wake.trySend(Unit)
+    }
+
+    fun pushNow() {
+        wake.trySend(Unit)
+    }
+
+    private suspend fun syncLoop() {
+        while (true) {
+            withTimeoutOrNull(PUSH_EVERY_MS) { wake.receive() }
+            val c = client ?: continue
+            if (syncOff || library == null) continue
+            val prefix = c.base + "|"
+            withContext(Dispatchers.IO) { push(c, prefix) }
+            val playing = screen is Screen.Player
+            if (!playing && System.currentTimeMillis() - lastPull >= PULL_EVERY_MS) {
+                lastPull = System.currentTimeMillis()
+                withContext(Dispatchers.IO) { pull(c, prefix) }
+            }
+        }
+    }
+
+    private fun push(c: Client, prefix: String) {
+        for ((id, e) in progress.unsent(prefix)) {
+            val saved = try {
+                c.saveProgress(id, e.pos, e.dur)
+            } catch (err: Exception) {
+                // offline or the server hiccuped: try again later
+                return
+            }
+            progress.sent(prefix, id, e, saved?.updated?.takeIf { it > 0 })
+        }
+        progress.flush()
+    }
+
+    private suspend fun pull(c: Client, prefix: String) {
+        val list = try {
+            c.progress()
+        } catch (err: Exception) {
+            return
+        }
+        if (list == null) {
+            syncOff = true
+            return
+        }
+        val remote = list.mapNotNull { w ->
+            val key = w.key() ?: return@mapNotNull null
+            var e = Entry(w.position.coerceAtLeast(0.0), w.duration.coerceAtLeast(0.0), w.updated)
+            // a title the server calls completed counts as watched here too
+            if (w.completed) {
+                val dur = if (e.dur <= 0) maxOf(e.pos, 60.0) else e.dur
+                e = e.copy(pos = dur, dur = dur)
+            }
+            key to e
+        }
+        if (progress.merge(prefix, remote)) {
+            progress.flush()
+            withContext(Dispatchers.Main) { progressVersion++ }
+        }
+    }
+}
