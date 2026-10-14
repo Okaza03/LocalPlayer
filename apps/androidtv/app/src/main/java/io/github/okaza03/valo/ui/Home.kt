@@ -96,11 +96,13 @@ fun HomeScreen(model: AppModel, lib: Library) {
     val target = model.homeFocus?.takeIf { k -> rows.any { r -> r.cards.any { it.key == k } } }
         ?: rows.firstOrNull()?.cards?.firstOrNull()?.key
     val requester = remember { FocusRequester() }
-    LaunchedEffect(Unit) {
+    // again after a search, which replaced the rows
+    LaunchedEffect(model.query.isBlank()) {
+        if (model.query.isNotBlank()) return@LaunchedEffect
         // bring the remembered card's row into view, or there's nothing to focus
         val row = rows.indexOfFirst { r -> r.cards.any { it.key == target } }
         if (row >= 0) model.homeList.scrollToItem(row)
-        runCatching { requester.requestFocus() }
+        requester.focusSoon()
     }
 
     // Continue watching shows up once progress arrives from the server. The
@@ -111,9 +113,8 @@ fun HomeScreen(model: AppModel, lib: Library) {
     }
 
     Box(Modifier.fillMaxSize().background(BG)) {
-        Backdrop(focused?.backdrop ?: focused?.poster)
-        Column(Modifier.fillMaxSize()) {
-            TopBar(model)
+        if (model.query.isBlank()) Backdrop(focused?.backdrop ?: focused?.poster)
+        LibraryPage(model, lib, Screen.Home) { Column(Modifier.fillMaxSize()) {
             Hero(focused)
             if (rows.isEmpty()) {
                 Text(
@@ -135,21 +136,7 @@ fun HomeScreen(model: AppModel, lib: Library) {
                     }, onClick = { model.push(it.open) })
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun TopBar(model: AppModel) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        modifier = Modifier.fillMaxWidth().padding(start = EDGE, end = EDGE, top = 16.dp),
-    ) {
-        Text(model.client?.name ?: "", color = MUTED, fontSize = 15.sp, modifier = Modifier.weight(1f))
-        TvButton(if (model.busy) "Refreshing…" else "Refresh", { model.loadLibrary() }, enabled = !model.busy)
-        if (model.client?.info?.auth == true) TvButton("Sign out", model::signOut)
-        TvButton("Change server", model::changeServer)
+        } }
     }
 }
 
@@ -159,7 +146,7 @@ private fun Hero(item: Item?) {
     Column(Modifier.fillMaxWidth().height(190.dp).padding(start = EDGE, top = 8.dp)) {
         if (item == null) return@Column
         if (item.logo != null) {
-            Art(item.logo, Modifier.height(80.dp).width(320.dp), scale = ContentScale.Fit)
+            Logo(item.logo, item.title, Modifier.height(80.dp).width(320.dp))
         } else {
             Text(
                 item.title, fontSize = 32.sp, fontWeight = FontWeight.Bold, color = TEXT,
@@ -186,10 +173,7 @@ private fun CardRow(
     onClick: (HomeCard) -> Unit,
 ) {
     Column {
-        Text(
-            row.title, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = TEXT,
-            modifier = Modifier.padding(start = EDGE, bottom = 12.dp),
-        )
+        MonoText(row.title, 13.sp, modifier = Modifier.padding(start = EDGE, bottom = 10.dp))
         LazyRow(
             state = state,
             contentPadding = PaddingValues(horizontal = EDGE),
@@ -201,6 +185,7 @@ private fun CardRow(
                     width = if (row.wide) 200.dp else 112.dp,
                     ratio = if (row.wide) 16f / 9f else 2f / 3f,
                     progress = card.progress,
+                    plays = row.wide,
                     onClick = { onClick(card) },
                     onFocus = { onFocus(card) },
                     focusRequester = if (card.key == target) requester else null,

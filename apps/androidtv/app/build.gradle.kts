@@ -26,6 +26,10 @@ android {
         versionName = appVersion
         // 0.4.0 -> 400, 1.2.3 -> 10203
         versionCode = appVersion.split('.').map { it.toInt() }.fold(0) { acc, n -> acc * 100 + n }
+        // where "check for updates" looks; -Pvalo.releases=<url> points a test build elsewhere
+        val releases = (project.findProperty("valo.releases") as String?)
+            ?: "https://api.github.com/repos/Okaza03/LocalPlayer/releases/latest"
+        buildConfigField("String", "RELEASES_URL", "\"$releases\"")
     }
 
     signingConfigs {

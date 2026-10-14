@@ -60,7 +60,7 @@ fun DetailsScreen(model: AppModel, item: Item) {
             item {
                 Column(Modifier.padding(horizontal = EDGE).fillMaxWidth(0.55f)) {
                     if (item.logo != null) {
-                        Art(item.logo, Modifier.height(100.dp).width(400.dp), scale = ContentScale.Fit)
+                        Logo(item.logo, item.title, Modifier.height(100.dp).width(400.dp))
                     } else {
                         Text(item.title, fontSize = 40.sp, fontWeight = FontWeight.Bold, color = TEXT)
                     }
@@ -127,10 +127,7 @@ fun DetailsScreen(model: AppModel, item: Item) {
                 item(key = "episodes/$season") {
                     val s = item.seasons.getOrNull(season) ?: return@item
                     Column {
-                        Text(
-                            s.label, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = TEXT,
-                            modifier = Modifier.padding(start = EDGE, bottom = 12.dp),
-                        )
+                        MonoText(s.label, 13.sp, modifier = Modifier.padding(start = EDGE, bottom = 10.dp))
                         val state = rememberLazyListState(
                             s.episodes.indexOfFirst { it.id == next?.episode?.id }.coerceAtLeast(0),
                         )

@@ -12,6 +12,7 @@ import coil3.compose.setSingletonImageLoaderFactory
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.crossfade
 import io.github.okaza03.valo.ui.DetailsScreen
+import io.github.okaza03.valo.ui.GridScreen
 import io.github.okaza03.valo.ui.HomeScreen
 import io.github.okaza03.valo.ui.LoadingScreen
 import io.github.okaza03.valo.ui.ValoTheme
@@ -65,6 +66,7 @@ private fun App(model: AppModel) {
         is Screen.Setup -> SetupScreen(model, s.error)
         is Screen.Login -> LoginScreen(model, s.error)
         Screen.Home -> if (lib != null) HomeScreen(model, lib)
+        is Screen.Grid -> if (lib != null) GridScreen(model, lib, s.kind)
         is Screen.Details -> lib?.find(s.itemId)?.let { DetailsScreen(model, it) }
         is Screen.Player -> lib?.find(s.itemId)?.let { PlayerScreen(model, it, s) }
     }

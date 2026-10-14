@@ -3,6 +3,8 @@
 package io.github.okaza03.valo
 
 import android.app.Application
+import android.widget.Toast
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -23,9 +25,24 @@ sealed interface Screen {
     data class Setup(val error: String? = null) : Screen
     data class Login(val error: String? = null) : Screen
     data object Home : Screen
+    /** All movies or all series, with filters (the desktop app's Movies and TV Shows tabs). */
+    data class Grid(val kind: Kind) : Screen
     data class Details(val itemId: String) : Screen
     /** `episodeId` for series; `fromStart` ignores the resume point. */
     data class Player(val itemId: String, val episodeId: String? = null, val fromStart: Boolean = false) : Screen
+}
+
+enum class Filter { All, InProgress, Unwatched, Watched }
+
+enum class Sort { Title, Year, Added }
+
+/** A grid page's choices and place, kept while you look at a title. */
+class GridState {
+    var filter by mutableStateOf(Filter.All)
+    var sort by mutableStateOf(Sort.Title)
+    var genre by mutableStateOf<String?>(null)
+    var list = LazyGridState()
+    var focus: String? = null
 }
 
 /** What to play next in a series, and where in it. */
@@ -60,6 +77,15 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     val homeList = LazyListState()
     val homeRows = HashMap<String, LazyListState>()
     var homeFocus: String? = null
+    val grids = mapOf(Kind.Movie to GridState(), Kind.Series to GridState())
+
+    /** The top bar's search; results replace the page while it isn't empty. */
+    var query by mutableStateOf("")
+    val searchList = LazyGridState()
+    var searchFocus: String? = null
+
+    var update: UpdateState by mutableStateOf(UpdateState.Idle)
+        private set
 
     // sync state for the current session
     private var syncOff = false
@@ -73,6 +99,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
             connect(saved, startup = true)
         }
         viewModelScope.launch { syncLoop() }
+        checkUpdates(quiet = true)
     }
 
     // ------------------------------------------------------------ navigation
@@ -81,8 +108,28 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         stack += s
     }
 
+    /** Home, Movies or TV Shows from the top bar. */
+    fun openTab(s: Screen) {
+        query = ""
+        replace(Screen.Home)
+        if (s != Screen.Home) {
+            (s as? Screen.Grid)?.let { grids[it.kind]?.focus = null }
+            push(s)
+        }
+    }
+
+    fun search(q: String) {
+        if (q != query) searchFocus = null
+        query = q
+    }
+
     /** Returns false when there's nothing to go back to. */
     fun back(): Boolean {
+        // Back first clears a search, like Escape on the desktop
+        if (query.isNotEmpty() && (screen == Screen.Home || screen is Screen.Grid)) {
+            query = ""
+            return true
+        }
         if (stack.size <= 1) return false
         stack.removeAt(stack.lastIndex)
         return true
@@ -149,7 +196,10 @@ class AppModel(app: Application) : AndroidViewModel(app) {
             res.onSuccess {
                 val first = library == null
                 library = it
-                if (first) replace(Screen.Home)
+                if (first) {
+                    query = ""
+                    replace(Screen.Home)
+                }
                 pullNow()
             }.onFailure {
                 when {
@@ -158,6 +208,78 @@ class AppModel(app: Application) : AndroidViewModel(app) {
                 }
             }
         }
+    }
+
+    /** Same rules as the desktop app's Movies/TV Shows filter. */
+    fun status(item: Item): Filter = when (item.kind) {
+        Kind.Movie -> entry(item.id).let { e ->
+            when {
+                e?.watched == true -> Filter.Watched
+                e?.inProgress == true -> Filter.InProgress
+                else -> Filter.Unwatched
+            }
+        }
+        Kind.Series -> {
+            val eps = item.episodes.map { entry(it.id) }
+            when {
+                eps.isNotEmpty() && eps.all { it?.watched == true } -> Filter.Watched
+                eps.any { (it?.pos ?: 0.0) > 30 } -> Filter.InProgress
+                else -> Filter.Unwatched
+            }
+        }
+    }
+
+    /** Title, a genre's exact name, or a year, like the desktop app's search. */
+    fun searchHits(lib: Library): List<Item> {
+        val q = query.trim().lowercase()
+        if (q.isEmpty()) return emptyList()
+        return lib.all.filter { i ->
+            q in i.title.lowercase() || i.genres.any { it.lowercase() == q } || i.year?.toString() == q
+        }
+    }
+
+    // --------------------------------------------------------------- updates
+
+    fun checkUpdates(quiet: Boolean) {
+        if (update != UpdateState.Idle && update !is UpdateState.Available) return
+        update = UpdateState.Checking
+        viewModelScope.launch {
+            val res = runCatching { withContext(Dispatchers.IO) { Updates.latest() } }
+            update = res.getOrNull()?.let { UpdateState.Available(it) } ?: UpdateState.Idle
+            if (!quiet) {
+                val msg = res.fold(
+                    { if (it == null) "Valo ${Updates.VERSION} is the latest version" else null },
+                    { "Can't check for updates: ${it.message}" },
+                )
+                msg?.let { toast(it) }
+            }
+        }
+    }
+
+    fun installUpdate() {
+        val rel = (update as? UpdateState.Available)?.release ?: return
+        update = UpdateState.Downloading(rel, 0)
+        val app = getApplication<Application>()
+        viewModelScope.launch {
+            val res = runCatching {
+                withContext(Dispatchers.IO) {
+                    Updates.download(rel, File(app.cacheDir, "updates")) { pct ->
+                        viewModelScope.launch { (update as? UpdateState.Downloading)?.let { update = it.copy(percent = pct) } }
+                    }
+                }
+            }
+            update = UpdateState.Available(rel)
+            res.onFailure { toast("Couldn't download the update: ${it.message}") }
+            res.onSuccess { apk ->
+                if (!Updates.install(app, apk)) {
+                    toast("Allow Valo to install apps, then choose Update again.")
+                }
+            }
+        }
+    }
+
+    private fun toast(msg: String) {
+        Toast.makeText(getApplication(), msg, Toast.LENGTH_LONG).show()
     }
 
     private fun signedOut(message: String?) {
