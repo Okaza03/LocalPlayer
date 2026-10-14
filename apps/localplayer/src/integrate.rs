@@ -6,7 +6,10 @@ use std::{env, fs, io};
 
 const DESKTOP: &str = include_str!("../../../packaging/localplayer.desktop");
 const ICON: &str = include_str!("../../../packaging/localplayer.svg");
-/// Separate from the `cargo xtask install` entry so neither clobbers the other.
+/// The AppImage's window app id. Desktops take the taskbar and Alt+Tab icon
+/// from the .desktop file named after it, so it names our menu entry, which
+/// is separate from the `cargo xtask install` one so neither clobbers the other.
+pub const APP_ID: &str = "localplayer-appimage";
 const ENTRY: &str = "localplayer-appimage.desktop";
 
 /// Path of the running AppImage, set by the AppImage runtime.
@@ -40,10 +43,15 @@ fn exec_arg(s: &str) -> String {
 
 fn entry(img: &str) -> String {
     // TryExec makes menus hide the entry once the AppImage is deleted
-    DESKTOP.replace(
-        "Exec=localplayer",
-        &format!("TryExec={}\nExec={}", string(img), exec_arg(img)),
-    )
+    DESKTOP
+        .replace(
+            "Exec=localplayer",
+            &format!("TryExec={}\nExec={}", string(img), exec_arg(img)),
+        )
+        .replace(
+            "StartupWMClass=localplayer",
+            &format!("StartupWMClass={APP_ID}"),
+        )
 }
 
 /// Add, refresh, or remove the menu entry. No-op unless running as an AppImage.
@@ -77,6 +85,17 @@ pub fn sync(enabled: bool) {
     match res {
         Ok(()) => {
             let _ = Command::new("update-desktop-database").arg(&apps).status();
+            // KDE's panel and menu cache icon lookups, so a newly written icon
+            // stays missing until they're told icons changed
+            let _ = Command::new("dbus-send")
+                .args([
+                    "--session",
+                    "--type=signal",
+                    "/KIconLoader",
+                    "org.kde.KIconLoader.iconChanged",
+                    "int32:0",
+                ])
+                .status();
         }
         Err(e) => eprintln!("can't update app menu entry: {e}"),
     }
@@ -98,5 +117,6 @@ mod tests {
         assert!(e.contains("TryExec=/home/u/Apps/LocalPlayer.AppImage\n"));
         assert!(e.contains("Exec=\"/home/u/Apps/LocalPlayer.AppImage\" %F"));
         assert!(!e.contains("Exec=localplayer"));
+        assert!(e.ends_with("StartupWMClass=localplayer-appimage"));
     }
 }

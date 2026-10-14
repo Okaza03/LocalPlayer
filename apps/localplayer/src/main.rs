@@ -47,8 +47,7 @@ fn main() -> eframe::Result<()> {
             .with_min_inner_size([560.0, 400.0])
             .with_title("LocalPlayer")
             .with_decorations(false) // we draw our own title bar
-            // matches localplayer.desktop, or the Flatpak's renamed copy of it
-            .with_app_id(std::env::var("FLATPAK_ID").unwrap_or_else(|_| "localplayer".into())),
+            .with_app_id(app_id()),
         ..Default::default()
     };
     eframe::run_native(
@@ -59,6 +58,18 @@ fn main() -> eframe::Result<()> {
             Ok(Box::new(App::new(&cc.egui_ctx, paths)))
         }),
     )
+}
+
+/// Names the .desktop file the window's icon comes from: the Flatpak's renamed
+/// copy of localplayer.desktop, the AppImage's own entry, or localplayer.desktop.
+fn app_id() -> String {
+    if let Ok(id) = std::env::var("FLATPAK_ID") {
+        id
+    } else if integrate::appimage().is_some() {
+        integrate::APP_ID.into()
+    } else {
+        "localplayer".into()
+    }
 }
 
 /// Title bar, taskbar and Alt+Tab icon.
