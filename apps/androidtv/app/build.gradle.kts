@@ -13,7 +13,7 @@ val appVersion: String = rootProject.file("../../Cargo.toml").readLines()
 // Release builds are signed with the keystore these point at (CI keeps it in
 // secrets). Without one they fall back to the debug key, which can't update
 // an install signed with a different key.
-val keystore: String? = System.getenv("LOCALPLAYER_KEYSTORE")
+val keystore: String? = System.getenv("VALO_KEYSTORE")
 
 android {
     namespace = "io.github.okaza03.valo"
@@ -28,7 +28,7 @@ android {
         versionCode = appVersion.split('.').map { it.toInt() }.fold(0) { acc, n -> acc * 100 + n }
         // where "check for updates" looks; -Pvalo.releases=<url> points a test build elsewhere
         val releases = (project.findProperty("valo.releases") as String?)
-            ?: "https://api.github.com/repos/Okaza03/LocalPlayer/releases/latest"
+            ?: "https://api.github.com/repos/Okaza03/Valo/releases/latest"
         buildConfigField("String", "RELEASES_URL", "\"$releases\"")
     }
 
@@ -36,11 +36,10 @@ android {
         if (keystore != null) {
             create("release") {
                 storeFile = file(keystore)
-                storePassword = System.getenv("LOCALPLAYER_KEYSTORE_PASSWORD")
-                // the key was made before the rename, under the old name
-                keyAlias = System.getenv("LOCALPLAYER_KEY_ALIAS") ?: "localplayer"
-                keyPassword = System.getenv("LOCALPLAYER_KEY_PASSWORD")
-                    ?: System.getenv("LOCALPLAYER_KEYSTORE_PASSWORD")
+                storePassword = System.getenv("VALO_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("VALO_KEY_ALIAS") ?: "valo"
+                keyPassword = System.getenv("VALO_KEY_PASSWORD")
+                    ?: System.getenv("VALO_KEYSTORE_PASSWORD")
             }
         }
     }

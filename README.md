@@ -5,8 +5,6 @@
 
 A desktop video player and media-library client (Rust, egui, FFmpeg).
 
-Valo was called LocalPlayer before v0.5.0. Updating keeps your settings, resume points and server.
-
 1. **Setup**: enter your media server's address (`192.168.1.20`, `nas.local:8080`, …). It's remembered for next time.
 2. **Server check**: the first time you add a server, Valo checks every part of its API one by one (reachability, `/api/info`, sign-in, library, streaming, artwork) and shows how many titles have each piece of metadata. Problems that stop the app from working are errors and block the server. Missing extras, or a server without a sign-in, are warnings you can accept with _I know this is missing, continue_. _Copy report_ gives you the results to send to the server's admin.
 3. **Sign in**: only shown if the server says it needs a login. The library checks run after it.
@@ -25,7 +23,7 @@ Settings and resume points are stored in `~/.config/valo/` (`%APPDATA%\valo\` on
 
 ## Installing
 
-Each [release](https://github.com/Okaza03/LocalPlayer/releases) has:
+Each [release](https://github.com/Okaza03/Valo/releases) has:
 
 - **AppImage**: `chmod +x` it and run it. The first launch adds Valo to your app menu (you can turn this off in Settings). Updates are one click: the app downloads the new AppImage, verifies it against `SHA256SUMS.txt`, replaces itself and restarts.
 - **Flatpak**: `flatpak install --user valo-vX.Y.Z-x86_64.flatpak`. To update, install the newer file the same way, since sandboxed apps can't replace themselves. The manifest is in `packaging/flatpak/`.
@@ -40,7 +38,7 @@ Windows builds are made with `cargo xtask dist [arch]` (zip) and `cargo xtask in
 
 1. Bump `version` in `Cargo.toml`.
 2. Rewrite `notes.md` for the new version. Its first line must name it (`# Valo vX.Y.Z`). It becomes the release description.
-3. Add `<release version="X.Y.Z" …/>` to `packaging/flatpak/io.github.okaza03.LocalPlayer.metainfo.xml`.
+3. Add `<release version="X.Y.Z" …/>` to `packaging/flatpak/io.github.okaza03.Valo.metainfo.xml`.
 4. Commit, then `git tag vX.Y.Z && git push origin main vX.Y.Z`.
 
 The release workflow refuses to publish if any of these are out of sync with the tag.

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>io.github.okaza03.LocalPlayer</id>
+  <id>io.github.okaza03.Valo</id>
   <name>Valo</name>
   <summary>Watch movies and series from your home media server</summary>
   <metadata_license>CC0-1.0</metadata_license>
@@ -16,9 +16,9 @@
       from your computer.
     </p>
   </description>
-  <launchable type="desktop-id">io.github.okaza03.LocalPlayer.desktop</launchable>
-  <url type="homepage">https://github.com/Okaza03/LocalPlayer</url>
-  <url type="bugtracker">https://github.com/Okaza03/LocalPlayer/issues</url>
+  <launchable type="desktop-id">io.github.okaza03.Valo.desktop</launchable>
+  <url type="homepage">https://github.com/Okaza03/Valo</url>
+  <url type="bugtracker">https://github.com/Okaza03/Valo/issues</url>
   <content_rating type="oars-1.1"/>
   <releases>
     <release version="0.4.1" date="2026-10-14"/>

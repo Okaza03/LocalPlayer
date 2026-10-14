@@ -374,7 +374,7 @@ impl std::fmt::Display for Unauthorized {
 impl std::error::Error for Unauthorized {}
 
 /// Where the Valo API is documented, for server admins.
-pub const API_DOCS: &str = "https://github.com/Okaza03/LocalPlayer/blob/main/docs/API.md";
+pub const API_DOCS: &str = "https://github.com/Okaza03/Valo/blob/main/docs/API.md";
 
 /// The server is reachable but lacks a part of the Valo API, so only
 /// its admin can fix it. The UI offers a message the user can send them.

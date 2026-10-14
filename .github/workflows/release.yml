@@ -45,15 +45,15 @@ jobs:
       - name: APK
         env:
           JAVA_HOME: ${{ env.JAVA_HOME_17_X64 }}
-          KEYSTORE_BASE64: ${{ secrets.LOCALPLAYER_KEYSTORE_BASE64 }}
-          LOCALPLAYER_KEYSTORE_PASSWORD: ${{ secrets.LOCALPLAYER_KEYSTORE_PASSWORD }}
+          KEYSTORE_BASE64: ${{ secrets.VALO_KEYSTORE_BASE64 }}
+          VALO_KEYSTORE_PASSWORD: ${{ secrets.VALO_KEYSTORE_PASSWORD }}
         run: |
           if [ -n "$KEYSTORE_BASE64" ]; then
             echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
-            export LOCALPLAYER_KEYSTORE="$RUNNER_TEMP/release.jks"
+            export VALO_KEYSTORE="$RUNNER_TEMP/release.jks"
           else
             # debug-signed APKs can't update each other between builds
-            echo "::warning::LOCALPLAYER_KEYSTORE_BASE64 isn't set; the APK is signed with a throwaway debug key"
+            echo "::warning::VALO_KEYSTORE_BASE64 isn't set; the APK is signed with a throwaway debug key"
           fi
           cd apps/androidtv
           ./gradlew --no-daemon assembleRelease
@@ -110,7 +110,7 @@ jobs:
           # notes.md is the release description: rewrite it for every release
           head -n1 notes.md | grep -qF "v$V" \
             || { echo "notes.md's first line must name v$V; write this release's notes"; exit 1; }
-          grep -qF "<release version=\"$V\"" packaging/flatpak/io.github.okaza03.LocalPlayer.metainfo.xml \
+          grep -qF "<release version=\"$V\"" packaging/flatpak/io.github.okaza03.Valo.metainfo.xml \
             || { echo "add <release version=\"$V\"> to the Flatpak metainfo"; exit 1; }
 
       - run: cargo install cargo-deb --locked
@@ -202,7 +202,7 @@ jobs:
 
       - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
-          manifest-path: packaging/flatpak/io.github.okaza03.LocalPlayer.yml
+          manifest-path: packaging/flatpak/io.github.okaza03.Valo.yml
           bundle: valo-${{ github.ref_name }}-x86_64.flatpak
           cache: false
 

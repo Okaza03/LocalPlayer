@@ -28,10 +28,19 @@ fn load<T: DeserializeOwned + Default>(name: &str) -> T {
     // fall back to the settings of the app's previous names
     let old = ["localplayer", "homieplayer", "lumen-player"]
         .map(|n| config_home().map(|h| h.join(n).join(name)));
+    // the Flatpak had another id then, so another sandbox (see its manifest)
+    let flatpak = std::env::var_os("FLATPAK_ID").and_then(|_| {
+        let home = PathBuf::from(std::env::var_os("HOME")?);
+        Some(
+            home.join(".var/app/io.github.okaza03.LocalPlayer/config/localplayer")
+                .join(name),
+        )
+    });
     dir()
         .map(|d| d.join(name))
         .into_iter()
         .chain(old.into_iter().flatten())
+        .chain(flatpak)
         .find_map(|p| fs::read_to_string(p).ok())
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default()
