@@ -1,29 +1,32 @@
-# LocalPlayer v0.4.1
+# Valo v0.5.0
 
-Fixes for progress sync and the Linux app icon, and a server check that covers every part of the API the app uses.
+LocalPlayer is now **Valo**, with a new logo and an app for Android TV and Google TV.
 
-### Fixed
-- **Progress from the server shows up in the app again.** If the server sent `"duration": null` for any title, the app couldn't read the whole list, so nothing synced. A missing duration is now treated as unknown.
-- **The AppImage's icon shows in the taskbar and Alt+Tab** on KDE and other Wayland desktops. The window now names the menu entry the AppImage installs, so the desktop can find its icon. KDE is also told to reload icons after the app writes its icon.
+### New
+- **Valo for Android TV / Google TV** (`valo-v0.5.0-androidtv.apk`). Made for the remote, and it plays with the TV's own hardware video decoders. It looks and works like the desktop app: Home, Movies and TV Shows with the same filters, search, Continue watching, resume, and autoplay of the next episode. Progress syncs with the desktop app through your server. It can update itself from the button in its top bar.
+- **A splash screen** with the new wordmark while your library loads after signing in.
 
 ### Changed
-- **The server check tests progress sync.** It reads `GET /api/progress`, flags entries whose ids aren't in the library, and checks that `POST /api/progress` exists. The write test sends an entry no server should store, so your real progress is left alone.
-- **It also checks sign-out, every kind of artwork and the admin page:** `POST /api/logout`, backdrops, title logos and episode thumbnails besides posters, and `/admin` when you sign in as an admin.
+- **The new name and logo everywhere:** the app, its menu entries and icons, the installers and the GitHub page (now github.com/Okaza03/Valo; old links still work).
+- **Updating keeps everything.** Your server, sign-in, settings and resume points carry over from LocalPlayer. The Windows installer and the AppImage replace the old app, and the .deb replaces the `localplayer` package.
+- **Flatpak has a new id, `io.github.okaza03.Valo`.** Install the new file, start it once so it copies your settings, then remove the old one with `flatpak uninstall io.github.okaza03.LocalPlayer`.
+- **The bundled server is now `server/valo_server.py`.** It moves its users, sign-ins and progress from `.localplayer` to `.valo` on first start.
 
-### For server owners
-The new checks only warn, so no server stops working. [docs/API.md](https://github.com/Okaza03/LocalPlayer/blob/main/docs/API.md) lists every step and how to fix each warning.
+### Installing on a TV
+On the TV, install the free **Downloader** app from the Play Store, allow it to install unknown apps when it asks, and enter the link to `valo-v0.5.0-androidtv.apk` from this page. Later versions install from the app's own Update button.
 
 ### Downloads
 | File | For |
 |---|---|
-| `localplayer-v0.4.1-x86_64-setup.exe` | Windows 10/11 (updates itself) |
-| `localplayer-v0.4.1-aarch64-setup.exe` | Windows 11 on ARM64 (updates itself) |
-| `localplayer-0.4.1-windows-x86_64.zip` | Windows, portable |
-| `localplayer-0.4.1-windows-aarch64.zip` | Windows on ARM64, portable |
-| `localplayer-v0.4.1-x86_64.AppImage` | any Linux distro (`chmod +x` and run, updates itself) |
-| `localplayer-v0.4.1-x86_64.flatpak` | any distro with Flatpak (added a few minutes after the others) |
-| `localplayer_0.4.1-1_amd64.deb` | Debian / Ubuntu / Mint |
-| `localplayer-0.4.1-linux-x86_64.tar.gz` | manual install |
+| `valo-v0.5.0-x86_64-setup.exe` | Windows 10/11 (updates itself) |
+| `valo-v0.5.0-aarch64-setup.exe` | Windows 11 on ARM64 (updates itself) |
+| `valo-0.5.0-windows-x86_64.zip` | Windows, portable |
+| `valo-0.5.0-windows-aarch64.zip` | Windows on ARM64, portable |
+| `valo-v0.5.0-x86_64.AppImage` | any Linux distro (`chmod +x` and run, updates itself) |
+| `valo-v0.5.0-x86_64.flatpak` | any distro with Flatpak (added a few minutes after the others) |
+| `valo_0.5.0-1_amd64.deb` | Debian / Ubuntu / Mint |
+| `valo-0.5.0-linux-x86_64.tar.gz` | manual install |
+| `valo-v0.5.0-androidtv.apk` | Android TV and Google TV (updates itself) |
 
 If you're using the Windows installer or the AppImage, click **Update now** to get this version.
 
