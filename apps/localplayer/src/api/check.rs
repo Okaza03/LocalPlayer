@@ -551,7 +551,6 @@ fn coverage(lib: &Library, mode: Mode) -> Vec<Group> {
             field("Cast", &titles, |i| !i.cast.is_empty()),
             field("Release date", &titles, |i| has(&i.released)),
             field("Score", &titles, |i| i.score.is_some()),
-            field("Reviews", &titles, |i| !i.reviews.is_empty()),
         ]);
         groups.push(Group {
             title: "Movies",
