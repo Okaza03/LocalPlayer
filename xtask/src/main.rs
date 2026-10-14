@@ -7,7 +7,7 @@ use std::{env, fs};
 
 type Res<T = ()> = Result<T, Box<dyn std::error::Error>>;
 
-const NAME: &str = "localplayer";
+const NAME: &str = "valo";
 /// Prebuilt shared FFmpeg (LGPL) that Windows builds link and ship. Keep its
 /// version in step with ffmpeg-sys-next, which builds release/<its major.minor>
 /// from source on Linux. `{}` is `win64` or `winarm64`.
@@ -196,15 +196,15 @@ fn stage(prefix: &Path, absolute_exec: bool) -> Res {
     let bin = prefix.join("bin").join(NAME);
     put(&r.join("target/release").join(NAME), &bin, 0o755)?;
     put(
-        &r.join("packaging/localplayer.svg"),
-        &prefix.join("share/icons/hicolor/scalable/apps/localplayer.svg"),
+        &r.join("packaging/valo.svg"),
+        &prefix.join("share/icons/hicolor/scalable/apps/valo.svg"),
         0o644,
     )?;
-    let mut desktop = fs::read_to_string(r.join("packaging/localplayer.desktop"))?;
+    let mut desktop = fs::read_to_string(r.join("packaging/valo.desktop"))?;
     if absolute_exec {
-        desktop = desktop.replace("Exec=localplayer", &format!("Exec={}", bin.display()));
+        desktop = desktop.replace("Exec=valo", &format!("Exec={}", bin.display()));
     }
-    let dst = prefix.join("share/applications/localplayer.desktop");
+    let dst = prefix.join("share/applications/valo.desktop");
     fs::create_dir_all(dst.parent().unwrap())?;
     fs::write(&dst, desktop)?;
     Ok(())
@@ -227,9 +227,9 @@ fn install(prefix: Option<String>) -> Res {
 fn uninstall(prefix: Option<String>) -> Res {
     let prefix = prefix_or_default(prefix);
     for f in [
-        "bin/localplayer",
-        "share/applications/localplayer.desktop",
-        "share/icons/hicolor/scalable/apps/localplayer.svg",
+        "bin/valo",
+        "share/applications/valo.desktop",
+        "share/icons/hicolor/scalable/apps/valo.svg",
     ] {
         let _ = fs::remove_file(prefix.join(f));
     }
@@ -266,14 +266,14 @@ fn appimage() -> Res {
         .arg("--executable")
         .arg(r.join("target/release").join(NAME))
         .arg("--desktop-file")
-        .arg(r.join("packaging/localplayer.desktop"))
+        .arg(r.join("packaging/valo.desktop"))
         .arg("--icon-file")
-        .arg(r.join("packaging/localplayer.svg"))
+        .arg(r.join("packaging/valo.svg"))
         .args(["--output", "appimage"])
         .current_dir(&work))
 }
 
-/// Windows: localplayer.exe plus FFmpeg's DLLs in target/dist/<name>/, zipped.
+/// Windows: valo.exe plus FFmpeg's DLLs in target/dist/<name>/, zipped.
 /// Returns the folder and the version.
 fn dist_windows(arch: Arch) -> Res<(PathBuf, String)> {
     let ffmpeg = ffmpeg_dir(arch)?;
@@ -320,7 +320,7 @@ fn dist_windows(arch: Arch) -> Res<(PathBuf, String)> {
     Ok((tree, version))
 }
 
-/// Windows: the Inno Setup installer, target/dist/localplayer-vX.Y.Z-<arch>-setup.exe.
+/// Windows: the Inno Setup installer, target/dist/valo-vX.Y.Z-<arch>-setup.exe.
 /// Needs Inno Setup 6 (`iscc` on PATH, or in its default folder).
 fn installer(arch: Arch) -> Res {
     let (tree, version) = dist_windows(arch)?;
@@ -346,5 +346,5 @@ fn installer(arch: Arch) -> Res {
             "/DOutputName={NAME}-v{version}-{}-setup",
             arch.name()
         ))
-        .arg(root().join("packaging/windows/localplayer.iss")))
+        .arg(root().join("packaging/windows/valo.iss")))
 }

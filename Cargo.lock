@@ -1965,23 +1965,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4744e383959f0db86ede514b809b1c53251889093803c05267acc7d4e7030d70"
 
 [[package]]
-name = "localplayer"
-version = "0.4.1"
-dependencies = [
- "anyhow",
- "cpal",
- "eframe",
- "ffmpeg-next",
- "image",
- "rfd",
- "serde",
- "serde_json",
- "sha2",
- "ureq",
- "winresource",
-]
-
-[[package]]
 name = "lock_api"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3730,6 +3713,23 @@ dependencies = [
  "js-sys",
  "serde_core",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "valo"
+version = "0.4.1"
+dependencies = [
+ "anyhow",
+ "cpal",
+ "eframe",
+ "ffmpeg-next",
+ "image",
+ "rfd",
+ "serde",
+ "serde_json",
+ "sha2",
+ "ureq",
+ "winresource",
 ]
 
 [[package]]

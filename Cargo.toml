@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["apps/localplayer", "xtask"]
+members = ["apps/valo", "xtask"]
 
 [workspace.package]
 version = "0.4.1"

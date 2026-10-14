@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
   <id>io.github.okaza03.LocalPlayer</id>
-  <name>LocalPlayer</name>
+  <name>Valo</name>
   <summary>Watch movies and series from your home media server</summary>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>MIT OR Apache-2.0</project_license>

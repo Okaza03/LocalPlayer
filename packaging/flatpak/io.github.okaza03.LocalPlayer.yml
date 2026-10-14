@@ -1,4 +1,4 @@
-# Packages the release binary CI builds on Ubuntu 22.04 (target/release/localplayer)
+# Packages the release binary CI builds on Ubuntu 22.04 (target/release/valo)
 # instead of compiling inside flatpak-builder, which would need vendored crates and
 # an offline FFmpeg build. A binary built on a newer distro won't run here: the
 # runtime's glibc must be at least as new as the build machine's.
@@ -6,7 +6,7 @@ id: io.github.okaza03.LocalPlayer
 runtime: org.freedesktop.Platform
 runtime-version: '25.08'
 sdk: org.freedesktop.Sdk
-command: localplayer
+command: valo
 finish-args:
   - --share=network        # media server, update check
   - --share=ipc
@@ -16,20 +16,20 @@ finish-args:
   - --device=dri
   - --filesystem=xdg-videos:ro   # other files come in via the file-chooser portal
 modules:
-  - name: localplayer
+  - name: valo
     buildsystem: simple
     build-commands:
-      - install -Dm755 localplayer /app/bin/localplayer
-      - install -Dm644 localplayer.svg /app/share/icons/hicolor/scalable/apps/${FLATPAK_ID}.svg
-      - sed 's/^Icon=localplayer$/Icon='"${FLATPAK_ID}"'/' localplayer.desktop > ${FLATPAK_ID}.desktop
+      - install -Dm755 valo /app/bin/valo
+      - install -Dm644 valo.svg /app/share/icons/hicolor/scalable/apps/${FLATPAK_ID}.svg
+      - sed 's/^Icon=valo$/Icon='"${FLATPAK_ID}"'/' valo.desktop > ${FLATPAK_ID}.desktop
       - install -Dm644 ${FLATPAK_ID}.desktop -t /app/share/applications
       - install -Dm644 ${FLATPAK_ID}.metainfo.xml -t /app/share/metainfo
     sources:
       - type: file
-        path: ../../target/release/localplayer
+        path: ../../target/release/valo
       - type: file
-        path: ../localplayer.desktop
+        path: ../valo.desktop
       - type: file
-        path: ../localplayer.svg
+        path: ../valo.svg
       - type: file
         path: io.github.okaza03.LocalPlayer.metainfo.xml

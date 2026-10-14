@@ -12,5 +12,5 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "localplayer-tv"
+rootProject.name = "valo-tv"
 include(":app")

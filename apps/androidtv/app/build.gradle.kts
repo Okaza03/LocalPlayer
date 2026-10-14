@@ -5,7 +5,7 @@ plugins {
     id("org.jetbrains.kotlin.plugin.serialization")
 }
 
-// One version for every LocalPlayer build: the workspace's Cargo.toml.
+// One version for every Valo build: the workspace's Cargo.toml.
 val appVersion: String = rootProject.file("../../Cargo.toml").readLines()
     .first { it.startsWith("version") }
     .substringAfter('"').substringBefore('"')
@@ -16,11 +16,11 @@ val appVersion: String = rootProject.file("../../Cargo.toml").readLines()
 val keystore: String? = System.getenv("LOCALPLAYER_KEYSTORE")
 
 android {
-    namespace = "io.github.okaza03.localplayer"
+    namespace = "io.github.okaza03.valo"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "io.github.okaza03.localplayer"
+        applicationId = "io.github.okaza03.valo"
         minSdk = 24
         targetSdk = 35
         versionName = appVersion
@@ -33,7 +33,7 @@ android {
             create("release") {
                 storeFile = file(keystore)
                 storePassword = System.getenv("LOCALPLAYER_KEYSTORE_PASSWORD")
-                keyAlias = System.getenv("LOCALPLAYER_KEY_ALIAS") ?: "localplayer"
+                keyAlias = System.getenv("LOCALPLAYER_KEY_ALIAS") ?: "valo"
                 keyPassword = System.getenv("LOCALPLAYER_KEY_PASSWORD")
                     ?: System.getenv("LOCALPLAYER_KEYSTORE_PASSWORD")
             }
