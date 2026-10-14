@@ -171,7 +171,8 @@ private fun UpdateButtons(model: AppModel) {
         onClick = { model.checkUpdates(quiet = false) },
         modifier = Modifier.size(40.dp),
         shape = ButtonDefaults.shape(RoundedCornerShape(2.dp)),
-        scale = ButtonDefaults.scale(focusedScale = 1f),
+        scale = focusScale(),
+        glow = focusGlow(),
         contentPadding = PaddingValues(0.dp),
         colors = ButtonDefaults.colors(
             containerColor = Color.Transparent, contentColor = if (checking) MUTED else TEXT,
@@ -200,22 +201,21 @@ private fun ProfileMenu(model: AppModel) {
             onClick = { open = true },
             modifier = Modifier.height(40.dp).focusRequester(button),
             shape = ButtonDefaults.shape(RoundedCornerShape(2.dp)),
-            scale = ButtonDefaults.scale(focusedScale = 1f),
+            scale = focusScale(),
+            glow = focusGlow(),
             contentPadding = PaddingValues(start = 10.dp, end = 12.dp),
             colors = ButtonDefaults.colors(
                 containerColor = if (open) SURFACE_HI else Color.Transparent, contentColor = TEXT,
-                focusedContainerColor = SURFACE_HI, focusedContentColor = TEXT,
-            ),
-            border = ButtonDefaults.border(
-                focusedBorder = Border(androidx.compose.foundation.BorderStroke(2.dp, TEXT), shape = RoundedCornerShape(2.dp)),
+                focusedContainerColor = Color.White, focusedContentColor = INK,
             ),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Avatar(user, 24.dp)
                 Spacer(Modifier.width(10.dp))
-                MonoText(user, 12.sp)
+                val ink = androidx.tv.material3.LocalContentColor.current
+                MonoText(user, 12.sp, ink)
                 Spacer(Modifier.width(10.dp))
-                Text("▾", color = MUTED, fontSize = 13.sp)
+                Text("▾", color = ink.copy(alpha = 0.6f), fontSize = 13.sp)
             }
         }
         Menu(
@@ -255,20 +255,21 @@ private fun <T> Choice(label: String, value: T, options: List<Pair<T, String>>, 
                 onClick = { open = true },
                 modifier = Modifier.width(170.dp).height(38.dp),
                 shape = ButtonDefaults.shape(RoundedCornerShape(2.dp)),
-                scale = ButtonDefaults.scale(focusedScale = 1f),
+                scale = focusScale(),
+                glow = focusGlow(),
                 contentPadding = PaddingValues(horizontal = 12.dp),
                 colors = ButtonDefaults.colors(
                     containerColor = Color(0xFF16171B), contentColor = TEXT,
-                    focusedContainerColor = SURFACE_HI, focusedContentColor = TEXT,
+                    focusedContainerColor = Color.White, focusedContentColor = INK,
                 ),
                 border = ButtonDefaults.border(
                     border = Border(androidx.compose.foundation.BorderStroke(1.dp, LINE_HI), shape = RoundedCornerShape(2.dp)),
-                    focusedBorder = Border(androidx.compose.foundation.BorderStroke(2.dp, TEXT), shape = RoundedCornerShape(2.dp)),
+                    focusedBorder = Border.None,
                 ),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(options.find { it.first == value }?.second ?: "", fontSize = 14.sp, maxLines = 1, modifier = Modifier.weight(1f))
-                    Text("▾", color = MUTED, fontSize = 13.sp)
+                    Text("▾", color = androidx.tv.material3.LocalContentColor.current.copy(alpha = 0.6f), fontSize = 13.sp)
                 }
             }
             Menu(

@@ -37,6 +37,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.input.key.Key
@@ -77,6 +79,8 @@ import androidx.tv.material3.Button
 import androidx.tv.material3.ButtonDefaults
 import androidx.tv.material3.Card
 import androidx.tv.material3.CardDefaults
+import androidx.tv.material3.Glow
+import androidx.tv.material3.LocalContentColor
 import androidx.tv.material3.LocalTextStyle
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.ProvideTextStyle
@@ -289,8 +293,15 @@ private fun BoxScope.Placeholder(title: String) {
     )
 }
 
-/** Where focus shows: a white ring just outside the control. */
-private val ring = Border(BorderStroke(2.dp, TEXT), inset = (-4).dp, shape = RoundedCornerShape(4.dp))
+/*
+ * How focus shows on every button: it turns white with dark text, grows a
+ * little and glows, so it stands out from a selected (white) one. No outlines.
+ */
+@Composable
+fun focusScale() = ButtonDefaults.scale(focusedScale = 1.08f)
+
+@Composable
+fun focusGlow() = ButtonDefaults.glow(focusedGlow = Glow(Color.White.copy(alpha = 0.55f), 10.dp))
 
 /**
  * The desktop app's buttons: white with dark text (primary) or dark with a
@@ -311,7 +322,8 @@ fun TvButton(
         enabled = enabled,
         modifier = modifier.height(40.dp),
         shape = ButtonDefaults.shape(RoundedCornerShape(2.dp)),
-        scale = ButtonDefaults.scale(focusedScale = 1f),
+        scale = focusScale(),
+        glow = focusGlow(),
         contentPadding = PaddingValues(horizontal = 18.dp),
         colors = ButtonDefaults.colors(
             containerColor = if (white) Color.White else Color.Black.copy(alpha = 0.24f),
@@ -323,7 +335,7 @@ fun TvButton(
         ),
         border = ButtonDefaults.border(
             border = if (white) Border.None else Border(BorderStroke(1.dp, LINE_HI), shape = RoundedCornerShape(2.dp)),
-            focusedBorder = if (white) ring else Border.None,
+            focusedBorder = Border.None,
         ),
     ) {
         Text(
@@ -340,29 +352,29 @@ fun Tab(text: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier
         onClick = onClick,
         modifier = modifier.height(32.dp),
         shape = ButtonDefaults.shape(RoundedCornerShape(1.dp)),
-        scale = ButtonDefaults.scale(focusedScale = 1f),
+        scale = focusScale(),
+        glow = focusGlow(),
         contentPadding = PaddingValues(horizontal = 10.dp),
         colors = ButtonDefaults.colors(
             containerColor = if (selected) Color.White else Color.Transparent,
             contentColor = if (selected) INK else TEXT,
-            focusedContainerColor = if (selected) Color.White else SURFACE_HI,
-            focusedContentColor = if (selected) INK else TEXT,
+            focusedContainerColor = Color.White,
+            focusedContentColor = INK,
         ),
-        border = ButtonDefaults.border(focusedBorder = ring),
     ) {
-        TabLabel(text, count, selected)
+        TabLabel(text, count)
     }
 }
 
 @Composable
-private fun TabLabel(text: String, count: Int?, selected: Boolean) {
+private fun TabLabel(text: String, count: Int?) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(text.uppercase(), fontSize = 12.sp, fontFamily = Mono, fontWeight = FontWeight.Medium, letterSpacing = 1.6.sp, maxLines = 1)
         if (count != null) {
             Spacer(Modifier.width(9.dp))
             Text(
                 count.toString(), fontSize = 12.sp, fontFamily = Mono, letterSpacing = 1.6.sp,
-                color = if (selected) Color(0xFF5A5A5A) else MUTED,
+                color = LocalContentColor.current.copy(alpha = 0.55f),
             )
         }
     }
@@ -371,25 +383,28 @@ private fun TabLabel(text: String, count: Int?, selected: Boolean) {
 /** A bordered row of options, the selected one white (ui::segmented). */
 @Composable
 fun <T> Segmented(value: T, items: List<Triple<T, String, Int?>>, onPick: (T) -> Unit, modifier: Modifier = Modifier) {
-    Row(modifier.height(IntrinsicSize.Min).border(1.dp, LINE)) {
+    // the outline goes behind the options, so a focused (grown) one covers it
+    Row(modifier.height(IntrinsicSize.Min).drawBehind { drawRect(LINE, style = Stroke(1.dp.toPx())) }) {
         items.forEachIndexed { i, (v, label, count) ->
             if (i > 0) Box(Modifier.width(1.dp).fillMaxHeight().background(LINE))
             val sel = v == value
+            var focused by remember { mutableStateOf(false) }
             Button(
                 onClick = { onPick(v) },
-                modifier = Modifier.height(38.dp),
+                // grown on focus, so drawn above its neighbours
+                modifier = Modifier.height(38.dp).zIndex(if (focused) 1f else 0f).onFocusChanged { focused = it.isFocused },
                 shape = ButtonDefaults.shape(RoundedCornerShape(0.dp)),
-                scale = ButtonDefaults.scale(focusedScale = 1f),
+                scale = focusScale(),
+                glow = focusGlow(),
                 contentPadding = PaddingValues(horizontal = 14.dp),
                 colors = ButtonDefaults.colors(
                     containerColor = if (sel) Color.White else Color.Transparent,
                     contentColor = if (sel) INK else TEXT,
-                    focusedContainerColor = if (sel) Color.White else SURFACE_HI,
-                    focusedContentColor = if (sel) INK else TEXT,
+                    focusedContainerColor = Color.White,
+                    focusedContentColor = INK,
                 ),
-                border = ButtonDefaults.border(focusedBorder = Border(BorderStroke(2.dp, TEXT), inset = 0.dp)),
             ) {
-                TabLabel(label, count, sel)
+                TabLabel(label, count)
             }
         }
     }
