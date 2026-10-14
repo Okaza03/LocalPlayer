@@ -17,7 +17,7 @@ jobs:
             runner: windows-11-arm
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Rust
         run: rustup update stable --no-self-update
@@ -29,7 +29,7 @@ jobs:
 
       - run: cargo xtask installer ${{ matrix.arch }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: windows-${{ matrix.arch }}
           path: |
@@ -38,7 +38,7 @@ jobs:
 
   linux:
     needs: windows                   # so SHA256SUMS.txt covers the Windows files
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     container: ubuntu:22.04          # glibc 2.35 -> runs on Debian 12, Mint 21+
     env:
       DEBIAN_FRONTEND: noninteractive
@@ -56,7 +56,7 @@ jobs:
             libxcursor-dev libxrandr-dev libxi-dev libgl1-mesa-dev
           pip3 install meson
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Rust
         run: |
@@ -120,7 +120,7 @@ jobs:
           ARCH=x86_64 ./appimagetool-x86_64.AppImage AppDir \
             "target/dist/$APP-${GITHUB_REF_NAME}-x86_64.AppImage"
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: windows-*
           merge-multiple: true
@@ -129,7 +129,7 @@ jobs:
       - run: |
           sha256sum target/dist/*.tar.gz target/dist/*.AppImage target/debian/*.deb target/dist/*.zip target/dist/*-setup.exe > SHA256SUMS.txt
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         if: startsWith(github.ref, 'refs/tags/v')
         with:
           body_path: notes.md
@@ -142,12 +142,12 @@ jobs:
             SHA256SUMS.txt
 
       # the Flatpak job packages this exact binary
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: localplayer-bin
           path: target/release/${{ env.APP }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: github.event_name == 'workflow_dispatch'
         with:
           name: linux-x86_64
@@ -157,14 +157,14 @@ jobs:
 
   flatpak:
     needs: linux
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     container:
       image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-25.08
       options: --privileged
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: localplayer-bin
           path: target/release
@@ -175,7 +175,7 @@ jobs:
           bundle: localplayer-${{ github.ref_name }}-x86_64.flatpak
           cache: false
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         if: startsWith(github.ref, 'refs/tags/v')
         with:
           files: localplayer-*.flatpak
