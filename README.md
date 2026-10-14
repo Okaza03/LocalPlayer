@@ -1,6 +1,6 @@
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="packaging/valo-text-dark.svg">
-  <img src="packaging/valo-text.svg" alt="" width="96">
+  <source media="(prefers-color-scheme: dark)" srcset="packaging/valo-text-white.svg">
+  <img src="packaging/valo-text-black.svg" alt="" width="96">
 </picture>
 
 A desktop video player and media-library client (Rust, egui, FFmpeg).

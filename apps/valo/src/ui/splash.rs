@@ -20,7 +20,7 @@ pub struct Splash {
 
 impl Splash {
     pub fn new(ctx: &egui::Context) -> Self {
-        let png = include_bytes!("../../assets/valo-text-dark.png");
+        let png = include_bytes!("../../assets/valo-text-white.png");
         let img = image::load_from_memory(png)
             .expect("bundled wordmark is a valid PNG")
             .into_rgba8();
