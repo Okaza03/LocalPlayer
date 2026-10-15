@@ -1,6 +1,8 @@
 //! Admin › Collections: hand-made groups of titles ("Batman"). In A to Z
 //! the library puts a collection's titles together under its name, oldest
 //! first, so "Batman" and "The Batman" end up side by side.
+use std::collections::HashMap;
+
 use eframe::egui::{self, pos2, vec2, Color32, RichText, ScrollArea, Sense, Stroke, Ui};
 use serde_json::json;
 
@@ -8,7 +10,7 @@ use super::super::details::{caps, padded, panel, TEAL};
 use super::super::people::columns_with;
 use super::users::danger_button;
 use super::{not_set_up, Cx, Done, Remote, Section};
-use crate::api::{Collection, Item, Kind};
+use crate::api::{join, Collection, Item, Kind};
 use crate::ui::{bold, image_cover, mono, placeholder, primary_button, small_button, text_field};
 use crate::ui::{ERROR, LINE, MUTED, SURFACE_HI, TEXT};
 
@@ -288,8 +290,9 @@ impl State {
         ui.add_space(8.0);
         let q = self.search.trim().to_lowercase();
         let mut found: Vec<&Item> = cx
-            .lib
-            .all()
+            .movies
+            .iter()
+            .chain(cx.series)
             .filter(|i| q.is_empty() || i.title.to_lowercase().contains(&q))
             .collect();
         found.sort_by_key(|i| i.title.to_lowercase());
@@ -363,6 +366,30 @@ fn nav_row(ui: &mut Ui, name: &str, n: usize, selected: bool) -> bool {
 impl State {
     /// The members as rows: drag one to a new place, or remove it.
     fn member_rows(&mut self, ui: &mut Ui, cx: &mut Cx) {
+        // what the server says about titles neither list has (no file yet)
+        let extra: HashMap<String, Item> = self
+            .list
+            .data
+            .iter()
+            .flatten()
+            .flat_map(|c| &c.items)
+            .filter(|ci| ci.title.is_some())
+            .map(|ci| {
+                let item = Item {
+                    id: ci.key(),
+                    title: ci.title.clone().unwrap_or_default(),
+                    year: ci.year,
+                    poster: ci.poster.as_ref().map(|p| join(&cx.client.base, p)),
+                    kind: if ci.kind == "series" {
+                        Kind::Series
+                    } else {
+                        Kind::Movie
+                    },
+                    ..Default::default()
+                };
+                (ci.key(), item)
+            })
+            .collect();
         let w = ui.available_width();
         let mut rects = Vec::new();
         let mut remove = None;
@@ -404,7 +431,7 @@ impl State {
             );
             let art =
                 egui::Rect::from_min_size(pos2(r.left() + 56.0, r.top() + 6.0), vec2(31.0, 46.0));
-            let item = cx.lib.find(id);
+            let item: Option<&Item> = cx.find(id).or_else(|| extra.get(id));
             let title = item.map_or("(not in the library)", |i| i.title.as_str());
             match item
                 .and_then(|i| i.poster.as_ref())

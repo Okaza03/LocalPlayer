@@ -6,8 +6,8 @@ The first section of the app's Admin page. Some of it works with no admin endpoi
 
 | Part              | Needs                                                                                     |
 | ----------------- | ----------------------------------------------------------------------------------------- |
-| Numbers (movies, series, episodes, size) | nothing: they come from [`/api/library`](library.md). _Users_ needs [`/api/admin/users`](admin.md) |
-| Library health    | nothing for the app's checks (missing poster, backdrop, overview, year, genres). Add your own with `health` in `/api/admin/status` |
+| Numbers (movies, series, episodes, size, users) | `library` in [`/api/admin/status`](#get-apiadminstatus). Without it, the app counts [`/api/admin/movies`](admin-library.md) (or `/api/library`) and [`/api/admin/users`](admin.md) |
+| Library health    | `health` in `/api/admin/status`: your checks **replace** the app's, so it matches your website. Without them, the app checks for a missing poster, backdrop, overview, year and genres |
 | API status        | [`GET /api/admin/status`](#get-apiadminstatus) for response time, version, uptime and services |
 | Sync operations   | [`POST /api/admin/sync/<what>`](#post-apiadminsyncwhat), plus [`/api/admin/rescan`](admin.md#post-apiadminrescan) |
 | Live log          | [`GET /api/admin/logs`](#get-apiadminlogs)                                                |
@@ -22,6 +22,7 @@ How the server and what it depends on are doing. The app asks every 30 seconds w
 {
   "version": "1.4.0",
   "uptime": 271800,
+  "library": { "movies": 412, "series": 38, "episodes": 2210, "size": 5832110000000, "users": 6 },
   "services": [
     { "name": "Database", "ok": true, "detail": "PostgreSQL 16" },
     { "name": "IMDb lookups (OMDb)", "ok": true, "detail": "API key set" },
@@ -29,6 +30,7 @@ How the server and what it depends on are doing. The app asks every 30 seconds w
   ],
   "health": [
     { "label": "Files without a database entry", "count": 2, "items": ["/media/Movies/New (2024)/New.mkv"] },
+    { "label": "Missing poster", "count": 1, "titles": [{ "type": "movie", "id": 12, "title": "Heat", "year": 1995 }] },
     { "label": "Database entries without a file", "count": 0 }
   ]
 }
@@ -38,8 +40,9 @@ How the server and what it depends on are doing. The app asks every 30 seconds w
 | ---------- | -------- | ----------------------------------------------------------------------------------- |
 | `version`  | string   | Your server's version                                                               |
 | `uptime`   | int      | Seconds since it started                                                            |
+| `library`  | object   | Your own numbers: `movies`, `series`, `episodes`, `size` (bytes), `users`. Each one is optional |
 | `services` | array    | Anything it depends on: `name`, `ok` (green or red dot), optional `detail`         |
-| `health`   | array    | Your own library checks, listed under the app's: `label`, `count`, optional `items` (shown when the row is opened; send up to about 100) |
+| `health`   | array    | Your library checks, in place of the app's: `label`, `count`, and what to list when the row is opened: `titles` (`{type, id, title, year}`, clickable: they open in the Library editor) and/or `items` (plain text, such as file paths). Send up to about 100 |
 
 Every field is optional; `{}` is a valid answer. Good services to report: the database, the metadata source behind [Library editing](admin-library.md), the [Discord bot](admin-requests.md) (when it last called), free disk space, a transcoder.
 

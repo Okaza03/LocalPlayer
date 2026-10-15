@@ -16,7 +16,7 @@ use eframe::egui::{self, vec2, Align2, Color32, FontId, RichText, Sense, Ui};
 
 use super::details::{caps, padded, panel, TEAL};
 use super::{Browse, Click};
-use crate::api::{self, Client, Library, NoAdminApi, Unauthorized};
+use crate::api::{self, Client, Item, Kind, Library, NoAdminApi, Unauthorized};
 use crate::images::Images;
 use crate::ui::chrome;
 use crate::ui::{
@@ -225,6 +225,11 @@ pub(super) struct Cx<'a> {
     pub me: String,
     /// How many users the server has, once known.
     pub users: Option<usize>,
+    /// Every title as the server's admin sees it, or the library's when
+    /// the server can't list them (`catalog` false).
+    pub movies: &'a [Item],
+    pub series: &'a [Item],
+    pub catalog: bool,
     /// Sign in again (a 401).
     pub login: bool,
     pub job: Option<Job>,
@@ -234,7 +239,25 @@ pub(super) struct Cx<'a> {
     pub click: Option<Click>,
 }
 
-impl Cx<'_> {
+impl<'a> Cx<'a> {
+    /// A title by our id: the server's list first, then the library.
+    pub fn find(&self, id: &str) -> Option<&'a Item> {
+        let (movies, series) = (self.movies, self.series);
+        movies
+            .iter()
+            .chain(series)
+            .find(|i| i.id == id)
+            .or_else(|| self.lib.find(id))
+    }
+
+    pub fn titles(&self, kind: Kind) -> &'a [Item] {
+        if kind == Kind::Movie {
+            self.movies
+        } else {
+            self.series
+        }
+    }
+
     pub fn run(&mut self, f: impl FnOnce(&Client) -> Result<Done> + Send + 'static) {
         self.job = Some(Box::new(f));
     }
@@ -255,6 +278,8 @@ pub(super) struct AdminState {
     library: library::State,
     collections: collections::State,
     users: users::State,
+    /// The server's own title lists (`GET /api/admin/movies`, `/series`).
+    catalog: [Remote<Vec<Item>>; 2],
 }
 
 impl AdminState {
@@ -264,11 +289,30 @@ impl AdminState {
             Section::Dashboard => self.dashboard.refresh(),
             Section::Analytics => self.analytics.refresh(),
             Section::Requests => self.requests.refresh(),
-            Section::Library => {}
+            Section::Library => self.library.refresh(),
             Section::Collections => self.collections.refresh(),
             Section::Users => {}
         }
         self.users.refresh();
+        for c in &mut self.catalog {
+            c.retry();
+        }
+    }
+
+    /// Keep the server's title lists loaded, whichever section is open.
+    fn load_catalog(&mut self, ctx: &egui::Context, client: &Client, login: &mut bool) {
+        for (c, kind) in self.catalog.iter_mut().zip([Kind::Movie, Kind::Series]) {
+            c.poll(login);
+            if c.idle() || (c.data.is_some() && c.stale(u64::MAX)) {
+                let cl = client.clone();
+                c.load(ctx, move || cl.admin_items(kind));
+            }
+        }
+    }
+
+    /// The server lists its titles for the admin.
+    fn has_catalog(&self) -> bool {
+        self.catalog.iter().all(|c| c.data.is_some())
     }
 
     fn missing(&self, s: Section) -> bool {
@@ -391,6 +435,7 @@ impl Browse {
             if s != st.section {
                 st.section = s;
                 st.notice = None;
+                self.to_top = true;
             }
         }
     }
@@ -437,6 +482,7 @@ impl Browse {
         let st = &mut self.admin;
         // the users list feeds the dashboard's numbers too
         st.users.poll_and_load(&ctx, &self.client, &mut login);
+        st.load_catalog(&ctx, &self.client, &mut login);
         st.requests.background(&ctx, &self.client, &mut login);
 
         let section = st.section;
@@ -471,6 +517,11 @@ impl Browse {
         ui.add_space(10.0);
 
         let users = st.users.count();
+        let catalog = st.has_catalog();
+        let (movies, series) = match (&st.catalog[0].data, &st.catalog[1].data) {
+            (Some(m), Some(s)) => (m.as_slice(), s.as_slice()),
+            _ => (lib.movies.as_slice(), lib.series.as_slice()),
+        };
         let mut cx = Cx {
             ctx: ctx.clone(),
             client: &self.client,
@@ -479,6 +530,9 @@ impl Browse {
             busy,
             me: self.user.clone().unwrap_or_default().to_lowercase(),
             users,
+            movies,
+            series,
+            catalog,
             login: false,
             job: None,
             goto: None,
@@ -513,8 +567,16 @@ impl Browse {
         if let Some((s, item)) = goto {
             st.section = s;
             st.notice = None;
+            self.to_top = true;
             if let Some(id) = item {
-                st.library.select(lib, &id);
+                let found = st.catalog.iter().filter_map(|c| c.data.as_ref()).flatten();
+                if let Some(i) = found
+                    .into_iter()
+                    .find(|i| i.id == id)
+                    .or_else(|| lib.find(&id))
+                {
+                    st.library.select(i);
+                }
             }
         }
         if refresh {

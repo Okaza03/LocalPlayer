@@ -10,11 +10,23 @@ The Admin page's _Library_ section lets an admin fix a title by hand (title, yea
 
 | Request                                       | Body                          | Answer                                                      |
 | --------------------------------------------- | ----------------------------- | ----------------------------------------------------------- |
+| `GET /api/admin/<kind>`                       |                               | every title the admin manages, library-shaped               |
+| `GET /api/admin/<kind>/<id>`                  |                               | one title with every field you keep                         |
 | `PATCH /api/admin/<kind>/<id>`                | changed fields                | `200`; the app reloads the library                          |
 | `POST /api/admin/<kind>/<id>/fetch`           | `{"title", "year", "imdb_id"}` | details found, library-shaped; **nothing is saved**        |
 | `PUT /api/admin/<kind>/<id>/art/<which>`      | the image file                | `200`. `<which>` is `poster`, `backdrop`, `thumb` or `logo`          |
 
 Admins only, under the [usual rules](admin.md#rules-for-every-request). Errors with a short message (`{"error": "…"}` or `{"message": "…"}`) are shown to the admin.
+
+## `GET /api/admin/movies`, `GET /api/admin/series`
+
+Every title, as your own admin website lists them: the same shape as [`/api/library`](library.md), but **including titles users don't see**, such as ones without a file yet or hidden ones. The Library section's list, the Collections section's "Add titles" list and the Dashboard's numbers and health checks all use it, so the app shows the same titles as your website. Without it, they fall back to `/api/library` and the list says so.
+
+The `id`s must be the same as in `/api/library`. Leave out the heavy parts the admin pages don't need (`seasons`, `cast`, `reviews`) if the list gets big.
+
+## `GET /api/admin/<kind>/<id>`
+
+One title, with every field your database keeps for it, in the library's names. The editor opens with these values, so fields that `/api/library` leaves out (`imdb_id`, an unpublished overview, …) show up and aren't lost on save. Without it, the editor uses the list's copy.
 
 ## `PATCH /api/admin/<kind>/<id>`
 

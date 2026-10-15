@@ -62,7 +62,7 @@ A collection:
 | ------- | -------------- | ------------------------------------------------------------------------------------------------ |
 | `id`    | string or int  | **required**, used in the URLs                                                                   |
 | `name`  | string         | **required**                                                                                     |
-| `items` | array          | Its titles **in order**, first shown first: `type` (`"movie"` or `"series"`) and the library `id` |
+| `items` | array          | Its titles **in order**, first shown first: `type` (`"movie"` or `"series"`) and the library `id`. In `GET`, also send `title`, `year` and `poster` for each, so titles the app's lists don't have (no file yet) still show by name |
 
 `items` in a `POST` or `PATCH` replaces the whole list, in the new order. The admin reorders by dragging, so every save sends the full list. After a change, the library must reflect it: give each title `collection` set to the name and `collection_index` set to its position in `items`.
 

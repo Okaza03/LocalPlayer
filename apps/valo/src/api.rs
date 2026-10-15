@@ -43,6 +43,7 @@ pub enum Kind {
 #[derive(Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct Item {
+    #[serde(deserialize_with = "id_string")]
     pub id: String,
     pub title: String,
     pub year: Option<u32>,
@@ -206,6 +207,7 @@ impl Season {
 #[derive(Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct Episode {
+    #[serde(deserialize_with = "id_string")]
     pub id: String,
     pub number: u32,
     pub title: String,
@@ -245,6 +247,46 @@ pub fn title_key(i: &Item) -> (String, u32, u32, String) {
 }
 
 impl Item {
+    /// Absolute URLs and tagged ids, as the rest of the app expects them.
+    fn finish(&mut self, base: &str, kind: Kind) {
+        let fix = |u: &mut Option<String>| {
+            if let Some(s) = u.as_mut() {
+                *s = join(base, s);
+            }
+        };
+        self.kind = kind;
+        fix(&mut self.poster);
+        fix(&mut self.backdrop);
+        fix(&mut self.thumb);
+        fix(&mut self.logo);
+        for c in &mut self.cast {
+            fix(&mut c.photo);
+        }
+        fix(&mut self.stream);
+        if self.id.is_empty() {
+            self.id = self.stream.clone().unwrap_or_else(|| self.title.clone());
+        }
+        // servers often number movies, series and episodes separately
+        let tag = if kind == Kind::Movie {
+            "movie"
+        } else {
+            "series"
+        };
+        self.id = format!("{tag}:{}", self.id);
+        self.seasons.sort_by_key(|s| s.number);
+        for s in &mut self.seasons {
+            s.episodes.sort_by_key(|e| e.number);
+            for e in &mut s.episodes {
+                fix(&mut e.still);
+                e.stream = join(base, &e.stream);
+                if e.id.is_empty() {
+                    e.id = e.stream.clone();
+                }
+                e.id = format!("episode:{}", e.id);
+            }
+        }
+    }
+
     /// The id the server knows it by (ours carries a "movie:"/"series:" tag).
     pub fn server_id(&self) -> &str {
         self.id.split_once(':').map_or(&self.id, |(_, id)| id)
@@ -282,48 +324,11 @@ impl Library {
     }
 
     fn finish(&mut self, base: &str) {
-        let fix = |u: &mut Option<String>| {
-            if let Some(s) = u.as_mut() {
-                *s = join(base, s);
-            }
-        };
-        for (items, kind) in [
-            (&mut self.movies, Kind::Movie),
-            (&mut self.series, Kind::Series),
-        ] {
-            for it in items.iter_mut() {
-                it.kind = kind;
-                fix(&mut it.poster);
-                fix(&mut it.backdrop);
-                fix(&mut it.thumb);
-                fix(&mut it.logo);
-                for c in &mut it.cast {
-                    fix(&mut c.photo);
-                }
-                fix(&mut it.stream);
-                if it.id.is_empty() {
-                    it.id = it.stream.clone().unwrap_or_else(|| it.title.clone());
-                }
-                // servers often number movies, series and episodes separately
-                let tag = if kind == Kind::Movie {
-                    "movie"
-                } else {
-                    "series"
-                };
-                it.id = format!("{tag}:{}", it.id);
-                it.seasons.sort_by_key(|s| s.number);
-                for s in &mut it.seasons {
-                    s.episodes.sort_by_key(|e| e.number);
-                    for e in &mut s.episodes {
-                        fix(&mut e.still);
-                        e.stream = join(base, &e.stream);
-                        if e.id.is_empty() {
-                            e.id = e.stream.clone();
-                        }
-                        e.id = format!("episode:{}", e.id);
-                    }
-                }
-            }
+        for it in &mut self.movies {
+            it.finish(base, Kind::Movie);
+        }
+        for it in &mut self.series {
+            it.finish(base, Kind::Series);
         }
         self.movies.retain(|m| m.stream.is_some());
         self.series
@@ -482,9 +487,23 @@ pub struct AdminStatus {
     /// Outside services: metadata source, Discord bot, database, …
     #[serde(deserialize_with = "null_as_empty")]
     pub services: Vec<Service>,
-    /// The server's own library checks, on top of the app's.
+    /// The server's own library checks. When it sends any, they replace
+    /// the app's, so the page shows what the website shows.
     #[serde(deserialize_with = "null_as_empty")]
     pub health: Vec<HealthCheck>,
+    /// The server's own numbers; they win over counting the library.
+    pub library: Option<LibraryStats>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct LibraryStats {
+    pub movies: Option<u64>,
+    pub series: Option<u64>,
+    pub episodes: Option<u64>,
+    /// Bytes.
+    pub size: Option<u64>,
+    pub users: Option<u64>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -505,6 +524,9 @@ pub struct HealthCheck {
     /// Examples (file paths, titles), shown when the row is opened.
     #[serde(deserialize_with = "null_as_empty")]
     pub items: Vec<String>,
+    /// The titles it's about, so the app can open them in the editor.
+    #[serde(deserialize_with = "null_as_empty")]
+    pub titles: Vec<CollectionItem>,
 }
 
 /// What a sync found (`POST /api/admin/sync/<what>`).
@@ -667,24 +689,30 @@ pub struct CollectionItem {
     /// The library id, as the server knows it.
     #[serde(deserialize_with = "id_string")]
     pub id: String,
+    /// What to show for it, for titles the app's library doesn't have
+    /// (no file yet, hidden from users).
+    pub title: Option<String>,
+    pub year: Option<u32>,
+    pub poster: Option<String>,
+}
+
+impl CollectionItem {
+    /// Our id for it ("movie:12").
+    pub fn key(&self) -> String {
+        let tag = if self.kind == "series" {
+            "series"
+        } else {
+            "movie"
+        };
+        format!("{tag}:{}", self.id)
+    }
 }
 
 impl Collection {
     /// Our item ids ("movie:12"), in order.
     pub fn members(&self) -> Vec<String> {
         if !self.items.is_empty() {
-            return self
-                .items
-                .iter()
-                .map(|i| {
-                    let tag = if i.kind == "series" {
-                        "series"
-                    } else {
-                        "movie"
-                    };
-                    format!("{tag}:{}", i.id)
-                })
-                .collect();
+            return self.items.iter().map(CollectionItem::key).collect();
         }
         let movies = self.movies.iter().map(|id| format!("movie:{id}"));
         movies
@@ -1301,6 +1329,31 @@ impl Client {
         format!("{kind}/{}", encode_segment(item.server_id()))
     }
 
+    /// Every movie or series the server has, as its admin sees them
+    /// (`GET /api/admin/movies`, `/api/admin/series`): titles without a
+    /// file included.
+    pub fn admin_items(&self, kind: Kind) -> Result<Vec<Item>> {
+        let path = if kind == Kind::Movie {
+            "movies"
+        } else {
+            "series"
+        };
+        let mut items: Vec<Item> = self.admin_json(path)?;
+        for it in &mut items {
+            it.finish(&self.base, kind);
+        }
+        items.sort_by_cached_key(title_key);
+        Ok(items)
+    }
+
+    /// One title with every field the server keeps (`GET /api/admin/<kind>/<id>`).
+    pub fn admin_item(&self, item: &Item) -> Result<Item> {
+        let mut it: Item = self.admin_json(&Self::item_path(item))?;
+        it.finish(&self.base, item.kind);
+        it.id = item.id.clone(); // keep ours, whatever shape the answer had
+        Ok(it)
+    }
+
     /// Change an item's details. `fields` uses the library's names;
     /// `null` clears one.
     pub fn admin_update_item(&self, item: &Item, fields: &Value) -> Result<()> {
@@ -1859,6 +1912,22 @@ mod tests {
             (l[0].message.as_str(), l[0].time),
             ("[00:39:39] folders", 0)
         );
+    }
+
+    #[test]
+    fn number_ids_and_server_health() {
+        let mut lib: Library =
+            serde_json::from_str(r#"{"movies": [{"id": 12, "title": "Heat", "stream": "/m/12"}]}"#)
+                .unwrap();
+        lib.finish("http://h");
+        assert_eq!(lib.movies[0].id, "movie:12");
+        let s: AdminStatus = serde_json::from_str(
+            r#"{"library": {"movies": 3, "size": 9}, "health": [{"label": "No poster", "count": 1,
+                "titles": [{"type": "movie", "id": 12, "title": "Heat", "year": 1995}]}]}"#,
+        )
+        .unwrap();
+        assert_eq!(s.library.unwrap().movies, Some(3));
+        assert_eq!(s.health[0].titles[0].key(), "movie:12");
     }
 
     #[test]

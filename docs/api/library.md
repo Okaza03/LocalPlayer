@@ -23,7 +23,7 @@ Either list can be empty, missing or `null`. Any field can be left out or set to
 | -------------- | ---------------------- | ------------ | ----------------------------------------------- | ------------------------ |
 | `title`        | string                 | **required** | everywhere                                      | `"Inception"`            |
 | `stream`       | URL                    | **required** | play button ([how to serve it](streams.md))     | `"/api/stream/movie/42"` |
-| `id`           | string                 | recommended  | keeps resume points and _My list_ stable        | `"42"`                   |
+| `id`           | string or int          | recommended  | keeps resume points and _My list_ stable        | `"42"`                   |
 | `year`         | int                    |              | tiles, details                                  | `2010`                   |
 | `overview`     | string                 |              | details, banner                                 | `"A thief who…"`         |
 | `poster`       | URL                    |              | tiles (2:3)                                     | `"/art/42/poster.jpg"`   |
@@ -75,7 +75,7 @@ Same as a movie, minus `stream`, `director`, `budget`, `revenue` and `duration`,
 | ---------- | ------------------ | ------------ | --------------------------- |
 | `stream`   | URL                | **required** |                             |
 | `number`   | int                | recommended  | Episodes are sorted by this |
-| `id`       | string             | recommended  | Keeps resume points stable  |
+| `id`       | string or int      | recommended  | Keeps resume points stable  |
 | `title`    | string             | recommended  |                             |
 | `overview` | string             |              |                             |
 | `still`    | URL                |              | Thumbnail, 16:9             |

@@ -123,6 +123,8 @@ pub struct Browse {
     missing: Option<Missing>,
     view: View,
     history: Vec<View>,
+    /// A new page is opening: show it from the top.
+    to_top: bool,
     search: String,
     sort: Sort,
     /// Sort direction.
@@ -163,6 +165,7 @@ impl Browse {
             missing: None,
             view: View::Home,
             history: Vec::new(),
+            to_top: false,
             search: String::new(),
             sort: Sort::Title,
             desc: false,
@@ -228,11 +231,13 @@ impl Browse {
             }
             self.view = v;
             self.search.clear();
+            self.to_top = true;
         }
     }
 
     fn back(&mut self) {
         self.view = self.history.pop().unwrap_or(View::Home);
+        self.to_top = true;
     }
 
     pub fn client(&self) -> &Client {
@@ -271,6 +276,7 @@ impl Browse {
         }
         if self.view == View::Admin && !self.client.admin {
             self.view = View::Home;
+            self.to_top = true;
         }
         if let Some(r) = self.loading.as_mut().and_then(|t| t.poll()) {
             self.loading = None;
@@ -283,6 +289,7 @@ impl Browse {
                     };
                     if gone {
                         self.view = View::Home;
+                        self.to_top = true;
                     }
                     self.note_arrivals(&lib);
                     self.lib = Some(Arc::new(lib));
@@ -370,47 +377,44 @@ impl Browse {
                     _ if !self.search.is_empty() => "search".to_owned(),
                     v => format!("{}", view_index(v)),
                 };
-                ScrollArea::vertical()
-                    .id_salt(scroll_id)
-                    .auto_shrink(false)
-                    .show(ui, |ui| {
-                        click = if !self.search.trim().is_empty() {
-                            self.search_page(ui, &lib, images, progress)
-                        } else {
-                            match self.view.clone() {
-                                View::Home => self.home(ui, &lib, images, progress, cfg),
-                                View::Movies => {
-                                    self.grid_page(ui, &lib, Kind::Movie, images, progress)
-                                }
-                                View::Series => {
-                                    self.grid_page(ui, &lib, Kind::Series, images, progress)
-                                }
-                                View::Details(id) => match lib.find(&id) {
-                                    Some(item) if item.kind == Kind::Movie => {
-                                        self.movie_page(ui, &lib, item, images, progress)
-                                    }
-                                    Some(item) => {
-                                        self.series_page(ui, &lib, item, images, progress)
-                                    }
-                                    None => Some(Click::Nav(View::Home)),
-                                },
-                                View::Episode(_, ep) => match lib.find_episode(&ep) {
-                                    Some((s, si, ei)) => {
-                                        self.episode_page(ui, s, si, ei, images, progress)
-                                    }
-                                    None => Some(Click::Nav(View::Home)),
-                                },
-                                View::Person(name) => {
-                                    self.person_page(ui, &lib, &name, images, progress)
-                                }
-                                View::Profile => {
-                                    self.profile_page(ui, &lib, images, progress, &mut action)
-                                }
-                                View::Admin => self.admin_page(ui, &lib, images, &mut action),
+                let mut area = ScrollArea::vertical().id_salt(scroll_id).auto_shrink(false);
+                if std::mem::take(&mut self.to_top) {
+                    area = area.vertical_scroll_offset(0.0);
+                }
+                area.show(ui, |ui| {
+                    click = if !self.search.trim().is_empty() {
+                        self.search_page(ui, &lib, images, progress)
+                    } else {
+                        match self.view.clone() {
+                            View::Home => self.home(ui, &lib, images, progress, cfg),
+                            View::Movies => self.grid_page(ui, &lib, Kind::Movie, images, progress),
+                            View::Series => {
+                                self.grid_page(ui, &lib, Kind::Series, images, progress)
                             }
-                        };
-                        ui.add_space(40.0);
-                    });
+                            View::Details(id) => match lib.find(&id) {
+                                Some(item) if item.kind == Kind::Movie => {
+                                    self.movie_page(ui, &lib, item, images, progress)
+                                }
+                                Some(item) => self.series_page(ui, &lib, item, images, progress),
+                                None => Some(Click::Nav(View::Home)),
+                            },
+                            View::Episode(_, ep) => match lib.find_episode(&ep) {
+                                Some((s, si, ei)) => {
+                                    self.episode_page(ui, s, si, ei, images, progress)
+                                }
+                                None => Some(Click::Nav(View::Home)),
+                            },
+                            View::Person(name) => {
+                                self.person_page(ui, &lib, &name, images, progress)
+                            }
+                            View::Profile => {
+                                self.profile_page(ui, &lib, images, progress, &mut action)
+                            }
+                            View::Admin => self.admin_page(ui, &lib, images, &mut action),
+                        }
+                    };
+                    ui.add_space(40.0);
+                });
             });
 
         if let Some(lib) = self.lib.clone() {

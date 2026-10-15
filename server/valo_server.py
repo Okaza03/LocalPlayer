@@ -255,6 +255,7 @@ class Library:
                         "backdrop": backdrop and self.url("art", backdrop),
                         "thumb": thumb and self.url("art", thumb),
                         "stream": self.url("media", f),
+                        "imdb_id": info.get("imdb_id"),
                         "file": file_info(self, f),
                         **(extras(self, info, folder) if own else {}),
                     }
@@ -944,6 +945,9 @@ def make_handler(lib, users, progress, name, cols, reqs, omdb_key=None, bot_toke
                 lib.get(fresh=True)
                 log(f"new {rest[1]} for {item['title']}")
                 return self.send_json({})
+            if not rest and method == "GET":
+                # the library entry plus everything info.json keeps (imdb_id, …)
+                return self.send_json({**read_info(info), **item})
             if rest or method != "PATCH":
                 return self.send_json({"error": "not found"}, 404)
             allowed = set(EXTRAS) | {"title", "year", "overview", "genres", "rating", "duration", "imdb_id", "cast"}
@@ -1002,17 +1006,37 @@ def make_handler(lib, users, progress, name, cols, reqs, omdb_key=None, bot_toke
                     services.append({"name": "Discord bot", "ok": ok, "detail": detail})
                 else:
                     services.append({"name": "Discord bot", "ok": False, "detail": "no --bot-token"})
+                data = lib.get()
+                files = [
+                    f["size"]
+                    for f in [m["file"] for m in data["movies"]]
+                    + [e["file"] for s in data["series"] for se in s["seasons"] for e in se["episodes"]]
+                ]
+                no_poster = [
+                    {"type": t, "id": i["id"], "title": i["title"], "year": i.get("year")}
+                    for t, key in (("movie", "movies"), ("series", "series"))
+                    for i in data[key]
+                    if not i.get("poster")
+                ]
                 return self.send_json(
                     {
                         "version": VERSION,
                         "uptime": int(time.time() - STARTED),
+                        "library": {
+                            "movies": len(data["movies"]),
+                            "series": len(data["series"]),
+                            "episodes": len(files) - len(data["movies"]),
+                            "size": sum(files),
+                            "users": len(users.users),
+                        },
                         "services": services,
                         "health": [
+                            {"label": "Missing poster", "count": len(no_poster), "titles": no_poster[:100]},
                             {
                                 "label": "Episode files without SxxEyy in the name",
                                 "count": len(lib.skipped),
                                 "items": lib.skipped[:100],
-                            }
+                            },
                         ],
                     }
                 )
@@ -1045,10 +1069,23 @@ def make_handler(lib, users, progress, name, cols, reqs, omdb_key=None, bot_toke
                     if not reqs.delete(parts[1]):
                         return self.send_json({"error": "no such request"}, 404)
                     return self.send_json({})
+            if parts in (["movies"], ["series"]) and method == "GET":
+                # this server only knows titles with files, so it's the library
+                return self.send_json(lib.get()[parts[0]])
             if parts[:1] in (["movies"], ["series"]) and len(parts) >= 2:
                 return self.item_api(method, parts[0], parts[1], parts[2:], req, body)
             if parts == ["collections"] and method == "GET":
-                return self.send_json(cols.items)
+                data = lib.get()
+                known = {("movie", m["id"]): m for m in data["movies"]}
+                known.update({("series", x["id"]): x for x in data["series"]})
+                out = []
+                for c in cols.items:
+                    items = []
+                    for it in c["items"]:
+                        m = known.get((it["type"], it["id"]), {})
+                        items.append({**it, "title": m.get("title"), "year": m.get("year"), "poster": m.get("poster")})
+                    out.append({**c, "items": items})
+                return self.send_json(out)
             if parts == ["collections"] and method == "POST":
                 if not str(req.get("name", "")).strip():
                     return self.send_json({"error": "a collection needs a name"}, 422)

@@ -137,7 +137,15 @@ impl State {
         self.poll(cx);
         let lib = cx.lib;
 
-        // numbers
+        // numbers: the server's own when it sends them, else counted here
+        let srv = self
+            .status
+            .data
+            .as_ref()
+            .and_then(|(s, _)| s.library.clone())
+            .unwrap_or_default();
+        let num =
+            |server: Option<u64>, here: usize| server.map_or(here.to_string(), |n| n.to_string());
         let episodes: usize = lib
             .series
             .iter()
@@ -158,14 +166,23 @@ impl State {
             stats(
                 ui,
                 &[
-                    (lib.movies.len().to_string(), "Movies"),
-                    (lib.series.len().to_string(), "Series"),
-                    (episodes.to_string(), "Episodes"),
+                    (num(srv.movies, cx.movies.len()), "Movies"),
+                    (num(srv.series, cx.series.len()), "Series"),
+                    (num(srv.episodes, episodes), "Episodes"),
                     (
-                        if size > 0 { bytes(size) } else { "—".into() },
+                        match srv.size.unwrap_or(size) {
+                            0 => "—".into(),
+                            n => bytes(n),
+                        },
                         "Library size",
                     ),
-                    (cx.users.map_or("—".into(), |n| n.to_string()), "Users"),
+                    (
+                        srv.users
+                            .map(|n| n.to_string())
+                            .or(cx.users.map(|n| n.to_string()))
+                            .unwrap_or_else(|| "—".into()),
+                        "Users",
+                    ),
                 ],
             );
         });
@@ -254,16 +271,58 @@ impl State {
     }
 
     fn health(&mut self, ui: &mut Ui, cx: &mut Cx) {
-        let lib = cx.lib;
+        caps(ui, "Library health", TEAL);
+        ui.add_space(4.0);
+        let server_checks = self
+            .status
+            .data
+            .as_ref()
+            .map(|(s, _)| s.health.clone())
+            .unwrap_or_default();
+        if !server_checks.is_empty() {
+            // the server's checks, the same ones its website shows
+            let flagged: usize = server_checks.iter().map(|h| h.count).sum();
+            ui.horizontal(|ui| {
+                let col = if flagged == 0 { OK } else { WARN };
+                ui.label(bold(flagged.to_string(), 24.0).color(col));
+                ui.label(RichText::new("issues found by the server").color(MUTED));
+            });
+            ui.add_space(12.0);
+            for h in &server_checks {
+                self.health_row(ui, cx, &h.label, h.count, |ui, cx| {
+                    for t in h.titles.iter().take(60) {
+                        let label = match (&t.title, t.year) {
+                            (Some(n), Some(y)) => format!("{n} ({y})"),
+                            (Some(n), None) => n.clone(),
+                            _ => t.id.clone(),
+                        };
+                        if ui.link(label).clicked() {
+                            cx.goto = Some((Section::Library, Some(t.key())));
+                        }
+                    }
+                    for it in h.items.iter().take(60) {
+                        ui.label(mono(it, 10.5).color(TEXT));
+                    }
+                    let shown = h.titles.len().min(60) + h.items.len().min(60);
+                    if h.count > shown && shown > 0 {
+                        ui.label(
+                            RichText::new(format!("and {} more", h.count - shown)).color(MUTED),
+                        );
+                    }
+                });
+            }
+            return;
+        }
+
+        // the app's own checks, over every title the server lists
+        let all: Vec<&Item> = cx.movies.iter().chain(cx.series).collect();
         let checks = checks();
-        let total = lib.movies.len() + lib.series.len();
-        let flawed = lib
-            .all()
+        let total = all.len();
+        let flawed = all
+            .iter()
             .filter(|i| checks.iter().any(|(_, f)| f(i)))
             .count();
         let score = (100 * (total - flawed)).checked_div(total).unwrap_or(100);
-        caps(ui, "Library health", TEAL);
-        ui.add_space(4.0);
         ui.horizontal(|ui| {
             let col = match score {
                 90.. => OK,
@@ -275,7 +334,7 @@ impl State {
         });
         ui.add_space(12.0);
         for (label, f) in &checks {
-            let hits: Vec<&Item> = lib.all().filter(|i| f(i)).collect();
+            let hits: Vec<&Item> = all.iter().copied().filter(|i| f(i)).collect();
             self.health_row(ui, cx, label, hits.len(), |ui, cx| {
                 for i in hits.iter().take(60) {
                     let kind = if i.kind == Kind::Movie {
@@ -293,19 +352,6 @@ impl State {
                 }
                 if hits.len() > 60 {
                     ui.label(RichText::new(format!("and {} more", hits.len() - 60)).color(MUTED));
-                }
-            });
-        }
-        let server_checks = self
-            .status
-            .data
-            .as_ref()
-            .map(|(s, _)| s.health.clone())
-            .unwrap_or_default();
-        for h in &server_checks {
-            self.health_row(ui, cx, &h.label, h.count, |ui, _| {
-                for it in h.items.iter().take(60) {
-                    ui.label(mono(it, 10.5).color(TEXT));
                 }
             });
         }

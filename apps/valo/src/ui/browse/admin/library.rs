@@ -7,8 +7,8 @@ use eframe::egui::{self, vec2, Color32, RichText, ScrollArea, Sense, Stroke, Ui}
 use serde_json::{json, Map, Value};
 
 use super::super::details::{caps, column, panel, TEAL};
-use super::{needs_note, not_set_up, Cx, Done, Section};
-use crate::api::{Item, Kind, Library, NoAdminApi, Unauthorized};
+use super::{needs_note, not_set_up, Cx, Done, Remote, Section};
+use crate::api::{Item, Kind, NoAdminApi, Unauthorized};
 use crate::ui::{
     bold, image_cover, mono, placeholder, primary_button, segmented, small_button, text_field,
 };
@@ -217,6 +217,8 @@ pub(in super::super) struct State {
     /// The item as the library has it; `form` starts as a copy.
     base: Form,
     fetching: Option<Task<Result<Item>>>,
+    /// The open title as `GET /api/admin/<kind>/<id>` has it.
+    detail: Remote<Item>,
     fetch_note: Option<(String, bool)>,
     fetch_missing: bool,
     /// A form error ("Year must be a number").
@@ -225,15 +227,30 @@ pub(in super::super) struct State {
 
 impl State {
     /// Open `id` in the editor.
-    pub fn select(&mut self, lib: &Library, id: &str) {
-        if let Some(i) = lib.find(id) {
-            self.kind = i.kind;
-            self.selected = Some(i.id.clone());
-            self.base = Form::from_item(i);
-            self.form = self.base.clone();
-            self.fetch_note = None;
-            self.error = None;
-            self.search.clear();
+    pub fn select(&mut self, i: &Item) {
+        self.kind = i.kind;
+        self.selected = Some(i.id.clone());
+        self.base = Form::from_item(i);
+        self.form = self.base.clone();
+        self.fetch_note = None;
+        self.error = None;
+        self.search.clear();
+        self.detail = Remote::default(); // load the server's full record
+    }
+
+    /// Load the open title again (after a save, or Refresh).
+    pub fn refresh(&mut self) {
+        self.missing = false;
+        self.detail.retry();
+    }
+
+    /// The open title: the server's full record once it's here, else the
+    /// list's (or the library's) copy.
+    fn current<'a>(&'a self, cx: &Cx<'a>) -> Option<Item> {
+        let id = self.selected.as_deref()?;
+        match &self.detail.data {
+            Some(d) if d.id == id => Some(d.clone()),
+            _ => cx.find(id).cloned(),
         }
     }
 
@@ -253,9 +270,15 @@ impl State {
                 Err(e) => self.fetch_note = Some((format!("{e:#}"), false)),
             }
         }
-        // the library reloaded: follow it, unless there are unsaved edits
-        if let Some(item) = self.selected.as_deref().and_then(|id| cx.lib.find(id)) {
-            let fresh = Form::from_item(item);
+        // the server's full record; without the endpoint, the list's copy will do
+        self.detail.poll(&mut cx.login);
+        if let Some(item) = self.current(cx).filter(|_| self.detail.idle()) {
+            let c = cx.client.clone();
+            self.detail.load(&cx.ctx, move || c.admin_item(&item));
+        }
+        // new data came in: follow it, unless there are unsaved edits
+        if let Some(item) = self.current(cx) {
+            let fresh = Form::from_item(&item);
             if fresh != self.base {
                 if self.form == self.base {
                     self.form = fresh.clone();
@@ -326,8 +349,8 @@ impl State {
             ui,
             &mut self.kind,
             &[
-                (Kind::Movie, "Movies", Some(cx.lib.movies.len())),
-                (Kind::Series, "Series", Some(cx.lib.series.len())),
+                (Kind::Movie, "Movies", Some(cx.movies.len())),
+                (Kind::Series, "Series", Some(cx.series.len())),
             ],
         );
         ui.add_space(10.0);
@@ -335,11 +358,16 @@ impl State {
         ui.add_space(6.0);
         ui.checkbox(&mut self.attention, "Only titles missing something");
         ui.add_space(8.0);
-        let items = if self.kind == Kind::Movie {
-            &cx.lib.movies
-        } else {
-            &cx.lib.series
-        };
+        if !cx.catalog {
+            needs_note(
+                ui,
+                "Showing the app's library: the server doesn't list its titles for admins, \
+                 so titles without a file are missing.",
+                Section::Library,
+            );
+            ui.add_space(6.0);
+        }
+        let items = cx.titles(self.kind);
         let q = self.search.trim().to_lowercase();
         let shown: Vec<&Item> = items
             .iter()
@@ -369,7 +397,7 @@ impl State {
                                     // switching drops unsaved edits; say so
                                     self.fetch_note = None;
                                 }
-                                self.select(cx.lib, &i.id.clone());
+                                self.select(i);
                             }
                         }
                     });
@@ -377,7 +405,7 @@ impl State {
     }
 
     fn editor(&mut self, ui: &mut Ui, cx: &mut Cx) {
-        let Some(item) = self.selected.as_deref().and_then(|id| cx.lib.find(id)) else {
+        let Some(item) = self.current(cx) else {
             panel(ui, |ui| {
                 caps(ui, "Edit a title", TEAL);
                 ui.add_space(6.0);
@@ -391,6 +419,7 @@ impl State {
             });
             return;
         };
+        let item = &item;
         let busy = cx.busy || self.fetching.is_some();
         let dirty = self.form != self.base;
 
