@@ -100,7 +100,7 @@ fn parse(v: &str) -> Vec<u64> {
     core.split('.').map(|p| p.parse().unwrap_or(0)).collect()
 }
 
-fn newer(latest: &str, current: &str) -> bool {
+pub fn newer(latest: &str, current: &str) -> bool {
     let (mut a, mut b) = (parse(latest), parse(current));
     let n = a.len().max(b.len());
     a.resize(n, 0);
@@ -335,16 +335,6 @@ impl Updates {
         if self.available.is_some() && self.installing.is_none() {
             self.toast = Some((Toast::Available, Instant::now()));
         }
-    }
-
-    /// "Checked 3 min ago" for the status bar.
-    pub fn checked_label(&self) -> Option<String> {
-        let m = self.checked_at?.elapsed().as_secs() / 60;
-        Some(match m {
-            0 => "Checked for updates just now".into(),
-            1 => "Checked for updates 1 min ago".into(),
-            m => format!("Checked for updates {m} min ago"),
-        })
     }
 
     /// Whether the update button installs in place (vs. opening the release page).

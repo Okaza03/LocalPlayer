@@ -7,6 +7,7 @@ pub mod settings;
 pub mod setup;
 pub mod splash;
 pub mod watch;
+pub mod whats_new;
 
 use std::sync::Arc;
 
@@ -457,6 +458,8 @@ pub enum Action {
     },
     /// The saved session was rejected.
     NeedLogin(crate::api::Client),
+    /// The server says the signed-in user's admin rights changed.
+    AdminChanged(bool),
     SignOut(crate::api::Client),
     ChangeServer,
     Refresh,

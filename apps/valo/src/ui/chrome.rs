@@ -410,7 +410,9 @@ pub fn draw_icon(p: &egui::Painter, c: Pos2, icon: Icon, col: Color32) {
 }
 
 /// Bottom status line: small monospace text on both sides.
-pub fn status_bar(ctx: &egui::Context, left: &str, right: &str) {
+/// The strip along the bottom. With `refresh`, the left text is a button;
+/// true when it's clicked.
+pub fn status_bar(ctx: &egui::Context, left: &str, right: &str, refresh: bool) -> bool {
     egui::TopBottomPanel::bottom("status_bar")
         .exact_height(30.0)
         .frame(
@@ -420,12 +422,32 @@ pub fn status_bar(ctx: &egui::Context, left: &str, right: &str) {
         )
         .show(ctx, |ui| {
             ui.horizontal_centered(|ui| {
-                ui.add(egui::Label::new(mono(left, 10.5).color(MUTED)).truncate());
+                // hovered last frame: light up like a link
+                let id = ui.id().with("status_left");
+                let hovered = ui.data(|d| d.get_temp::<bool>(id)).unwrap_or(false);
+                let col = if refresh && hovered { TEXT } else { MUTED };
+                let r = ui.add(
+                    egui::Label::new(mono(left, 10.5).color(col))
+                        .truncate()
+                        .sense(if refresh {
+                            Sense::click()
+                        } else {
+                            Sense::hover()
+                        }),
+                );
+                ui.data_mut(|d| d.insert_temp(id, r.hovered()));
+                let clicked = refresh
+                    && r.on_hover_cursor(egui::CursorIcon::PointingHand)
+                        .on_hover_text("Refresh the library")
+                        .clicked();
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     ui.label(mono(right, 10.5).color(MUTED));
                 });
-            });
-        });
+                clicked
+            })
+            .inner
+        })
+        .inner
 }
 
 /// Resize from the window edges (the window has no system frame), plus a hairline border.

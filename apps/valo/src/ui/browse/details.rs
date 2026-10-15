@@ -69,7 +69,7 @@ fn money(n: u64) -> String {
 }
 
 /// 2090000000 -> "2.09 GB"
-fn bytes(n: u64) -> String {
+pub(super) fn bytes(n: u64) -> String {
     let n = n as f64;
     match n {
         n if n >= 1e9 => format!("{:.2} GB", n / 1e9),
@@ -960,7 +960,9 @@ impl Browse {
                 }
                 if narrow {
                     ui.add_space(12.0);
-                    self.movie_side(ui, item, file.as_ref(), runtime);
+                    if self.movie_side(ui, item, file.as_ref(), runtime) {
+                        click = Some(Click::Nav(View::Admin));
+                    }
                 }
             });
             if !narrow {
@@ -968,15 +970,25 @@ impl Browse {
                 ui.vertical(|ui| {
                     ui.spacing_mut().item_spacing.x = sp;
                     ui.set_width(rw);
-                    self.movie_side(ui, item, file.as_ref(), runtime);
+                    if self.movie_side(ui, item, file.as_ref(), runtime) {
+                        click = Some(Click::Nav(View::Admin));
+                    }
                 });
             }
         });
         click
     }
 
-    /// File/metadata and critics panels next to the movie's cast.
-    fn movie_side(&self, ui: &mut Ui, item: &Item, f: Option<&FileInfo>, runtime: Option<f64>) {
+    /// File/metadata and critics panels next to the movie's cast. True when
+    /// the Admin button was clicked.
+    fn movie_side(
+        &self,
+        ui: &mut Ui,
+        item: &Item,
+        f: Option<&FileInfo>,
+        runtime: Option<f64>,
+    ) -> bool {
+        let mut admin = false;
         let opt = |v: Option<String>, col: Color32, size: f32| v.map(|v| (v, col, size));
         let candidates = [
             ("Director", opt(item.director.clone(), TEXT, 14.0)),
@@ -1061,7 +1073,7 @@ impl Browse {
                     .corner_radius(8)
                     .min_size(vec2(ui.available_width(), 34.0));
                 if ui.add(b).clicked() {
-                    chrome::open_url(&format!("{}/admin", self.client.base));
+                    admin = true;
                 }
             }
         });
@@ -1095,6 +1107,7 @@ impl Browse {
                 }
             });
         }
+        admin
     }
 
     pub(super) fn series_page(
@@ -1656,9 +1669,10 @@ impl Browse {
         let rw = if narrow { inner } else { inner - lw - gap };
         let sp = ui.spacing().item_spacing.x;
         let side = |ui: &mut Ui, click: &mut Option<Click>, images: &mut Images| {
-            let (label, _) = match progress.get(&self.key(&ep.id)).filter(|e| e.in_progress()) {
-                Some(e) => (format!("Resume from {}", fmt_time(e.pos)), true),
-                None => ("Play Episode".to_owned(), false),
+            let (label, _) = match progress.get(&self.key(&ep.id)) {
+                Some(e) if e.in_progress() => (format!("Resume from {}", fmt_time(e.pos)), true),
+                Some(e) if e.watched() => ("Watch Again".to_owned(), false),
+                _ => ("Play Episode".to_owned(), false),
             };
             if fill_button(
                 ui,

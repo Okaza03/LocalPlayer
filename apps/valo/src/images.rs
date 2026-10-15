@@ -74,6 +74,11 @@ impl Images {
         }
     }
 
+    /// Drop a cached image so the next `get` downloads it again (it changed).
+    pub fn forget(&mut self, url: &str) {
+        self.map.remove(url);
+    }
+
     pub fn failed(&self, url: &str) -> bool {
         matches!(self.map.get(url), Some(State::Failed))
     }

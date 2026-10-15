@@ -79,9 +79,14 @@ fun DetailsScreen(model: AppModel, item: Item) {
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         when {
                             item.kind == Kind.Movie -> {
-                                val e = model.entry(item.id)?.takeIf { it.inProgress }
+                                val entry = model.entry(item.id)
+                                val e = entry?.takeIf { it.inProgress }
                                 TvButton(
-                                    if (e != null) "Resume  ·  ${fmtRuntime(e.dur - e.pos)} left" else "Play",
+                                    when {
+                                        e != null -> "Resume  ·  ${fmtRuntime(e.dur - e.pos)} left"
+                                        entry?.watched == true -> "Watch Again"
+                                        else -> "Play"
+                                    },
                                     { model.push(Screen.Player(item.id)) },
                                     primary = true, modifier = Modifier.focusRequester(play),
                                 )

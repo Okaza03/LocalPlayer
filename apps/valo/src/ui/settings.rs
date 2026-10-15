@@ -24,7 +24,7 @@ pub enum Pick {
     Quit,
 }
 
-fn dialog<R>(
+pub(super) fn dialog<R>(
     ctx: &egui::Context,
     id: &str,
     width: f32,
@@ -71,7 +71,7 @@ fn dialog<R>(
     (r.inner, close)
 }
 
-fn header(ui: &mut Ui, title: &str, sub: &str) {
+pub(super) fn header(ui: &mut Ui, title: &str, sub: &str) {
     ui.horizontal(|ui| {
         let (r, _) = ui.allocate_exact_size(vec2(36.0, 36.0), Sense::hover());
         let p = ui.painter();

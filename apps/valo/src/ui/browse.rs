@@ -1,5 +1,8 @@
 //! The media library: home page, movie/series grids, search and details.
+mod admin;
+mod arrivals;
 mod details;
+mod devices;
 mod people;
 
 use std::collections::HashMap;
@@ -19,8 +22,8 @@ use super::{
     segmented, small_button, tab,
 };
 use super::{ACCENT, BG, ERROR, MUTED, SURFACE, SURFACE_HI, TEXT};
-use crate::api::{Client, Item, Kind, Library, Missing, Mode, Unauthorized};
-use crate::config::{Config, Entry, Hidden, Progress, Watchlist};
+use crate::api::{Client, Item, Kind, Library, Me, Missing, Mode, Unauthorized};
+use crate::config::{Config, Entry, Hidden, Known, Progress, Watchlist};
 use crate::images::Images;
 use crate::player::Source;
 use crate::ui::watch::PlayItem;
@@ -46,6 +49,8 @@ enum View {
     Person(String),
     /// The signed-in user's watching stats.
     Profile,
+    /// Server management, for admins.
+    Admin,
 }
 
 /// Background probe of a stream's file info (see `player::probe`).
@@ -136,6 +141,15 @@ pub struct Browse {
     shuffle: RandomState,
     /// By stream URL.
     probes: HashMap<String, Probe>,
+    /// Re-checking a remembered session's admin rights (`GET /api/me`).
+    me: Option<Task<Option<Me>>>,
+    admin: admin::AdminState,
+    devices: devices::State,
+    /// Titles each library had when the user last saw it.
+    known: Known,
+    /// Newly added titles, by id, waiting to be announced.
+    arrivals: Vec<String>,
+    arrivals_open: bool,
 }
 
 impl Browse {
@@ -164,7 +178,17 @@ impl Browse {
             hidden: Hidden::load(),
             shuffle: RandomState::new(),
             probes: HashMap::new(),
+            me: None,
+            admin: admin::AdminState::default(),
+            devices: devices::State::default(),
+            known: Known::load(),
+            arrivals: Vec::new(),
+            arrivals_open: false,
         };
+        if b.client.token.is_some() {
+            let c = b.client.clone();
+            b.me = Some(Task::spawn(ctx, move || c.me()));
+        }
         b.reload(ctx);
         b
     }
@@ -188,7 +212,11 @@ impl Browse {
         if v != self.view {
             if matches!(
                 v,
-                View::Details(_) | View::Episode(..) | View::Person(_) | View::Profile
+                View::Details(_)
+                    | View::Episode(..)
+                    | View::Person(_)
+                    | View::Profile
+                    | View::Admin
             ) {
                 self.history.push(self.view.clone());
                 if let View::Details(_) = v {
@@ -231,8 +259,19 @@ impl Browse {
         progress: &Progress,
         cfg: &Config,
         updates: &Updates,
+        popups: bool,
     ) -> Action {
         let mut action = Action::None;
+        if let Some(r) = self.me.as_mut().and_then(|t| t.poll()) {
+            self.me = None;
+            if let Some(me) = r.filter(|me| me.admin != self.client.admin) {
+                self.client.admin = me.admin;
+                action = Action::AdminChanged(me.admin);
+            }
+        }
+        if self.view == View::Admin && !self.client.admin {
+            self.view = View::Home;
+        }
         if let Some(r) = self.loading.as_mut().and_then(|t| t.poll()) {
             self.loading = None;
             match r {
@@ -245,6 +284,7 @@ impl Browse {
                     if gone {
                         self.view = View::Home;
                     }
+                    self.note_arrivals(&lib);
                     self.lib = Some(Arc::new(lib));
                     self.loaded_at = Some(Instant::now());
                 }
@@ -280,8 +320,13 @@ impl Browse {
         }
 
         self.top_bar(ctx, &mut action, updates);
-        self.status_bar(ctx, updates);
+        if self.status_bar(ctx) {
+            action = Action::Refresh;
+        }
 
+        if self.view == View::Admin && self.search.trim().is_empty() && self.lib.is_some() {
+            self.admin_sidebar(ctx);
+        }
         let mut click = None;
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(BG))
@@ -361,11 +406,18 @@ impl Browse {
                                 View::Profile => {
                                     self.profile_page(ui, &lib, images, progress, &mut action)
                                 }
+                                View::Admin => self.admin_page(ui, &lib, images, &mut action),
                             }
                         };
                         ui.add_space(40.0);
                     });
             });
+
+        if let Some(lib) = self.lib.clone() {
+            if let Some(c) = self.arrivals_ui(ctx, &lib, images, popups) {
+                click = Some(c);
+            }
+        }
 
         match click {
             Some(Click::Open(id)) => self.go(View::Details(id)),
@@ -399,11 +451,11 @@ impl Browse {
         let mut back = false;
         let in_details = matches!(
             self.view,
-            View::Details(_) | View::Episode(..) | View::Person(_) | View::Profile
+            View::Details(_) | View::Episode(..) | View::Person(_) | View::Profile | View::Admin
         );
         let (current, searching) = (self.view.clone(), !self.search.is_empty());
         let name = self.client.info.name.clone();
-        let mut open_profile = false;
+        let mut open: Option<View> = None;
         chrome::title_bar(
             ctx,
             &name,
@@ -427,7 +479,7 @@ impl Browse {
                 }
             },
             |ui| {
-                self.profile_menu(ui, action, &mut open_profile);
+                self.profile_menu(ui, action, &mut open);
                 chrome::vsep(ui);
                 if chrome::icon_button(ui, Icon::Settings, "Settings").clicked() {
                     *action = Action::OpenSettings;
@@ -458,8 +510,8 @@ impl Browse {
         if back {
             self.back();
         }
-        if open_profile {
-            nav = Some(View::Profile);
+        if open.is_some() {
+            nav = open;
         }
         if let Some(v) = nav {
             self.go(v);
@@ -467,7 +519,7 @@ impl Browse {
         }
     }
 
-    fn profile_menu(&mut self, ui: &mut Ui, action: &mut Action, profile: &mut bool) {
+    fn profile_menu(&mut self, ui: &mut Ui, action: &mut Action, go: &mut Option<View>) {
         let name = self.user.clone().unwrap_or_else(|| "Guest".to_owned());
         let label =
             ui.fonts(|f| f.layout_no_wrap(name.to_uppercase(), FontId::monospace(11.5), TEXT));
@@ -523,11 +575,11 @@ impl Browse {
                     }
                 };
                 if menu_item(ui, "Profile") {
-                    *profile = true;
+                    *go = Some(View::Profile);
                     ui.memory_mut(|m| m.close_popup());
                 }
-                if self.client.admin && menu_item(ui, "Admin  ↗") {
-                    chrome::open_url(&format!("{}/admin", self.client.base));
+                if self.client.admin && menu_item(ui, "Admin") {
+                    *go = Some(View::Admin);
                     ui.memory_mut(|m| m.close_popup());
                 }
                 ui.separator();
@@ -539,7 +591,8 @@ impl Browse {
         );
     }
 
-    fn status_bar(&self, ctx: &egui::Context, updates: &Updates) {
+    /// True when "Library updated …" was clicked.
+    fn status_bar(&self, ctx: &egui::Context) -> bool {
         let host = self
             .client
             .base
@@ -556,10 +609,7 @@ impl Browse {
                 None => "Library not loaded".to_owned(),
             }
         };
-        let left = match updates.checked_label() {
-            Some(c) => format!("{when}  ·  {c}  ·  {host}"),
-            None => format!("{when}  ·  {host}"),
-        };
+        let left = format!("{when}  ·  {host}");
         let right = match &self.lib {
             Some(l) => {
                 let eps: usize = l
@@ -581,7 +631,7 @@ impl Browse {
             }
             None => String::new(),
         };
-        chrome::status_bar(ctx, &left, &right);
+        chrome::status_bar(ctx, &left, &right, self.loading.is_none())
     }
 
     // ---------------------------------------------------------------- home
@@ -817,12 +867,10 @@ impl Browse {
 
     fn play_label(&self, item: &Item, progress: &Progress) -> (String, bool) {
         match item.kind {
-            Kind::Movie => match progress
-                .get(&self.key(&item.id))
-                .filter(|e| e.in_progress())
-            {
-                Some(e) => (format!("Resume from {}", fmt_time(e.pos)), true),
-                None => ("Play".into(), false),
+            Kind::Movie => match progress.get(&self.key(&item.id)) {
+                Some(e) if e.in_progress() => (format!("Resume from {}", fmt_time(e.pos)), true),
+                Some(e) if e.watched() => ("Watch Again".into(), false),
+                _ => ("Play".into(), false),
             },
             Kind::Series => match self.next_up(item, progress) {
                 Some(n) => {
@@ -894,7 +942,7 @@ impl Browse {
                         episode: None,
                         title: m.title.clone(),
                         sub: Some(format!("{} left", fmt_runtime(e.dur - e.pos))),
-                        art: m.backdrop.clone().or(m.poster.clone()),
+                        art: m.thumb.clone().or(m.backdrop.clone()).or(m.poster.clone()),
                         progress: Some(e.fraction()),
                         removable: true,
                     });
@@ -916,7 +964,12 @@ impl Browse {
                         episode: Some(ep.id.clone()),
                         title: s.title.clone(),
                         sub: Some(format!("S{} E{} · {}", season.number, ep.number, ep.title)),
-                        art: ep.still.clone().or(s.backdrop.clone()).or(s.poster.clone()),
+                        art: ep
+                            .still
+                            .clone()
+                            .or(s.thumb.clone())
+                            .or(s.backdrop.clone())
+                            .or(s.poster.clone()),
                         progress: Some(n.resume.map_or(0.0, Entry::fraction)),
                         removable: true,
                     });
@@ -1344,6 +1397,7 @@ fn view_index(v: &View) -> usize {
         View::Series => 2,
         View::Details(_) | View::Episode(..) | View::Person(_) => 3,
         View::Profile => 4,
+        View::Admin => 5,
     }
 }
 

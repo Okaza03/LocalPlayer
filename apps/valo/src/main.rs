@@ -131,7 +131,12 @@ enum Dialog {
 
 impl App {
     fn new(ctx: &egui::Context, files: Vec<PathBuf>) -> Self {
-        let cfg = Config::load();
+        let mut cfg = Config::load();
+        if cfg.server.is_empty() && cfg.seen_version.is_empty() {
+            // a new install: nothing is new to this user
+            cfg.seen_version = update::VERSION.to_owned();
+            cfg.save();
+        }
         integrate::sync(cfg.app_menu);
         // reconnect to the saved server; files on the command line play first
         let setup = Setup::new(ctx, cfg.server.clone(), files.is_empty());
@@ -296,6 +301,12 @@ impl App {
                     .then(|| "Your session has expired. Please sign in again.".to_owned());
                 self.stage = Stage::Login(Login::new(client, self.cfg.username.clone(), msg));
             }
+            Action::AdminChanged(admin) => {
+                if self.cfg.token.is_some() {
+                    self.cfg.admin = admin;
+                    self.cfg.save();
+                }
+            }
             Action::SignOut(mut client) => {
                 let c = client.clone();
                 std::thread::spawn(move || c.logout());
@@ -412,9 +423,17 @@ impl eframe::App for App {
                 std::env::consts::OS,
                 std::env::consts::ARCH
             );
-            chrome::status_bar(ctx, &left, &right);
+            chrome::status_bar(ctx, &left, &right, false);
         }
 
+        // "What's new" and new arrivals wait for the splash and other dialogs
+        let whats_new = match &self.stage {
+            Stage::Browse(b) if self.cfg.seen_version != update::VERSION => {
+                ui::whats_new::pending(&self.cfg.seen_version, b.client().admin)
+            }
+            _ => false,
+        };
+        let popups = self.splash.is_none() && self.dialog.is_none() && !whats_new;
         let action = match &mut self.stage {
             Stage::Setup(s) => s.ui(ctx),
             Stage::Check(c) => c.ui(ctx),
@@ -425,6 +444,7 @@ impl eframe::App for App {
                 &self.progress,
                 &self.cfg,
                 &self.updates,
+                popups,
             ),
         };
         self.handle(ctx, action);
@@ -439,6 +459,17 @@ impl eframe::App for App {
         }
         self.updates.ui(ctx);
         self.dialogs(ctx);
+        if let Stage::Browse(b) = &self.stage {
+            let quiet = self.splash.is_none() && self.dialog.is_none() && b.settled();
+            let seen = self.cfg.seen_version != update::VERSION;
+            if seen
+                && quiet
+                && (!whats_new || ui::whats_new::ui(ctx, &self.cfg.seen_version, b.client().admin))
+            {
+                self.cfg.seen_version = update::VERSION.to_owned();
+                self.cfg.save();
+            }
+        }
         chrome::window_frame(ctx);
     }
 

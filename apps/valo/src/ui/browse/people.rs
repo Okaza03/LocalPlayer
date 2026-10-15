@@ -146,7 +146,7 @@ fn top<'a>(names: impl Iterator<Item = &'a str>, n: usize) -> Vec<(&'a str, usiz
 }
 
 /// "just now", "3 hours ago", "yesterday", "12 days ago", …
-fn ago(t: i64) -> String {
+pub(super) fn ago(t: i64) -> String {
     let s = (now_unix() - t).max(0);
     let plural = |n: i64, unit: &str| format!("{n} {unit}{} ago", if n == 1 { "" } else { "s" });
     match s {
@@ -186,7 +186,7 @@ fn credit_grid(ui: &mut Ui, credits: &[Credit], images: &mut Images) -> Option<C
     click
 }
 
-fn section_title(ui: &mut Ui, kicker: &str, title: &str, n: usize) {
+pub(super) fn section_title(ui: &mut Ui, kicker: &str, title: &str, n: usize) {
     caps(ui, kicker, TEAL);
     ui.add_space(4.0);
     ui.horizontal(|ui| {
@@ -197,7 +197,7 @@ fn section_title(ui: &mut Ui, kicker: &str, title: &str, n: usize) {
 }
 
 /// One big number with a label under it.
-fn stat(ui: &mut Ui, w: f32, value: &str, label: &str) {
+pub(super) fn stat(ui: &mut Ui, w: f32, value: &str, label: &str) {
     let (r, _) = ui.allocate_exact_size(vec2(w, 92.0), Sense::hover());
     let p = ui.painter();
     p.rect_filled(r, 10.0, Color32::from_rgb(26, 28, 34));
@@ -219,7 +219,7 @@ fn stat(ui: &mut Ui, w: f32, value: &str, label: &str) {
 }
 
 /// A row of [`stat`] tiles that wraps on narrow windows.
-fn stats(ui: &mut Ui, tiles: &[(String, &str)]) {
+pub(super) fn stats(ui: &mut Ui, tiles: &[(String, &str)]) {
     let w = ui.available_width();
     let gap = 14.0;
     let cols = ((w + gap) / (170.0 + gap))
@@ -238,7 +238,7 @@ fn stats(ui: &mut Ui, tiles: &[(String, &str)]) {
 }
 
 /// A labelled bar, for "Favorite genres".
-fn bar(ui: &mut Ui, label: &str, value: &str, f: f32) {
+pub(super) fn bar(ui: &mut Ui, label: &str, value: &str, f: f32) {
     let w = ui.available_width();
     let (r, _) = ui.allocate_exact_size(vec2(w, 36.0), Sense::hover());
     let p = ui.painter();
@@ -275,7 +275,17 @@ fn bar(ui: &mut Ui, label: &str, value: &str, f: f32) {
 }
 
 /// Two columns (main, side) inside the content column; stacked when narrow.
-fn columns(ui: &mut Ui, main: impl FnOnce(&mut Ui), side: impl FnOnce(&mut Ui)) {
+pub(super) fn columns(ui: &mut Ui, main: impl FnOnce(&mut Ui), side: impl FnOnce(&mut Ui)) {
+    columns_with(ui, &mut (), |ui, _| main(ui), |ui, _| side(ui));
+}
+
+/// [`columns`], with `state` handed to each side in turn.
+pub(super) fn columns_with<T>(
+    ui: &mut Ui,
+    state: &mut T,
+    main: impl FnOnce(&mut Ui, &mut T),
+    side: impl FnOnce(&mut Ui, &mut T),
+) {
     let (m, inner) = column(ui);
     let narrow = inner < NARROW;
     let gap = 48.0;
@@ -289,22 +299,22 @@ fn columns(ui: &mut Ui, main: impl FnOnce(&mut Ui), side: impl FnOnce(&mut Ui)) 
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.x = sp;
                 ui.set_width(lw);
-                main(ui);
+                main(ui, state);
                 ui.add_space(24.0);
-                side(ui);
+                side(ui, state);
             });
             return;
         }
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.x = sp;
             ui.set_width(lw);
-            main(ui);
+            main(ui, state);
         });
         ui.add_space(gap);
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.x = sp;
             ui.set_width(rw);
-            side(ui);
+            side(ui, state);
         });
     });
 }
@@ -600,6 +610,7 @@ impl Browse {
             pos2(c.x + r + 32.0, rect.top() + 40.0),
             pos2(rect.left() + m + inner, rect.bottom() - 20.0),
         );
+        let mut open_admin = false;
         placed(ui, text_rect, "profile_hero", 0.5, |ui| {
             caps(ui, "Profile", TEAL);
             ui.add_space(4.0);
@@ -622,8 +633,8 @@ impl Browse {
                 if small_button(ui, "Settings").clicked() {
                     *action = Action::OpenSettings;
                 }
-                if self.client.admin && small_button(ui, "Open admin ↗").clicked() {
-                    chrome::open_url(&format!("{}/admin", self.client.base));
+                if self.client.admin && small_button(ui, "Admin").clicked() {
+                    open_admin = true;
                 }
                 if self.client.token.is_some() && small_button(ui, "Sign out").clicked() {
                     *action = Action::SignOut(self.client.clone());
@@ -813,6 +824,10 @@ impl Browse {
                 });
             },
         );
+        self.devices_section(ui, action);
+        if open_admin {
+            return Some(Click::Nav(View::Admin));
+        }
         main_click.or(side_click)
     }
 }

@@ -178,6 +178,9 @@ fn run() -> Res {
 
 fn put(src: &Path, dst: &Path, mode: u32) -> Res {
     fs::create_dir_all(dst.parent().unwrap())?;
+    // unlink first: a running copy can't be overwritten ("Text file busy"),
+    // but it keeps running from the old file once it's removed
+    let _ = fs::remove_file(dst);
     fs::copy(src, dst)?;
     #[cfg(unix)]
     fs::set_permissions(dst, fs::Permissions::from_mode(mode))?;
@@ -214,6 +217,10 @@ fn install(prefix: Option<String>) -> Res {
     let prefix = prefix_or_default(prefix);
     cargo(&["build", "--release", "-p", NAME])?;
     stage(&prefix, true)?;
+    // a local build: tell it apart from the released app in menus and the taskbar
+    let entry = prefix.join("share/applications/valo.desktop");
+    let desktop = fs::read_to_string(&entry)?.replace("\nName=Valo\n", "\nName=Valo Test\n");
+    fs::write(&entry, desktop)?;
     let _ = Command::new("update-desktop-database")
         .arg(prefix.join("share/applications"))
         .status();

@@ -1,4 +1,4 @@
-// Talking to the media server: the Valo API from docs/API.md.
+// Talking to the media server: the Valo API from docs/api/.
 // Folder-listing servers aren't supported here; the desktop app crawls those.
 package io.github.okaza03.valo
 
@@ -206,7 +206,10 @@ class Client(val base: String, val info: ServerInfo, @Volatile var token: String
         else throw ServerError("$what: the server answered $code")
 
     fun login(username: String, password: String): Session {
-        val body = buildJsonObject { put("username", username); put("password", password) }
+        val body = buildJsonObject {
+            put("username", username); put("password", password)
+            put("device", "Valo TV on ${android.os.Build.MODEL}")
+        }
         val req = request("/api/login").post(body.toString().toRequestBody(JSON)).build()
         return call(req, "Sign-in failed") { r ->
             when (r.code) {

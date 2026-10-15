@@ -76,6 +76,8 @@ pub struct Config {
     pub ui_scale: f32,
     /// Keep an app-menu entry for the AppImage (see integrate.rs).
     pub app_menu: bool,
+    /// The last version whose "What's new" was shown; empty before 0.7.0.
+    pub seen_version: String,
 }
 
 impl Default for Config {
@@ -94,6 +96,7 @@ impl Default for Config {
             genre_rows: true,
             ui_scale: 1.0,
             app_menu: true,
+            seen_version: String::new(),
         }
     }
 }
@@ -114,6 +117,9 @@ pub struct Entry {
     pub updated: i64,
 }
 
+/// Watched this share of a title, it counts as finished.
+pub const FINISHED: f64 = 0.95;
+
 impl Entry {
     pub fn fraction(&self) -> f32 {
         if self.dur > 0.0 {
@@ -122,9 +128,10 @@ impl Entry {
             0.0
         }
     }
-    /// Started, but not (nearly) finished.
+    /// Started, but not finished (95% watched counts as finished, which
+    /// skips the end credits).
     pub fn in_progress(&self) -> bool {
-        self.pos > 30.0 && (self.dur <= 0.0 || self.pos < self.dur - 60.0f64.min(self.dur * 0.05))
+        self.pos > 30.0 && (self.dur <= 0.0 || self.pos < self.dur * FINISHED)
     }
     pub fn watched(&self) -> bool {
         self.dur > 0.0 && !self.in_progress() && self.pos > 30.0
@@ -272,6 +279,31 @@ impl Watchlist {
 }
 
 /// Titles removed from "Continue watching", keyed like [`Progress`], with when.
+/// Movies and series each server and user has already been shown, by
+/// [`user_prefix`], so newly added ones can be announced.
+#[derive(Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Known {
+    seen: HashMap<String, HashSet<String>>,
+}
+
+impl Known {
+    pub fn load() -> Self {
+        load("known.json")
+    }
+
+    /// `None` the first time this library is seen: nothing counts as new yet.
+    pub fn get(&self, prefix: &str) -> Option<&HashSet<String>> {
+        self.seen.get(prefix)
+    }
+
+    /// Everything in the library now is known; titles since removed are forgotten.
+    pub fn set(&mut self, prefix: &str, ids: HashSet<String>) {
+        self.seen.insert(prefix.to_owned(), ids);
+        save("known.json", self);
+    }
+}
+
 /// A title comes back once it's watched again after that.
 #[derive(Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -292,5 +324,22 @@ impl Hidden {
     /// Whether `key`, last watched at `updated`, was removed since.
     pub fn hides(&self, key: &str, updated: i64) -> bool {
         self.items.get(key).is_some_and(|t| updated <= *t)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Entry;
+
+    #[test]
+    fn finished_at_95_percent() {
+        let e = |pos| Entry {
+            pos,
+            dur: 7200.0,
+            updated: 0,
+        };
+        assert!(e(6839.0).in_progress()); // 94.99%
+        assert!(e(6840.0).watched()); // 95%
+        assert!(!e(20.0).in_progress() && !e(20.0).watched()); // barely started
     }
 }

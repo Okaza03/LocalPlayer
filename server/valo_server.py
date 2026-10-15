@@ -17,10 +17,18 @@ network, status, budget, revenue, score, score_source, reviews. A series can add
 next to the video is used as title artwork.
 
 With sign-in on, each user's watch progress is kept in .valo/progress.json
-and served from /api/progress, so it follows them between devices.
+and served from /api/progress, so it follows them between devices, and
+/api/sessions lists the devices they're signed in on. Admins
+(--add-user NAME --admin) get the app's Admin page through /api/admin/...:
+users, a dashboard with syncs and the live log, analytics from watch
+progress, requests (filled by a Discord bot, see docs/api/admin-requests.md),
+editing titles (written to info.json; IMDb lookups need --omdb-key) and
+collections (.valo/collections.json).
 """
 
 import argparse
+import collections
+import datetime
 import getpass
 import hashlib
 import hmac
@@ -31,9 +39,38 @@ import re
 import secrets
 import threading
 import time
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, quote, unquote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlencode, urlparse
+
+VERSION = "1.1"
+STARTED = time.time()
+
+
+class Log:
+    """The last lines of the server's log, for the app's live log feed."""
+
+    def __init__(self, keep=1000):
+        self.lines = collections.deque(maxlen=keep)
+        self.next = 1
+        self.lock = threading.Lock()
+
+    def __call__(self, message, level="info"):
+        with self.lock:
+            self.lines.append(
+                {"id": self.next, "time": int(time.time()), "level": level, "message": message}
+            )
+            self.next += 1
+        print(f"[{level}] {message}", flush=True)
+
+    def after(self, after):
+        with self.lock:
+            lines = [l for l in self.lines if l["id"] > after]
+        return lines if after else lines[-200:]
+
+
+log = Log()
 
 VIDEO = {
     ".mp4",
@@ -127,17 +164,30 @@ def read_info(path):
         return {}
 
 
+def write_info(path, fields):
+    """Merge `fields` into an info.json; a None value removes the key."""
+    info = read_info(path)
+    for k, v in fields.items():
+        if v is None:
+            info.pop(k, None)
+        else:
+            info[k] = v
+    path.write_text(json.dumps(info, indent=2, ensure_ascii=False))
+
+
 class Library:
-    def __init__(self, root):
+    def __init__(self, root, collections=None):
         self.root = root
+        self.collections = collections
+        self.skipped = []  # video files the scan couldn't place
         self.cache, self.stamp, self.lock = None, 0, threading.Lock()
 
     def url(self, kind, path):
         return f"/{kind}/" + quote(str(path.relative_to(self.root)))
 
-    def get(self):
+    def get(self, fresh=False):
         with self.lock:
-            if self.cache is None or time.time() - self.stamp > 60:
+            if fresh or self.cache is None or time.time() - self.stamp > 60:
                 self.cache, self.stamp = self.scan(), time.time()
             return self.cache
 
@@ -146,8 +196,28 @@ class Library:
             d for d in self.root.iterdir() if d.is_dir() and d.name.lower() in names
         ]
 
+    def item_files(self, kind, id):
+        """(info.json path, art folder, art name prefix or None) for a library id."""
+        rel = id.split(":", 1)[1] if ":" in id else id
+        if kind == "movies":
+            f = (self.root / rel).resolve()
+            if self.root not in f.parents or not f.is_file():
+                return None
+            top = next(d for d in self.root.iterdir() if d in f.parents)
+            own = f.parent != top
+            info = f.with_suffix(".json")
+            if own and not info.exists():
+                info = f.parent / "info.json"
+            return info, f.parent, (None if own else f.stem)
+        for top in self.category(SERIES_DIRS):
+            show = top / rel
+            if show.is_dir() and show.parent == top:
+                return show / "info.json", show, None
+        return None
+
     def scan(self):
         movies, series = [], []
+        self.skipped = []
         for top in self.category(MOVIE_DIRS):
             for f in sorted(top.rglob("*")):
                 if f.suffix.lower() not in VIDEO:
@@ -168,6 +238,9 @@ class Library:
                     [f"{f.stem}-fanart"]
                     + (["fanart", "backdrop", "background"] if own else []),
                 )
+                thumb = find_art(
+                    folder, [f"{f.stem}-thumb"] + (["thumb", "landscape"] if own else [])
+                )
                 movies.append(
                     {
                         "id": "m:" + str(f.relative_to(self.root)),
@@ -180,6 +253,7 @@ class Library:
                         "added": int(f.stat().st_mtime),
                         "poster": poster and self.url("art", poster),
                         "backdrop": backdrop and self.url("art", backdrop),
+                        "thumb": thumb and self.url("art", thumb),
                         "stream": self.url("media", f),
                         "file": file_info(self, f),
                         **(extras(self, info, folder) if own else {}),
@@ -195,6 +269,7 @@ class Library:
                         continue
                     m = EPISODE.search(f.stem)
                     if not m:
+                        self.skipped.append(str(f.relative_to(self.root)))
                         continue
                     s, e, rest = (
                         (m.group(1), m.group(2), m.group(3))
@@ -225,6 +300,7 @@ class Library:
                 title, year = clean(show.name)
                 poster = find_art(show, ["poster", "folder", "cover"])
                 backdrop = find_art(show, ["fanart", "backdrop", "background"])
+                thumb = find_art(show, ["thumb", "landscape"])
                 newest = max(
                     p.stat().st_mtime
                     for p in show.rglob("*")
@@ -241,6 +317,7 @@ class Library:
                         "added": int(newest),
                         "poster": poster and self.url("art", poster),
                         "backdrop": backdrop and self.url("art", backdrop),
+                        "thumb": thumb and self.url("art", thumb),
                         "seasons": [
                             {"number": n, "episodes": eps}
                             for n, eps in sorted(seasons.items())
@@ -248,23 +325,303 @@ class Library:
                         **extras(self, info, show),
                     }
                 )
+        if self.collections:
+            self.collections.apply(movies, series)
         return {"movies": movies, "series": series}
+
+    def files(self, data, kind):
+        """Every video file of `kind` ("movies"/"series") as a relative path."""
+        if kind == "movies":
+            return {m["id"][2:] for m in data["movies"]}
+        return {
+            e["id"][2:] for s in data["series"] for se in s["seasons"] for e in se["episodes"]
+        }
+
+    def sync(self, what):
+        """Compare the folders with the cached library; apply for movies/series."""
+        with self.lock:
+            old = self.cache or self.scan()
+            fresh = self.scan()
+            kinds = ["movies", "series"] if what == "folders" else [what]
+            added, removed = [], []
+            for k in kinds:
+                a, b = self.files(old, k), self.files(fresh, k)
+                added += sorted(b - a)
+                removed += sorted(a - b)
+            if what == "folders":
+                return {"added": added, "removed": removed, "applied": False}
+            new = dict(old)
+            new[what] = fresh[what]
+            self.cache, self.stamp = new, time.time()
+            return {"added": added, "removed": removed, "applied": True}
+
+
+class Collections:
+    """collections.json: [{"id", "name", "items": [{"type": "movie"|"series", "id"}]}]."""
+
+    def __init__(self, folder):
+        self.path = folder / "collections.json"
+        data = read_info(self.path)
+        self.items = data if isinstance(data, list) else []
+        self.lock = threading.Lock()
+
+    def save(self):
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.write_text(json.dumps(self.items, indent=2, ensure_ascii=False))
+
+    def find(self, id):
+        return next((c for c in self.items if c["id"] == id), None)
+
+    def apply(self, movies, series):
+        by_id = {("movie", m["id"]): m for m in movies}
+        by_id.update({("series", s["id"]): s for s in series})
+        for c in self.items:
+            for n, it in enumerate(c["items"]):
+                item = by_id.get((it["type"], it["id"]))
+                if item:
+                    item["collection"], item["collection_index"] = c["name"], n
+
+    @staticmethod
+    def clean(req):
+        name = str(req.get("name", "")).strip()
+        items = [
+            {"type": str(i.get("type")), "id": str(i.get("id"))}
+            for i in req.get("items") or []
+            if isinstance(i, dict) and i.get("type") in ("movie", "series")
+        ]
+        # older clients: lists of ids by kind
+        items += [{"type": "movie", "id": str(i)} for i in req.get("movies") or []]
+        items += [{"type": "series", "id": str(i)} for i in req.get("series") or []]
+        return name, items
+
+    def save_one(self, id, req):
+        name, items = self.clean(req)
+        with self.lock:
+            c = self.find(id) if id else None
+            if id and not c:
+                return None
+            if not c:
+                c = {"id": secrets.token_hex(4)}
+                self.items.append(c)
+            if name:
+                c["name"] = name
+            if "items" in req or "movies" in req or "series" in req or "items" not in c:
+                c["items"] = items
+            # a title is in one collection at a time
+            mine = {(i["type"], i["id"]) for i in c["items"]}
+            for other in self.items:
+                if other is not c:
+                    other["items"] = [
+                        i for i in other["items"] if (i["type"], i["id"]) not in mine
+                    ]
+            self.save()
+            return c
+
+    def delete(self, id):
+        with self.lock:
+            before = len(self.items)
+            self.items = [c for c in self.items if c["id"] != id]
+            self.save()
+            return len(self.items) < before
+
+
+class Requests:
+    """requests.json: what people asked for, e.g. through the Discord bot."""
+
+    STATUSES = ("pending", "approved", "available", "denied")
+
+    def __init__(self, folder):
+        self.path = folder / "requests.json"
+        data = read_info(self.path)
+        self.items = data if isinstance(data, list) else []
+        self.lock = threading.Lock()
+        self.bot_seen = None  # last time the bot called
+
+    def save(self):
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.write_text(json.dumps(self.items, indent=2, ensure_ascii=False))
+
+    def find(self, id):
+        return next((r for r in self.items if r["id"] == id), None)
+
+    def add(self, req, by=None):
+        title = str(req.get("title", "")).strip()
+        if not title:
+            return None
+        now = int(time.time())
+        r = {
+            "id": secrets.token_hex(4),
+            "title": title[:200],
+            "year": req.get("year") if isinstance(req.get("year"), int) else None,
+            "kind": req.get("kind") if req.get("kind") in ("movie", "series") else None,
+            "imdb_id": req.get("imdb_id"),
+            "poster": req.get("poster"),
+            "requested_by": str(req.get("requested_by") or by or "")[:100] or None,
+            "requester_id": req.get("requester_id"),
+            "source": str(req.get("source") or ("app" if by else "discord")),
+            # a bot that found the title already on disk files it as fulfilled
+            "status": "available" if req.get("status") == "available" else "pending",
+            "note": req.get("note"),
+            "tmdb_id": req.get("tmdb_id"),
+            "message_id": req.get("message_id"),
+            "created": now,
+            "updated": now,
+        }
+        with self.lock:
+            self.items.append(r)
+            self.save()
+        return r
+
+    def update(self, id, status, note):
+        with self.lock:
+            r = self.find(id)
+            if r:
+                r["status"], r["updated"] = status, int(time.time())
+                r.pop("notified", None)  # the bot reports again for this answer
+                if note is not None:
+                    r["note"] = note
+                self.save()
+            return r
+
+    def delete(self, id):
+        with self.lock:
+            before = len(self.items)
+            self.items = [r for r in self.items if r["id"] != id]
+            self.save()
+            return len(self.items) < before
+
+
+def omdb(key, title, year, kind, imdb_id):
+    """Look a title up on OMDb (IMDb's data); library-shaped fields."""
+    q = {"apikey": key, "plot": "full"}
+    if imdb_id:
+        q["i"] = imdb_id
+    else:
+        q.update(t=title, type="series" if kind == "series" else "movie")
+        if year:
+            q["y"] = year
+    url = "https://www.omdbapi.com/?" + urlencode(q)
+    with urllib.request.urlopen(url, timeout=20) as r:
+        d = json.load(r)
+    if d.get("Response") != "True":
+        raise LookupError(d.get("Error") or "not found on IMDb")
+    na = lambda v: None if v in (None, "", "N/A") else v
+    out = {
+        "title": na(d.get("Title")),
+        "overview": na(d.get("Plot")),
+        "genres": [g.strip() for g in (na(d.get("Genre")) or "").split(",") if g.strip()],
+        "rating": na(d.get("Rated")),
+        "imdb_id": na(d.get("imdbID")),
+        "poster": na(d.get("Poster")),
+    }
+    m = re.match(r"(\d{4})(?:\D+(\d{4}))?", d.get("Year") or "")
+    if m:
+        out["year"] = int(m.group(1))
+        if m.group(2):
+            out["end_year"] = int(m.group(2))
+    if na(d.get("imdbRating")):
+        out["score"], out["score_source"] = float(d["imdbRating"]), "IMDb"
+    try:
+        out["released"] = datetime.datetime.strptime(d.get("Released", ""), "%d %b %Y").strftime("%Y-%m-%d")
+    except ValueError:
+        pass
+    people = lambda v: [p.strip() for p in (na(v) or "").split(",") if p.strip()]
+    if kind == "series":
+        out["creators"] = people(d.get("Writer"))
+    else:
+        out["director"] = na(d.get("Director"))
+        out["cast"] = [{"name": n} for n in people(d.get("Actors"))]
+    return {k: v for k, v in out.items() if v not in (None, [], "")}
+
+
+def analytics(progress, lib, days):
+    """Plays, hours and top titles from everyone's watch progress."""
+    since = time.time() - days * 86400
+    data = lib.get()
+    titles = {("movie", m["id"]): (m["title"], "movie") for m in data["movies"]}
+    for s in data["series"]:
+        for se in s["seasons"]:
+            for e in se["episodes"]:
+                titles[("episode", e["id"])] = (s["title"], "series")
+    per_day, top, users = {}, {}, []
+    total_plays, total_hours = 0, 0.0
+    for user, entries in progress.data.items():
+        plays, hours, last = 0, 0.0, None
+        for key, e in entries.items():
+            if e["updated"] < since:
+                continue
+            kind, id = key.split(":", 1)
+            h = min(e["position"], e["duration"] or e["position"]) / 3600
+            day = datetime.date.fromtimestamp(e["updated"]).isoformat()
+            d = per_day.setdefault(day, {"day": day, "plays": 0, "hours": 0.0})
+            d["plays"] += 1
+            d["hours"] += h
+            title, tkind = titles.get((kind, id), (None, None))
+            if title:
+                t = top.setdefault(title, {"title": title, "kind": tkind, "plays": 0, "hours": 0.0})
+                t["plays"] += 1
+                t["hours"] += h
+            plays, hours, last = plays + 1, hours + h, max(last or 0, e["updated"])
+        if plays:
+            users.append({"name": user, "plays": plays, "hours": round(hours, 1), "last_active": last})
+        total_plays, total_hours = total_plays + plays, total_hours + hours
+    start = datetime.date.today() - datetime.timedelta(days=days - 1)
+    series = []
+    for n in range(days):
+        day = (start + datetime.timedelta(days=n)).isoformat()
+        d = per_day.get(day, {"day": day, "plays": 0, "hours": 0.0})
+        series.append({**d, "hours": round(d["hours"], 1)})
+    return {
+        "plays": total_plays,
+        "hours": round(total_hours, 1),
+        "active_users": len(users),
+        "days": series,
+        "top": sorted(top.values(), key=lambda t: -t["plays"])[:20],
+        "users": sorted(users, key=lambda u: -u["hours"]),
+    }
+
+
+def download(url, folder, name):
+    """Save an image from `url` as folder/name.<ext>, replacing other formats."""
+    req = urllib.request.Request(url, headers={"User-Agent": "valo-server"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        data = r.read(25 << 20)
+        mime = r.headers.get_content_type()
+    save_art(folder, name, data, mime)
+
+
+def save_art(folder, name, data, mime):
+    ext = {"image/png": ".png", "image/webp": ".webp"}.get(mime, ".jpg")
+    for old in IMAGE:
+        (folder / f"{name}{old}").unlink(missing_ok=True)
+    (folder / f"{name}{ext}").write_bytes(data)
 
 
 class Users:
-    """users.json: {"name": {"salt": hex, "hash": hex, "admin": bool}}; tokens.json: {"token": "name"}."""
+    """users.json: {"name": {"salt": hex, "hash": hex, "admin": bool}};
+    tokens.json: {"token": {"name", "device", "ip", "created", "last_used"}}."""
 
     def __init__(self, folder):
         self.folder = folder
         self.users = read_info(folder / "users.json")
-        self.tokens = read_info(folder / "tokens.json")
+        # older servers kept {"token": "name"}
+        self.tokens = {
+            t: v if isinstance(v, dict) else {"name": v}
+            for t, v in read_info(folder / "tokens.json").items()
+        }
         self.lock = threading.Lock()
+        self.saved_at = 0
 
     @staticmethod
     def hash(password, salt):
         return hashlib.pbkdf2_hmac(
             "sha256", password.encode(), bytes.fromhex(salt), 200_000
         ).hex()
+
+    @staticmethod
+    def session_id(token):
+        """What the app sees instead of the token."""
+        return hashlib.sha256(token.encode()).hexdigest()[:16]
 
     def save(self, name, data):
         self.folder.mkdir(parents=True, exist_ok=True)
@@ -281,15 +638,60 @@ class Users:
         }
         self.save("users.json", self.users)
 
-    def login(self, name, password):
+    def login(self, name, password, device=None, ip=None):
         u = self.users.get(name)
         if not u or not hmac.compare_digest(u["hash"], self.hash(password, u["salt"])):
             return None
         token = secrets.token_urlsafe(32)
+        now = int(time.time())
         with self.lock:
-            self.tokens[token] = name
+            self.tokens[token] = {
+                "name": name,
+                "device": (str(device)[:100] if device else None),
+                "ip": ip,
+                "created": now,
+                "last_used": now,
+            }
             self.save("tokens.json", self.tokens)
         return token
+
+    def owner(self, token, ip=None):
+        """The user a token belongs to; notes that the session was used."""
+        s = self.tokens.get(token)
+        if not s:
+            return None
+        now = int(time.time())
+        s["last_used"] = now
+        if ip:
+            s["ip"] = ip
+        if now - self.saved_at > 60:  # don't write the file on every request
+            with self.lock:
+                self.saved_at = now
+                self.save("tokens.json", self.tokens)
+        return s["name"]
+
+    def sessions(self, name, current):
+        return [
+            {
+                "id": self.session_id(t),
+                "device": s.get("device"),
+                "ip": s.get("ip"),
+                "created": s.get("created"),
+                "last_used": s.get("last_used"),
+                "current": t == current,
+            }
+            for t, s in list(self.tokens.items())
+            if s["name"] == name
+        ]
+
+    def end_session(self, name, id):
+        with self.lock:
+            for t, s in list(self.tokens.items()):
+                if s["name"] == name and self.session_id(t) == id:
+                    del self.tokens[t]
+                    self.save("tokens.json", self.tokens)
+                    return True
+        return False
 
     def is_admin(self, name):
         return bool(self.users.get(name, {}).get("admin"))
@@ -298,6 +700,47 @@ class Users:
         with self.lock:
             if self.tokens.pop(token, None):
                 self.save("tokens.json", self.tokens)
+
+    def logout_all(self, name):
+        with self.lock:
+            self.tokens = {t: s for t, s in self.tokens.items() if s["name"] != name}
+            self.save("tokens.json", self.tokens)
+
+    def admins(self):
+        return [n for n in self.users if self.is_admin(n)]
+
+    def set_admin(self, name, admin):
+        self.users[name]["admin"] = admin
+        self.save("users.json", self.users)
+
+    def set_password(self, name, password):
+        salt = secrets.token_hex(16)
+        self.users[name].update(salt=salt, hash=self.hash(password, salt))
+        self.save("users.json", self.users)
+        self.logout_all(name)
+
+    def delete(self, name):
+        del self.users[name]
+        self.save("users.json", self.users)
+        self.logout_all(name)
+
+    def listing(self, progress):
+        sessions, used = {}, {}
+        for s in list(self.tokens.values()):
+            n = s["name"]
+            sessions[n] = sessions.get(n, 0) + 1
+            used[n] = max(used.get(n) or 0, s.get("last_used") or 0) or None
+        return [
+            {
+                "name": n,
+                "admin": self.is_admin(n),
+                "sessions": sessions.get(n, 0),
+                "last_active": max(
+                    (t for t in (progress.last_active(n), used.get(n)) if t), default=None
+                ),
+            }
+            for n in sorted(self.users, key=str.lower)
+        ]
 
 
 class Progress:
@@ -319,9 +762,17 @@ class Progress:
             "position": pos,
             "duration": dur,
             "percent": min(pct, 100),
-            "completed": pct >= 90,
+            "completed": dur > 0 and pos >= 0.95 * dur,
             "updated": e["updated"],
         }
+
+    def last_active(self, user):
+        return max((e["updated"] for e in self.data.get(user, {}).values()), default=None)
+
+    def forget(self, user):
+        with self.lock:
+            if self.data.pop(user, None) is not None:
+                self.path.write_text(json.dumps(self.data, indent=2))
 
     def list(self, user):
         mine = self.data.get(user, {})
@@ -355,13 +806,15 @@ def library_ids(lib, kind):
     }
 
 
-def make_handler(lib, users, progress, name):
+def make_handler(lib, users, progress, name, cols, reqs, omdb_key=None, bot_token=None):
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
 
         def log_message(self, fmt, *args):
-            if not self.path.startswith(("/media/", "/art/")):
-                super().log_message(fmt, *args)
+            path = urlparse(self.path).path
+            # streams, artwork and the log feed itself would drown everything else
+            if not path.startswith(("/media/", "/art/", "/api/admin/logs")):
+                log(f"{self.address_string()} {fmt % args}")
 
         def send_json(self, obj, status=200):
             body = json.dumps(obj).encode()
@@ -382,16 +835,341 @@ def make_handler(lib, users, progress, name):
 
         def user(self):
             """The signed-in user; None without sign-in, where progress has no owner."""
-            return users.tokens.get(self.token())
+            return users.owner(self.token(), self.client_address[0])
+
+        def is_bot(self):
+            t = self.token()
+            return bool(bot_token and t and hmac.compare_digest(t, bot_token))
+
+        def query(self):
+            return {k: v[0] for k, v in parse_qs(urlparse(self.path).query).items()}
+
+        def json_body(self, body):
+            try:
+                req = json.loads(body) if body else {}
+            except ValueError:
+                return None
+            return req if isinstance(req, dict) else None
+
+        def requests_api(self, method, path, body):
+            """/api/requests: the Discord bot (with --bot-token) or a signed-in user asks for titles."""
+            bot = self.is_bot()
+            user = None if bot else self.user()
+            if not bot and not user:
+                return self.send_json({"error": "sign in required"}, 401)
+            if bot:
+                reqs.bot_seen = time.time()
+            parts = [unquote(p) for p in path.split("/")[3:] if p]
+            if not parts and method == "POST":
+                req = self.json_body(body)
+                if req is None:
+                    return self.send_json({"error": "bad request"}, 400)
+                r = reqs.add(req, by=user)
+                if not r:
+                    return self.send_json({"error": "a title is required"}, 422)
+                log(f"request: {r['title']} by {r['requested_by'] or 'someone'} via {r['source']}")
+                return self.send_json(r, 201)
+            if not parts and method == "GET":
+                since = int(self.query().get("updated_after") or 0)
+                mine = [r for r in reqs.items if r["updated"] > since]
+                if not bot:
+                    mine = [r for r in mine if r["requested_by"] == user]
+                return self.send_json(mine)
+            if len(parts) == 1 and method == "PATCH" and bot:
+                # the bot reports back: did the requester get the message, which message is it
+                req = self.json_body(body) or {}
+                with reqs.lock:
+                    r = reqs.find(parts[0])
+                    if not r:
+                        return self.send_json({"error": "not found"}, 404)
+                    for k in ("notified", "message_id"):
+                        if k in req:
+                            r[k] = req[k]
+                    reqs.save()
+                return self.send_json(r)
+            if len(parts) == 1 and method == "GET":
+                r = reqs.find(parts[0])
+                if not r or (not bot and r["requested_by"] != user):
+                    return self.send_json({"error": "not found"}, 404)
+                return self.send_json(r)
+            return self.send_json({"error": "not found"}, 404)
+
+        def item_api(self, method, kind, id, rest, req, body):
+            """/api/admin/movies/<id>[/fetch|/art/<which>], same for series."""
+            data = lib.get()
+            items = data["movies"] if kind == "movies" else data["series"]
+            item = next((i for i in items if i["id"] == id), None)
+            files = lib.item_files(kind, id) if item else None
+            if not files:
+                return self.send_json({"error": "no such title"}, 404)
+            info, folder, stem = files
+            if rest == ["fetch"] and method == "POST":
+                if not omdb_key:
+                    return self.send_json({"error": "IMDb lookups need --omdb-key"}, 501)
+                try:
+                    found = omdb(
+                        omdb_key,
+                        req.get("title") or item["title"],
+                        req.get("year") or item.get("year"),
+                        "series" if kind == "series" else "movie",
+                        req.get("imdb_id"),
+                    )
+                except LookupError as e:
+                    return self.send_json({"error": str(e)}, 422)
+                except OSError as e:
+                    return self.send_json({"error": f"IMDb lookup failed: {e}"}, 502)
+                log(f"fetched {found.get('title')} from IMDb")
+                return self.send_json(found)
+            names = {
+                "poster": [f"{stem}-poster" if stem else "poster"],
+                "backdrop": [f"{stem}-fanart" if stem else "fanart"],
+                "thumb": [f"{stem}-thumb" if stem else "thumb"],
+                "logo": [None if stem else "logo"],
+            }
+            # every name the scan accepts for each, so a removal leaves none behind
+            aliases = {
+                "poster": [stem, f"{stem}-poster"] if stem else ["poster", "folder", "cover"],
+                "backdrop": [f"{stem}-fanart"] if stem else ["fanart", "backdrop", "background"],
+                "thumb": [f"{stem}-thumb"] if stem else ["thumb", "landscape"],
+                "logo": [] if stem else ["logo", "clearlogo"],
+            }
+            if len(rest) == 2 and rest[0] == "art" and method == "PUT":
+                which = names.get(rest[1], [None])[0]
+                if not which:
+                    return self.send_json({"error": "a loose movie file can't have this artwork; give it its own folder"}, 422)
+                mime = self.headers.get("Content-Type", "image/jpeg").split(";")[0]
+                if not body or not mime.startswith("image/"):
+                    return self.send_json({"error": "send the image as the body"}, 422)
+                save_art(folder, which, body, mime)
+                lib.get(fresh=True)
+                log(f"new {rest[1]} for {item['title']}")
+                return self.send_json({})
+            if rest or method != "PATCH":
+                return self.send_json({"error": "not found"}, 404)
+            allowed = set(EXTRAS) | {"title", "year", "overview", "genres", "rating", "duration", "imdb_id", "cast"}
+            fields = {k: v for k, v in req.items() if k in allowed}
+            for art in ("poster", "backdrop", "thumb", "logo"):
+                url = req.get(art)
+                if art in req and url is None:
+                    for n in aliases[art]:
+                        for ext in IMAGE:
+                            (folder / f"{n}{ext}").unlink(missing_ok=True)
+                    continue
+                if isinstance(url, str) and url.startswith(("http://", "https://")):
+                    which = names[art][0]
+                    if not which:
+                        continue
+                    try:
+                        download(url, folder, which)
+                    except OSError as e:
+                        return self.send_json({"error": f"couldn't download the {art}: {e}"}, 502)
+            if fields:
+                write_info(info, fields)
+            lib.get(fresh=True)
+            log(f"edited {item['title']}: {', '.join(sorted(set(fields) | {k for k in ('poster', 'backdrop', 'thumb', 'logo') if k in req}))}")
+            return self.send_json({})
+
+        def body(self):
+            length = int(self.headers.get("Content-Length") or 0)
+            return self.rfile.read(length) if length else b""
+
+        def admin(self, method, path, body):
+            """/api/admin/...: users and library, for admins only."""
+            user = self.user()
+            if not user:
+                return self.send_json({"error": "sign in required"}, 401)
+            if not users.is_admin(user):
+                return self.send_json({"error": "admins only"}, 403)
+            if method == "PUT":
+                req = {}  # an image upload
+            else:
+                req = self.json_body(body)
+                if req is None:
+                    return self.send_json({"error": "bad request"}, 400)
+            parts = [unquote(p) for p in path.split("/")[3:]]
+            if parts == ["status"] and method == "GET":
+                services = [
+                    {
+                        "name": "IMDb lookups (OMDb)",
+                        "ok": bool(omdb_key),
+                        "detail": "API key set" if omdb_key else "no --omdb-key",
+                    }
+                ]
+                if bot_token:
+                    seen = reqs.bot_seen
+                    ok = bool(seen and time.time() - seen < 600)
+                    detail = f"last seen {int(time.time() - seen)} s ago" if seen else "hasn't connected yet"
+                    services.append({"name": "Discord bot", "ok": ok, "detail": detail})
+                else:
+                    services.append({"name": "Discord bot", "ok": False, "detail": "no --bot-token"})
+                return self.send_json(
+                    {
+                        "version": VERSION,
+                        "uptime": int(time.time() - STARTED),
+                        "services": services,
+                        "health": [
+                            {
+                                "label": "Episode files without SxxEyy in the name",
+                                "count": len(lib.skipped),
+                                "items": lib.skipped[:100],
+                            }
+                        ],
+                    }
+                )
+            if parts[:1] == ["sync"] and len(parts) == 2 and method == "POST":
+                if parts[1] not in ("folders", "movies", "series"):
+                    return self.send_json({"error": "not found"}, 404)
+                log(f"sync {parts[1]} started by {user}")
+                r = lib.sync(parts[1])
+                log(f"sync {parts[1]}: {len(r['added'])} new, {len(r['removed'])} removed"
+                    + ("" if r["applied"] else " (dry run)"))
+                return self.send_json(r)
+            if parts == ["logs"] and method == "GET":
+                return self.send_json(log.after(int(self.query().get("after") or 0)))
+            if parts == ["analytics"] and method == "GET":
+                days = max(1, min(int(self.query().get("days") or 30), 366))
+                return self.send_json(analytics(progress, lib, days))
+            if parts == ["requests"] and method == "GET":
+                return self.send_json(sorted(reqs.items, key=lambda r: -r["created"]))
+            if parts[:1] == ["requests"] and len(parts) == 2:
+                if method == "PATCH":
+                    status = req.get("status")
+                    if status not in Requests.STATUSES:
+                        return self.send_json({"error": "unknown status"}, 422)
+                    r = reqs.update(parts[1], status, req.get("note"))
+                    if not r:
+                        return self.send_json({"error": "no such request"}, 404)
+                    log(f"request {r['title']}: {status} by {user}")
+                    return self.send_json(r)
+                if method == "DELETE":
+                    if not reqs.delete(parts[1]):
+                        return self.send_json({"error": "no such request"}, 404)
+                    return self.send_json({})
+            if parts[:1] in (["movies"], ["series"]) and len(parts) >= 2:
+                return self.item_api(method, parts[0], parts[1], parts[2:], req, body)
+            if parts == ["collections"] and method == "GET":
+                return self.send_json(cols.items)
+            if parts == ["collections"] and method == "POST":
+                if not str(req.get("name", "")).strip():
+                    return self.send_json({"error": "a collection needs a name"}, 422)
+                c = cols.save_one(None, req)
+                lib.get(fresh=True)
+                log(f"collection {c['name']} created by {user}")
+                return self.send_json(c, 201)
+            if parts[:1] == ["collections"] and len(parts) == 2:
+                if method == "PATCH":
+                    c = cols.save_one(parts[1], req)
+                    if not c:
+                        return self.send_json({"error": "no such collection"}, 404)
+                    lib.get(fresh=True)
+                    log(f"collection {c['name']} changed by {user}")
+                    return self.send_json(c)
+                if method == "DELETE":
+                    if not cols.delete(parts[1]):
+                        return self.send_json({"error": "no such collection"}, 404)
+                    lib.get(fresh=True)
+                    return self.send_json({})
+            if parts == ["rescan"] and method == "POST":
+                data = lib.get(fresh=True)
+                episodes = sum(
+                    len(se["episodes"]) for s in data["series"] for se in s["seasons"]
+                )
+                return self.send_json(
+                    {
+                        "movies": len(data["movies"]),
+                        "series": len(data["series"]),
+                        "episodes": episodes,
+                    }
+                )
+            if parts == ["users"] and method == "GET":
+                return self.send_json(users.listing(progress))
+            if parts == ["users"] and method == "POST":
+                name = str(req.get("username", "")).strip()
+                password = str(req.get("password", ""))
+                if not name or len(name) > 64 or not password:
+                    return self.send_json(
+                        {"error": "a username and a password are required"}, 422
+                    )
+                if name in users.users:
+                    return self.send_json({"error": f"{name} already exists"}, 409)
+                users.add(name, password, bool(req.get("admin")))
+                return self.send_json({"name": name}, 201)
+            if len(parts) < 2 or parts[0] != "users":
+                return self.send_json({"error": "not found"}, 404)
+            name = parts[1]
+            if name not in users.users:
+                return self.send_json({"error": f"no user named {name}"}, 404)
+            last_admin = users.admins() == [name]
+            if parts[2:] == ["logout"] and method == "POST":
+                users.logout_all(name)
+                return self.send_json({})
+            if parts[2:]:
+                return self.send_json({"error": "not found"}, 404)
+            if method == "PATCH":
+                if "admin" in req:
+                    if not req["admin"] and last_admin:
+                        return self.send_json(
+                            {"error": "the server needs at least one admin"}, 422
+                        )
+                    users.set_admin(name, bool(req["admin"]))
+                if req.get("password"):
+                    users.set_password(name, str(req["password"]))
+                return self.send_json({})
+            if method == "DELETE":
+                if last_admin:
+                    return self.send_json(
+                        {"error": "can't delete the only admin"}, 422
+                    )
+                users.delete(name)
+                progress.forget(name)
+                return self.send_json({})
+            return self.send_json({"error": "method not allowed"}, 405)
+
+        def do_PUT(self):
+            path = urlparse(self.path).path
+            if path.startswith("/api/admin/"):
+                return self.admin("PUT", path, self.body())
+            self.send_json({"error": "not found"}, 404)
+
+        def do_PATCH(self):
+            path = urlparse(self.path).path
+            if path.startswith("/api/admin/"):
+                return self.admin("PATCH", path, self.body())
+            if path.startswith("/api/requests/"):
+                return self.requests_api("PATCH", path, self.body())
+            self.send_json({"error": "not found"}, 404)
+
+        def do_DELETE(self):
+            path = urlparse(self.path).path
+            if path.startswith("/api/admin/"):
+                return self.admin("DELETE", path, self.body())
+            if path.startswith("/api/sessions/"):
+                self.body()
+                user = self.user()
+                if not user:
+                    return self.send_json({"error": "sign in required"}, 401)
+                if not users.end_session(user, unquote(path[len("/api/sessions/"):])):
+                    return self.send_json({"error": "no such session"}, 404)
+                log(f"{user} signed out a device")
+                return self.send_json({})
+            self.send_json({"error": "not found"}, 404)
 
         def do_POST(self):
             path = urlparse(self.path).path
-            length = int(self.headers.get("Content-Length") or 0)
-            body = self.rfile.read(length) if length else b""
+            body = self.body()
+            if path.startswith("/api/admin/"):
+                return self.admin("POST", path, body)
+            if path == "/api/requests" or path.startswith("/api/requests/"):
+                return self.requests_api("POST", path, body)
             if path == "/api/login":
                 try:
                     req = json.loads(body)
-                    token = users.login(str(req["username"]), str(req["password"]))
+                    token = users.login(
+                        str(req["username"]),
+                        str(req["password"]),
+                        req.get("device"),
+                        self.client_address[0],
+                    )
                 except (ValueError, KeyError, TypeError):
                     return self.send_json({"error": "bad request"}, 400)
                 if not token:
@@ -434,10 +1212,24 @@ def make_handler(lib, users, progress, name):
                 return self.send_json(
                     {"name": name, "auth": bool(users.users), "version": 1}
                 )
+            if path == "/api/requests" or path.startswith("/api/requests/"):
+                return self.requests_api("GET", path, b"")
             if not self.authorized():
                 return self.send_json({"error": "sign in required"}, 401)
             if path == "/api/library":
                 return self.send_json(lib.get())
+            if path == "/api/me":
+                user = self.user()
+                if not user:
+                    return self.send_json({"error": "sign in required"}, 401)
+                return self.send_json({"name": user, "admin": users.is_admin(user)})
+            if path.startswith("/api/admin/"):
+                return self.admin("GET", path, b"")
+            if path == "/api/sessions":
+                user = self.user()
+                if not user:
+                    return self.send_json({"error": "sign in required"}, 401)
+                return self.send_json(users.sessions(user, self.token()))
             if path == "/api/progress":
                 user = self.user()
                 if not user:
@@ -505,7 +1297,17 @@ def main():
         "--add-user", metavar="NAME", help="create/update a user, then exit"
     )
     ap.add_argument(
-        "--admin", action="store_true", help="with --add-user: the user may open /admin"
+        "--admin", action="store_true", help="with --add-user: the user may manage the server from the app"
+    )
+    ap.add_argument(
+        "--omdb-key",
+        default=os.environ.get("OMDB_API_KEY"),
+        help="OMDb API key, for fetching details from IMDb on the Admin page (or OMDB_API_KEY)",
+    )
+    ap.add_argument(
+        "--bot-token",
+        default=os.environ.get("VALO_BOT_TOKEN"),
+        help="secret the Discord bot sends to post requests (or VALO_BOT_TOKEN)",
     )
     a = ap.parse_args()
     root = a.media.expanduser().resolve()
@@ -521,10 +1323,13 @@ def main():
         return
     name = a.name or f"{os.uname().nodename} media"
     progress = Progress(data)
-    srv = ThreadingHTTPServer(
-        (a.host, a.port), make_handler(Library(root), users, progress, name)
+    cols = Collections(data)
+    reqs = Requests(data)
+    handler = make_handler(
+        Library(root, cols), users, progress, name, cols, reqs, a.omdb_key, a.bot_token
     )
-    print(
+    srv = ThreadingHTTPServer((a.host, a.port), handler)
+    log(
         f"Serving {root} on http://{a.host}:{a.port}  (sign-in {'on' if users.users else 'off'})"
     )
     try:

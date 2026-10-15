@@ -45,7 +45,7 @@ The release workflow refuses to publish if any of these are out of sync with the
 
 ## Supported servers
 
-**[docs/API.md](docs/API.md) is the full guide for server admins.** It covers every endpoint and field, what each step of the server check tests and how to fix it, plus examples for Laravel, Express and Flask, and curl commands to test by hand.
+**[docs/api/](docs/api/README.md) is the full guide for server admins**, one page per topic: [setup](docs/api/setup.md), [the server check](docs/api/server-check.md), [sign-in](docs/api/auth.md), [the library JSON](docs/api/library.md), [watch progress](docs/api/progress.md), [streams and images](docs/api/streams.md), the [admin API](docs/api/admin.md), [examples](docs/api/examples.md) for Laravel, Express and Flask, [curl tests](docs/api/testing.md) and [troubleshooting](docs/api/troubleshooting.md).
 
 In short, there are three options:
 

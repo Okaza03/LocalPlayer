@@ -2,7 +2,7 @@
 //!
 //! Two kinds of servers are supported:
 //! * **API servers** answer `GET /api/info` with JSON and serve the catalog at
-//!   `GET /api/library`, optionally behind `POST /api/login` (see docs/API.md).
+//!   `GET /api/library`, optionally behind `POST /api/login` (see docs/api/).
 //! * **Plain file servers** (nginx/Apache/Caddy directory listings): the
 //!   listing is crawled and movies/series are guessed from folder and file names.
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -49,6 +49,9 @@ pub struct Item {
     pub overview: String,
     pub poster: Option<String>,
     pub backdrop: Option<String>,
+    /// Landscape artwork (16:9, usually with the title on it) for wide
+    /// cards such as Continue watching; the backdrop stands in without it.
+    pub thumb: Option<String>,
     #[serde(deserialize_with = "null_as_empty")]
     pub genres: Vec<String>,
     /// Age rating such as "PG-13".
@@ -96,6 +99,47 @@ pub struct Item {
     /// Critics' quotes.
     #[serde(deserialize_with = "null_as_empty")]
     pub reviews: Vec<Review>,
+    /// "tt1375666"
+    pub imdb_id: Option<String>,
+    /// The collection it belongs to ("Batman"): A to Z, its titles sit
+    /// together under that name, in `collection_index` order (else oldest first).
+    #[serde(deserialize_with = "name_or_object")]
+    pub collection: Option<String>,
+    /// Its place in the collection, 0 first.
+    pub collection_index: Option<u32>,
+}
+
+/// `"Batman"` or `{"name": "Batman", …}`; anything else counts as missing.
+fn name_or_object<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
+    let name = match Value::deserialize(d)? {
+        Value::String(s) => s,
+        Value::Object(o) => match o.get("name") {
+            Some(Value::String(s)) => s.clone(),
+            _ => return Ok(None),
+        },
+        _ => return Ok(None),
+    };
+    let name = name.trim();
+    Ok((!name.is_empty()).then(|| name.to_owned()))
+}
+
+/// An id that may come as a number or a string, as a string.
+fn id_string<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D::Error> {
+    Ok(match Value::deserialize(d)? {
+        Value::String(s) => s,
+        Value::Null => String::new(),
+        v => v.to_string(),
+    })
+}
+
+fn id_strings<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<String>, D::Error> {
+    let v = Option::<Vec<Value>>::deserialize(d)?.unwrap_or_default();
+    Ok(v.into_iter()
+        .map(|v| match v {
+            Value::String(s) => s,
+            v => v.to_string(),
+        })
+        .collect())
 }
 
 #[derive(Clone, Default, Deserialize)]
@@ -185,6 +229,28 @@ pub struct Library {
     pub series: Vec<Item>,
 }
 
+/// Where an item goes A to Z: under its collection's name, in the
+/// collection's order (else oldest first), otherwise under its title.
+pub fn title_key(i: &Item) -> (String, u32, u32, String) {
+    let title = i.title.to_lowercase();
+    match &i.collection {
+        Some(c) => (
+            c.to_lowercase(),
+            i.collection_index.unwrap_or(u32::MAX),
+            i.year.unwrap_or(u32::MAX),
+            title,
+        ),
+        None => (title, 0, 0, String::new()),
+    }
+}
+
+impl Item {
+    /// The id the server knows it by (ours carries a "movie:"/"series:" tag).
+    pub fn server_id(&self) -> &str {
+        self.id.split_once(':').map_or(&self.id, |(_, id)| id)
+    }
+}
+
 impl Library {
     pub fn all(&self) -> impl Iterator<Item = &Item> {
         self.movies.iter().chain(&self.series)
@@ -229,6 +295,7 @@ impl Library {
                 it.kind = kind;
                 fix(&mut it.poster);
                 fix(&mut it.backdrop);
+                fix(&mut it.thumb);
                 fix(&mut it.logo);
                 for c in &mut it.cast {
                     fix(&mut c.photo);
@@ -261,9 +328,8 @@ impl Library {
         self.movies.retain(|m| m.stream.is_some());
         self.series
             .retain(|s| s.seasons.iter().any(|x| !x.episodes.is_empty()));
-        let by_title = |a: &Item, b: &Item| a.title.to_lowercase().cmp(&b.title.to_lowercase());
-        self.movies.sort_by(by_title);
-        self.series.sort_by(by_title);
+        self.movies.sort_by_cached_key(title_key);
+        self.series.sort_by_cached_key(title_key);
     }
 }
 
@@ -373,8 +439,371 @@ impl std::fmt::Display for Unauthorized {
 }
 impl std::error::Error for Unauthorized {}
 
+/// `GET /api/me`.
+#[derive(Deserialize)]
+pub struct Me {
+    #[serde(default)]
+    pub admin: bool,
+}
+
+/// A user as the admin API lists them.
+#[derive(Clone, Debug, Deserialize)]
+pub struct AdminUser {
+    pub name: String,
+    #[serde(default)]
+    pub admin: bool,
+    /// How many devices are signed in.
+    #[serde(default)]
+    pub sessions: Option<u32>,
+    /// Unix seconds of their last saved watch progress.
+    #[serde(default)]
+    pub last_active: Option<i64>,
+}
+
+/// What `POST /api/admin/rescan` found.
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct Rescan {
+    pub movies: Option<usize>,
+    pub series: Option<usize>,
+    pub episodes: Option<usize>,
+    /// The scan carries on in the background, so new titles show up later.
+    pub running: bool,
+}
+
+/// `GET /api/admin/status`: how the server and what it talks to are doing.
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct AdminStatus {
+    /// The server's own version, e.g. "1.4.0".
+    pub version: Option<String>,
+    /// Seconds since the server started.
+    pub uptime: Option<u64>,
+    /// Outside services: metadata source, Discord bot, database, …
+    #[serde(deserialize_with = "null_as_empty")]
+    pub services: Vec<Service>,
+    /// The server's own library checks, on top of the app's.
+    #[serde(deserialize_with = "null_as_empty")]
+    pub health: Vec<HealthCheck>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct Service {
+    pub name: String,
+    pub ok: bool,
+    /// "online, 3 guilds", "no API key"
+    pub detail: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct HealthCheck {
+    /// "Files without a database entry"
+    pub label: String,
+    pub count: usize,
+    /// Examples (file paths, titles), shown when the row is opened.
+    #[serde(deserialize_with = "null_as_empty")]
+    pub items: Vec<String>,
+}
+
+/// What a sync found (`POST /api/admin/sync/<what>`).
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct SyncReport {
+    #[serde(deserialize_with = "null_as_empty")]
+    pub added: Vec<String>,
+    #[serde(deserialize_with = "null_as_empty")]
+    pub removed: Vec<String>,
+    #[serde(deserialize_with = "null_as_empty")]
+    pub updated: Vec<String>,
+    /// The changes were written (false: a dry run).
+    pub applied: bool,
+    /// It carries on in the background; follow the log.
+    pub running: bool,
+    pub message: Option<String>,
+
+    // Other shapes servers answer with, folded into the above by `tidy`.
+    #[serde(deserialize_with = "null_as_empty")]
+    added_movies: Vec<String>,
+    #[serde(deserialize_with = "null_as_empty")]
+    added_series: Vec<String>,
+    #[serde(deserialize_with = "null_as_empty")]
+    removed_movies: Vec<String>,
+    #[serde(deserialize_with = "null_as_empty")]
+    removed_series: Vec<String>,
+    dry_run: Option<bool>,
+    started: bool,
+}
+
+impl SyncReport {
+    /// Fold per-kind lists, `dry_run` and `started` into the documented
+    /// fields; `accepted` is a `202` answer (started, not done).
+    fn tidy(mut self, accepted: bool) -> Self {
+        self.added.append(&mut self.added_movies);
+        self.added.append(&mut self.added_series);
+        self.removed.append(&mut self.removed_movies);
+        self.removed.append(&mut self.removed_series);
+        if let Some(dry) = self.dry_run {
+            self.applied = !dry;
+        }
+        if self.started || accepted {
+            self.running = true;
+            self.applied = true;
+        }
+        self
+    }
+}
+
+/// One line of the server's log (`GET /api/admin/logs`).
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct LogLine {
+    pub id: u64,
+    /// Unix seconds.
+    pub time: i64,
+    /// "info", "warning", "error"
+    pub level: String,
+    #[serde(alias = "text", alias = "line")]
+    pub message: String,
+}
+
+/// `GET /api/admin/analytics?days=N`
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct Analytics {
+    pub plays: u64,
+    pub hours: f64,
+    pub active_users: u32,
+    /// Oldest first, one per day of the range.
+    #[serde(deserialize_with = "null_as_empty")]
+    pub days: Vec<DayStat>,
+    /// Most played first.
+    #[serde(deserialize_with = "null_as_empty")]
+    pub top: Vec<TitleStat>,
+    #[serde(deserialize_with = "null_as_empty")]
+    pub users: Vec<UserStat>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct DayStat {
+    /// "2026-10-14"
+    pub day: String,
+    pub plays: u32,
+    pub hours: f64,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct TitleStat {
+    pub title: String,
+    /// "movie" or "series"
+    pub kind: Option<String>,
+    pub plays: u32,
+    pub hours: f64,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct UserStat {
+    pub name: String,
+    pub plays: u32,
+    pub hours: f64,
+    pub last_active: Option<i64>,
+}
+
+/// A title someone asked for, e.g. through the Discord bot
+/// (`GET /api/admin/requests`).
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct MediaRequest {
+    #[serde(deserialize_with = "id_string")]
+    pub id: String,
+    pub title: String,
+    pub year: Option<u32>,
+    /// "movie" or "series"
+    pub kind: Option<String>,
+    pub imdb_id: Option<String>,
+    pub poster: Option<String>,
+    /// Their Discord (or Valo) name.
+    pub requested_by: Option<String>,
+    /// "discord", "app", …
+    pub source: Option<String>,
+    /// "pending", "approved", "available" or "denied"
+    pub status: String,
+    /// Unix seconds.
+    pub created: Option<i64>,
+    /// What the requester wrote, or the admin's answer.
+    pub note: Option<String>,
+    /// `false`: the requester couldn't be told about the last answer
+    /// (their Discord DMs are closed, …).
+    pub notified: Option<bool>,
+}
+
+/// A hand-made collection (`GET /api/admin/collections`).
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct Collection {
+    #[serde(deserialize_with = "id_string")]
+    pub id: String,
+    pub name: String,
+    /// Its titles in the order the app shows them.
+    #[serde(deserialize_with = "null_as_empty")]
+    pub items: Vec<CollectionItem>,
+    /// Servers without an order may list library ids by kind instead.
+    #[serde(deserialize_with = "id_strings")]
+    pub movies: Vec<String>,
+    #[serde(deserialize_with = "id_strings")]
+    pub series: Vec<String>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct CollectionItem {
+    /// "movie" or "series"
+    #[serde(rename = "type")]
+    pub kind: String,
+    /// The library id, as the server knows it.
+    #[serde(deserialize_with = "id_string")]
+    pub id: String,
+}
+
+impl Collection {
+    /// Our item ids ("movie:12"), in order.
+    pub fn members(&self) -> Vec<String> {
+        if !self.items.is_empty() {
+            return self
+                .items
+                .iter()
+                .map(|i| {
+                    let tag = if i.kind == "series" {
+                        "series"
+                    } else {
+                        "movie"
+                    };
+                    format!("{tag}:{}", i.id)
+                })
+                .collect();
+        }
+        let movies = self.movies.iter().map(|id| format!("movie:{id}"));
+        movies
+            .chain(self.series.iter().map(|id| format!("series:{id}")))
+            .collect()
+    }
+}
+
+/// A device signed in as the current user (`GET /api/sessions`).
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct DeviceSession {
+    /// Not the token: an id the server gives the session.
+    #[serde(deserialize_with = "id_string")]
+    pub id: String,
+    /// What the app said it is at sign-in: "Valo on noah-pc (Linux)".
+    pub device: Option<String>,
+    pub ip: Option<String>,
+    /// Unix seconds.
+    pub created: Option<i64>,
+    pub last_used: Option<i64>,
+    /// The session this request came from: this device.
+    pub current: bool,
+}
+
+/// What this app calls itself at sign-in, so the user can tell their
+/// devices apart: "Valo on noah-pc (Linux)".
+pub fn device_name() -> String {
+    let host = std::env::var("COMPUTERNAME")
+        .or_else(|_| std::env::var("HOSTNAME"))
+        .ok()
+        .or_else(|| std::fs::read_to_string("/etc/hostname").ok())
+        .map(|h| h.trim().to_owned())
+        .filter(|h| !h.is_empty());
+    let os = match std::env::consts::OS {
+        "linux" => "Linux",
+        "windows" => "Windows",
+        "macos" => "macOS",
+        o => o,
+    };
+    match host {
+        Some(h) => format!("Valo on {h} ({os})"),
+        None => format!("Valo ({os})"),
+    }
+}
+
+/// The server has no admin API (`/api/admin/...`).
+#[derive(Debug)]
+pub struct NoAdminApi;
+
+impl std::fmt::Display for NoAdminApi {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str("this server doesn't have the Valo admin API (/api/admin/users)")
+    }
+}
+impl std::error::Error for NoAdminApi {}
+
+/// An admin request failed. The server's own message (`error` for the
+/// Python server, `message` for Laravel) says why, e.g. "user exists".
+fn admin_err(e: ureq::Error) -> anyhow::Error {
+    match e {
+        ureq::Error::Status(401, _) => anyhow!(Unauthorized),
+        ureq::Error::Status(403, _) => anyhow!("the server says this account isn't an admin"),
+        ureq::Error::Status(code, r) => {
+            let text = r.status_text().to_owned();
+            let msg = r.into_json::<Value>().ok().and_then(|v| {
+                let m = v.get("error").or_else(|| v.get("message"))?;
+                m.as_str().map(str::to_owned)
+            });
+            match msg {
+                Some(m) => anyhow!("{m}"),
+                None if matches!(code, 404 | 405 | 501) => anyhow!(NoAdminApi),
+                None => anyhow!("server answered {code} {text}"),
+            }
+        }
+        ureq::Error::Transport(t) => anyhow!("can't reach the server: {t}"),
+    }
+}
+
+/// Like [`admin_err`], but a `404`/`405`/`501` always means the server
+/// doesn't have this part of the admin API (even with a message).
+fn admin_missing(e: ureq::Error) -> anyhow::Error {
+    match e {
+        ureq::Error::Status(404 | 405 | 501, _) => anyhow!(NoAdminApi),
+        e => admin_err(e),
+    }
+}
+
+/// Percent-encode one URL path segment (a user name).
+fn encode_segment(s: &str) -> String {
+    let mut out = String::new();
+    for b in s.bytes() {
+        if b.is_ascii_alphanumeric() || b"-._~".contains(&b) {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
+}
+
 /// Where the Valo API is documented, for server admins.
-pub const API_DOCS: &str = "https://github.com/Okaza03/Valo/blob/main/docs/API.md";
+pub const API_DOCS: &str = "https://github.com/Okaza03/Valo/blob/main/docs/api/README.md";
+/// Signed-in devices, in the sign-in docs.
+pub const SESSIONS_DOCS: &str =
+    "https://github.com/Okaza03/Valo/blob/main/docs/api/auth.md#get-apisessions-optional";
+/// The admin API part of those docs.
+pub const ADMIN_API_DOCS: &str = "https://github.com/Okaza03/Valo/blob/main/docs/api/admin.md";
+/// Each Admin page section's setup guide.
+pub const ADMIN_DOCS_DASHBOARD: &str =
+    "https://github.com/Okaza03/Valo/blob/main/docs/api/admin-dashboard.md";
+pub const ADMIN_DOCS_ANALYTICS: &str =
+    "https://github.com/Okaza03/Valo/blob/main/docs/api/admin-analytics.md";
+pub const ADMIN_DOCS_REQUESTS: &str =
+    "https://github.com/Okaza03/Valo/blob/main/docs/api/admin-requests.md";
+pub const ADMIN_DOCS_LIBRARY: &str =
+    "https://github.com/Okaza03/Valo/blob/main/docs/api/admin-library.md";
+pub const ADMIN_DOCS_COLLECTIONS: &str =
+    "https://github.com/Okaza03/Valo/blob/main/docs/api/admin-collections.md";
 
 /// The server is reachable but lacks a part of the Valo API, so only
 /// its admin can fix it. The UI offers a message the user can send them.
@@ -588,7 +1017,9 @@ impl Client {
             .agent
             .post(&format!("{}/api/login", self.base))
             .set("Accept", "application/json")
-            .send_json(serde_json::json!({ "username": username, "password": password }));
+            .send_json(serde_json::json!({
+                "username": username, "password": password, "device": device_name(),
+            }));
         match r {
             // e.g. a web app answering every path with its HTML page
             Ok(r) => r.into_json().map_err(|_| anyhow!(Missing::Login)),
@@ -678,6 +1109,270 @@ impl Client {
             Err(ureq::Error::Status(404 | 422, _)) => Ok(None),
             Err(e) => Err(status_err(e, "can't save watch progress")),
         }
+    }
+
+    /// Who the saved token belongs to (`GET /api/me`), so a remembered
+    /// session picks up admin rights given or taken since it signed in.
+    /// `None`: no session, or the server doesn't have the endpoint.
+    pub fn me(&self) -> Option<Me> {
+        if self.info.mode != Mode::Api || self.token.is_none() {
+            return None;
+        }
+        self.get(&format!("{}/api/me", self.base))
+            .set("Accept", "application/json")
+            .call()
+            .ok()?
+            .into_json()
+            .ok()
+    }
+
+    /// Where the signed-in user is signed in (`GET /api/sessions`).
+    /// `Ok(None)`: the server doesn't list sessions.
+    pub fn sessions(&self) -> Result<Option<Vec<DeviceSession>>> {
+        match self
+            .get(&format!("{}/api/sessions", self.base))
+            .set("Accept", "application/json")
+            .call()
+        {
+            Ok(r) => Ok(r.into_json().ok()),
+            Err(ureq::Error::Status(404 | 405 | 501, _)) => Ok(None),
+            Err(e) => Err(admin_err(e)),
+        }
+    }
+
+    /// Sign one of the user's devices out (`DELETE /api/sessions/<id>`).
+    pub fn end_session(&self, id: &str) -> Result<()> {
+        let mut r = self
+            .agent
+            .delete(&format!(
+                "{}/api/sessions/{}",
+                self.base,
+                encode_segment(id)
+            ))
+            .set("Accept", "application/json");
+        if let Some(h) = self.auth_header() {
+            r = r.set("Authorization", &h);
+        }
+        r.call().map_err(admin_err)?;
+        Ok(())
+    }
+
+    // ------------------------------------------------------------ admin API
+
+    /// The server has its own admin web page at `/admin` (any answer but
+    /// "not here": a login page or a redirect to one counts).
+    pub fn has_admin_page(&self) -> bool {
+        let url = format!("{}/admin", self.base);
+        !matches!(
+            self.agent.get(&url).call(),
+            Err(ureq::Error::Status(404 | 405 | 501, _) | ureq::Error::Transport(_))
+        )
+    }
+
+    fn admin(&self, method: &str, path: &str) -> ureq::Request {
+        let r = self
+            .agent
+            .request(method, &format!("{}/api/admin/{path}", self.base))
+            .set("Accept", "application/json");
+        match self.auth_header() {
+            Some(h) => r.set("Authorization", &h),
+            None => r,
+        }
+    }
+
+    /// Everyone who can sign in (`GET /api/admin/users`).
+    pub fn admin_users(&self) -> Result<Vec<AdminUser>> {
+        match self.admin("GET", "users").call() {
+            Ok(r) => r.into_json().map_err(|_| anyhow!(NoAdminApi)), // e.g. a web app's HTML page
+            Err(ureq::Error::Status(404 | 405 | 501, _)) => bail!(NoAdminApi),
+            Err(e) => Err(admin_err(e)),
+        }
+    }
+
+    pub fn admin_add_user(&self, name: &str, password: &str, admin: bool) -> Result<()> {
+        let body = serde_json::json!({ "username": name, "password": password, "admin": admin });
+        self.admin("POST", "users")
+            .send_json(body)
+            .map_err(admin_err)?;
+        Ok(())
+    }
+
+    /// Change a user's password and/or admin rights (`PATCH /api/admin/users/<name>`).
+    pub fn admin_update_user(
+        &self,
+        name: &str,
+        password: Option<&str>,
+        admin: Option<bool>,
+    ) -> Result<()> {
+        let mut body = serde_json::Map::new();
+        if let Some(p) = password {
+            body.insert("password".into(), p.into());
+        }
+        if let Some(a) = admin {
+            body.insert("admin".into(), a.into());
+        }
+        self.admin("PATCH", &format!("users/{}", encode_segment(name)))
+            .send_json(body)
+            .map_err(admin_err)?;
+        Ok(())
+    }
+
+    pub fn admin_delete_user(&self, name: &str) -> Result<()> {
+        self.admin("DELETE", &format!("users/{}", encode_segment(name)))
+            .call()
+            .map_err(admin_err)?;
+        Ok(())
+    }
+
+    /// End all of a user's sessions (`POST /api/admin/users/<name>/logout`).
+    pub fn admin_logout_user(&self, name: &str) -> Result<()> {
+        self.admin("POST", &format!("users/{}/logout", encode_segment(name)))
+            .call()
+            .map_err(admin_err)?;
+        Ok(())
+    }
+
+    /// Re-read the media folders now (`POST /api/admin/rescan`).
+    pub fn admin_rescan(&self) -> Result<Rescan> {
+        let r = self.admin("POST", "rescan").call().map_err(admin_err)?;
+        Ok(r.into_json().unwrap_or_default())
+    }
+
+    /// GET an optional admin endpoint; `NoAdminApi` when the server doesn't have it.
+    fn admin_json<T: serde::de::DeserializeOwned>(&self, path: &str) -> Result<T> {
+        let r = self.admin("GET", path).call().map_err(admin_missing)?;
+        r.into_json().map_err(|_| anyhow!(NoAdminApi))
+    }
+
+    pub fn admin_status(&self) -> Result<AdminStatus> {
+        self.admin_json("status")
+    }
+
+    /// `what`: "folders" (dry run), "movies" or "series".
+    pub fn admin_sync(&self, what: &str) -> Result<SyncReport> {
+        let r = self
+            .admin("POST", &format!("sync/{what}"))
+            .timeout(Duration::from_secs(600))
+            .call()
+            .map_err(admin_missing)?;
+        let accepted = r.status() == 202;
+        let rep: SyncReport = r.into_json().unwrap_or_default();
+        Ok(rep.tidy(accepted))
+    }
+
+    /// Log lines after `after` (0: the latest ones).
+    pub fn admin_logs(&self, after: u64) -> Result<Vec<LogLine>> {
+        self.admin_json(&format!("logs?after={after}"))
+    }
+
+    pub fn admin_analytics(&self, days: u32) -> Result<Analytics> {
+        self.admin_json(&format!("analytics?days={days}"))
+    }
+
+    pub fn admin_requests(&self) -> Result<Vec<MediaRequest>> {
+        self.admin_json("requests")
+    }
+
+    /// Answer a request: a new `status`, with a note for the requester.
+    pub fn admin_update_request(&self, id: &str, status: &str, note: Option<&str>) -> Result<()> {
+        let mut body = serde_json::json!({ "status": status });
+        if let Some(n) = note.filter(|n| !n.trim().is_empty()) {
+            body["note"] = n.trim().into();
+        }
+        self.admin("PATCH", &format!("requests/{}", encode_segment(id)))
+            .send_json(body)
+            .map_err(admin_err)?;
+        Ok(())
+    }
+
+    pub fn admin_delete_request(&self, id: &str) -> Result<()> {
+        self.admin("DELETE", &format!("requests/{}", encode_segment(id)))
+            .call()
+            .map_err(admin_err)?;
+        Ok(())
+    }
+
+    /// "movies/<id>" or "series/<id>" for an item of the library.
+    fn item_path(item: &Item) -> String {
+        let kind = match item.kind {
+            Kind::Movie => "movies",
+            Kind::Series => "series",
+        };
+        format!("{kind}/{}", encode_segment(item.server_id()))
+    }
+
+    /// Change an item's details. `fields` uses the library's names;
+    /// `null` clears one.
+    pub fn admin_update_item(&self, item: &Item, fields: &Value) -> Result<()> {
+        self.admin("PATCH", &Self::item_path(item))
+            .send_json(fields)
+            .map_err(admin_missing)?;
+        Ok(())
+    }
+
+    /// Look the item up on IMDb (by `imdb_id`, else by title and year).
+    /// Nothing is saved; the answer is library-shaped, for the editor.
+    pub fn admin_fetch_item(&self, item: &Item, imdb_id: Option<&str>) -> Result<Item> {
+        let mut body = serde_json::json!({ "title": item.title, "year": item.year });
+        if let Some(id) = imdb_id.filter(|i| !i.trim().is_empty()) {
+            body["imdb_id"] = id.trim().into();
+        }
+        let r = self
+            .admin("POST", &format!("{}/fetch", Self::item_path(item)))
+            .timeout(Duration::from_secs(60))
+            .send_json(body)
+            .map_err(admin_missing)?;
+        let mut found: Item = r
+            .into_json()
+            .context("the server sent details this app doesn't understand")?;
+        for u in [
+            &mut found.poster,
+            &mut found.backdrop,
+            &mut found.thumb,
+            &mut found.logo,
+        ] {
+            if let Some(s) = u.as_mut() {
+                *s = join(&self.base, s);
+            }
+        }
+        Ok(found)
+    }
+
+    /// Upload artwork: `which` is "poster", "backdrop", "thumb" or "logo".
+    pub fn admin_upload_art(
+        &self,
+        item: &Item,
+        which: &str,
+        data: &[u8],
+        mime: &str,
+    ) -> Result<()> {
+        self.admin("PUT", &format!("{}/art/{which}", Self::item_path(item)))
+            .set("Content-Type", mime)
+            .timeout(Duration::from_secs(120))
+            .send_bytes(data)
+            .map_err(admin_missing)?;
+        Ok(())
+    }
+
+    pub fn admin_collections(&self) -> Result<Vec<Collection>> {
+        self.admin_json("collections")
+    }
+
+    /// Create (`id` None) or change a collection; lists replace the old ones.
+    pub fn admin_save_collection(&self, id: Option<&str>, body: &Value) -> Result<()> {
+        let r = match id {
+            Some(id) => self.admin("PATCH", &format!("collections/{}", encode_segment(id))),
+            None => self.admin("POST", "collections"),
+        };
+        r.send_json(body).map_err(admin_missing)?;
+        Ok(())
+    }
+
+    pub fn admin_delete_collection(&self, id: &str) -> Result<()> {
+        self.admin("DELETE", &format!("collections/{}", encode_segment(id)))
+            .call()
+            .map_err(admin_err)?;
+        Ok(())
     }
 
     /// Download an image (poster, backdrop) with our credentials.
@@ -1105,6 +1800,84 @@ mod tests {
         assert!(!s.admin);
         let s: Session = serde_json::from_str(r#"{"token":"t","admin":true}"#).unwrap();
         assert!(s.admin);
+    }
+
+    #[test]
+    fn collections_sort_together_in_their_order() {
+        let mut lib: Library = serde_json::from_str(
+            r#"{"movies": [
+                {"id": "1", "title": "The Batman", "year": 2022, "stream": "a", "collection": "Batman", "collection_index": 0},
+                {"id": "2", "title": "Avatar", "year": 2009, "stream": "b"},
+                {"id": "3", "title": "Batman Returns", "year": 1992, "stream": "c", "collection": {"name": "Batman"}, "collection_index": 2},
+                {"id": "4", "title": "Batman", "year": 1989, "stream": "d", "collection": "Batman", "collection_index": 1},
+                {"id": "5", "title": "Casino", "year": 1995, "stream": "e", "collection": 7}
+            ]}"#,
+        )
+        .unwrap();
+        lib.finish("http://h");
+        let titles: Vec<&str> = lib.movies.iter().map(|m| m.title.as_str()).collect();
+        assert_eq!(
+            titles,
+            ["Avatar", "The Batman", "Batman", "Batman Returns", "Casino"]
+        );
+        assert_eq!(lib.movies[1].server_id(), "1");
+    }
+
+    #[test]
+    fn collection_members() {
+        let c: Collection = serde_json::from_str(
+            r#"{"id": 3, "name": "B", "items": [{"type": "series", "id": "x"}, {"type": "movie", "id": 9}]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            (c.id.as_str(), c.members()),
+            ("3", vec!["series:x".into(), "movie:9".into()])
+        );
+        let old: Collection =
+            serde_json::from_str(r#"{"id": "a", "name": "B", "movies": [1, 2], "series": null}"#)
+                .unwrap();
+        assert_eq!(old.members(), ["movie:1", "movie:2"]);
+    }
+
+    #[test]
+    fn other_sync_and_log_shapes() {
+        let r: SyncReport = serde_json::from_str(
+            r#"{"dry_run":true,"added_movies":["a"],"removed_movies":[],"added_series":["b"],"removed_series":["c"]}"#,
+        )
+        .unwrap();
+        let r = r.tidy(false);
+        assert_eq!(
+            (r.added, r.removed, r.applied, r.running),
+            (vec!["a".into(), "b".into()], vec!["c".into()], false, false)
+        );
+        let r: SyncReport = serde_json::from_str(r#"{"started":true,"target":"movies"}"#).unwrap();
+        assert!(r.tidy(false).running);
+        assert!(SyncReport::default().tidy(true).running);
+        let l: Vec<LogLine> =
+            serde_json::from_str(r#"[{"id":1,"text":"[00:39:39] folders"}]"#).unwrap();
+        assert_eq!(
+            (l[0].message.as_str(), l[0].time),
+            ("[00:39:39] folders", 0)
+        );
+    }
+
+    #[test]
+    fn admin_api_json() {
+        let me: Me = serde_json::from_str(r#"{"name":"N","admin":true}"#).unwrap();
+        assert!(me.admin);
+        let u: Vec<AdminUser> = serde_json::from_str(
+            r#"[{"name":"a","admin":true,"sessions":2,"last_active":1760400000},{"name":"b"}]"#,
+        )
+        .unwrap();
+        assert_eq!(
+            (u[0].sessions, u[1].admin, u[1].last_active),
+            (Some(2), false, None)
+        );
+        let r: Rescan = serde_json::from_str(r#"{"movies":3}"#).unwrap();
+        assert_eq!((r.movies, r.series, r.running), (Some(3), None, false));
+        let r: Rescan = serde_json::from_str(r#"{"running":true}"#).unwrap();
+        assert!(r.running);
+        assert_eq!(encode_segment("Jo Ann/ä"), "Jo%20Ann%2F%C3%A4");
     }
 
     #[test]

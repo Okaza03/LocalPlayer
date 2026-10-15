@@ -547,19 +547,26 @@ impl Run {
         }
 
         if client.admin {
-            self.step("Admin page · GET /admin", || {
-                let url = format!("{}/admin", client.base);
-                match client.agent.get(&url).call() {
-                    Err(ureq::Error::Status(404 | 405 | 501, _)) => {
+            self.step("Admin · GET /api/admin/users", || {
+                match client.admin_users() {
+                    Ok(u) => (Pass, format!("Found, {} users.", u.len()), ()),
+                    Err(e) => {
+                        let why = if e.downcast_ref::<crate::api::NoAdminApi>().is_some() {
+                            "the server has no admin API".to_owned()
+                        } else {
+                            format!("{e:#}")
+                        };
+                        let web = if client.has_admin_page() {
+                            format!("only its web page at {}/admin can be opened", client.base)
+                        } else {
+                            "it can't manage anything".to_owned()
+                        };
                         let msg = format!(
-                            "You signed in as an admin, but {url} doesn't exist, so the Admin \
-                             button leads nowhere."
+                            "You signed in as an admin, but {why}, so the app's Admin page \
+                             can't manage users and {web}."
                         );
                         (Warn, msg, ())
                     }
-                    Err(ureq::Error::Transport(e)) => (Warn, format!("{url}: {e}"), ()),
-                    // a login page (401/403, or a redirect to one) means it's there
-                    _ => (Pass, "Found.".to_owned(), ()),
                 }
             });
         }
