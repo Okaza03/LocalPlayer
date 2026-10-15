@@ -6,8 +6,7 @@ use std::collections::HashMap;
 use eframe::egui::{self, pos2, vec2, Color32, RichText, ScrollArea, Sense, Stroke, Ui};
 use serde_json::json;
 
-use super::super::details::{caps, padded, panel, TEAL};
-use super::super::people::columns_with;
+use super::super::details::{caps, column, padded, panel, TEAL};
 use super::users::danger_button;
 use super::{not_set_up, Cx, Done, Remote, Section};
 use crate::api::{join, Collection, Item, Kind};
@@ -107,61 +106,103 @@ impl State {
         let list = self.list.data.clone().unwrap_or_default();
         let mut open = None;
         let mut new = false;
-        columns_with(
-            ui,
-            &mut (&mut *self, &mut *cx),
-            |ui, (st, cx)| st.editor(ui, cx),
-            |ui, (st, cx)| {
-                let st = &mut **st;
-                panel(ui, |ui| {
-                    caps(ui, "Collections", TEAL);
-                    ui.add_space(8.0);
-                    if let Some(e) = &st.list.error {
-                        ui.label(RichText::new(e).color(ERROR));
-                    }
-                    if list.is_empty() && st.list.data.is_some() {
-                        ui.label(RichText::new("None yet.").color(MUTED));
-                    }
-                    for c in &list {
-                        let n = c.movies.len() + c.series.len();
-                        let sel = st.selected.as_deref() == Some(c.id.as_str());
-                        if nav_row(ui, &c.name, n, sel) {
-                            open = Some(c.clone());
-                        }
-                    }
-                    ui.add_space(10.0);
-                    ui.horizontal(|ui| {
-                        if small_button(ui, "New collection").clicked() {
-                            new = true;
-                        }
-                        let b = ui
-                            .add_enabled_ui(!cx.busy, |ui| small_button(ui, "Detect from TMDB"))
-                            .inner
-                            .on_hover_text("Make collections from TMDB's (Batman, Harry Potter, …) for every title");
-                        if b.clicked() {
-                            cx.run(|c| {
-                                let r = c.admin_call("POST", "collections/detect", None)?;
-                                let n = |k: &str| r.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
-                                Ok(Done {
-                                    msg: format!(
-                                        "Detected collections: {} new, {} updated.",
-                                        n("created"),
-                                        n("updated")
-                                    ),
-                                    library: true,
-                                    ..Default::default()
-                                })
-                            });
-                        }
-                    });
+        // the list on the left, the open collection beside it
+        let (m, inner) = column(ui);
+        let narrow = inner < 900.0;
+        let list_w = if narrow { inner } else { 320.0 };
+        let gap = 32.0;
+        ui.horizontal_top(|ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            ui.add_space(m);
+            if narrow {
+                ui.vertical(|ui| {
+                    ui.set_width(inner);
+                    ui.spacing_mut().item_spacing.x = 8.0;
+                    self.list_panel(ui, cx, &list, &mut open, &mut new);
+                    ui.add_space(20.0);
+                    self.editor(ui, cx);
                 });
-            },
-        );
+                return;
+            }
+            ui.vertical(|ui| {
+                ui.set_width(list_w);
+                ui.spacing_mut().item_spacing.x = 8.0;
+                self.list_panel(ui, cx, &list, &mut open, &mut new);
+            });
+            ui.add_space(gap);
+            ui.vertical(|ui| {
+                ui.set_width(inner - list_w - gap);
+                ui.spacing_mut().item_spacing.x = 8.0;
+                self.editor(ui, cx);
+            });
+        });
         if let Some(c) = open {
             self.open(Some(&c));
         } else if new {
             self.open(None);
         }
+    }
+
+    /// Every collection, with how many titles each has.
+    fn list_panel(
+        &mut self,
+        ui: &mut Ui,
+        cx: &mut Cx,
+        list: &[Collection],
+        open: &mut Option<Collection>,
+        new: &mut bool,
+    ) {
+        panel(ui, |ui| {
+            caps(ui, "Collections", TEAL);
+            ui.add_space(8.0);
+            if let Some(e) = &self.list.error {
+                ui.label(RichText::new(e).color(ERROR));
+            }
+            if list.is_empty() && self.list.data.is_some() {
+                ui.label(RichText::new("None yet.").color(MUTED));
+            }
+            for c in list {
+                let n = c.members().len();
+                let sel = self.selected.as_deref() == Some(c.id.as_str());
+                if nav_row(ui, &c.name, n, sel) {
+                    *open = Some(c.clone());
+                }
+            }
+            ui.add_space(10.0);
+            ui.horizontal_wrapped(|ui| {
+                if small_button(ui, "New collection").clicked() {
+                    *new = true;
+                }
+                let b = ui
+                    .add_enabled_ui(!cx.busy, |ui| small_button(ui, "Detect from TMDB"))
+                    .inner
+                    .on_hover_text(
+                        "Make collections from TMDB's (Batman, Harry Potter, …) for every title",
+                    );
+                if b.clicked() {
+                    cx.run(|c| {
+                        let r = c.admin_call("POST", "collections/detect", None)?;
+                        let n = |k: &str| r.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+                        let running = r.get("running").and_then(|v| v.as_bool()) == Some(true);
+                        Ok(Done {
+                            msg: if running {
+                                "Detecting collections on the server; follow the live log, \
+                                 then press Refresh."
+                                    .into()
+                            } else {
+                                format!(
+                                    "Detected collections: {} new, {} updated.",
+                                    n("created"),
+                                    n("updated")
+                                )
+                            },
+                            library: true,
+                            ..Default::default()
+                        })
+                    });
+                }
+            });
+        });
     }
 
     fn editor(&mut self, ui: &mut Ui, cx: &mut Cx) {

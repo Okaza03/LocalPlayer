@@ -105,7 +105,7 @@ Optional. The Requests section has a _Discord_ panel for them; without these end
 | ----------------------------------------- | -------------------------------------- | --------------------------------------------------------- |
 | `GET /api/admin/discord/sync-status`      |                                        | `{"running": false, "phase": "Movies", "done": 120, "total": 468, "error": null}` (`syncing` works for `running`) |
 | `POST /api/admin/discord/sync`            | `{}` for everything, or `{"items": [{"title", "type"}]}` | `202`: tells the bot what's in the library, so it can answer "already in the library" and match requests. `409` with a message while one runs |
-| `POST /api/admin/discord/announce`        | `{"type": "movies"}`, `"series"` or `"both"` | `200`: the bot posts the library to its announcement channel |
+| `POST /api/admin/discord/announce`        | `{"type": "movies"}`, `"series"` or `"both"` | `200`: post the library to the announcement channel (a Discord webhook, or the bot's own channel). `501` with a message when neither is set up |
 
 While a sync runs, the app asks for its status every 2 seconds and shows `phase` and `done` of `total`.
 

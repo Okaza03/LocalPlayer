@@ -25,7 +25,7 @@ The Admin page's _Library_ section lets an admin fix a title by hand (title, yea
 | `GET /api/admin/<kind>/<id>/subtitles/search?language=en[&episode=…]` |       | `[{"id", "name", "language", "downloads", "episode"}]`     |
 | `POST /api/admin/<kind>/<id>/subtitles/download` | `{"id": "<result id>"}`    | `200`                                                       |
 | `POST /api/admin/subtitles/bulk`              | `{"type": "movies", "ids": […], "language": "en"}` | `202`; progress goes to the [live log](admin-dashboard.md#get-apiadminlogs) |
-| `PATCH /api/admin/episodes/<id>`              | `{"title", "aired", "duration", "overview"}` | `200`. `duration` in seconds, `null` clears        |
+| `PATCH /api/admin/episodes/<id>`              | `{"title", "aired", "duration", "overview"}` | `200`. `aired` as `YYYY-MM-DD`, `duration` in seconds, `null` clears |
 | `POST /api/admin/series/<id>/seasons/<n>/refresh` |                           | `200`: fetch the season's episode details again             |
 | `POST /api/admin/episodes/<id>/fetch-image`   |                               | `200`: fetch the episode's still again                      |
 

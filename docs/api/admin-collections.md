@@ -43,7 +43,7 @@ Admins only, under the [usual rules](admin.md#rules-for-every-request).
 | `POST /api/admin/collections`         | `{"name", "items"}`                   | `201`; `422` without a name             |
 | `PATCH /api/admin/collections/<id>`   | `{"name"}` and/or `{"items"}`         | `200`; `404` if unknown                 |
 | `DELETE /api/admin/collections/<id>`  |                                       | `200`. Its titles stay in the library   |
-| `POST /api/admin/collections/detect`  |                                       | optional: make or fill collections from TMDB's (`belongs_to_collection`) for every title. `{"created": 3, "updated": 1}` |
+| `POST /api/admin/collections/detect`  |                                       | optional: make or fill collections from TMDB's (`belongs_to_collection`) for every title. `{"created": 3, "updated": 1}`; for a big library, start it in the background and answer `202 {"running": true}` with progress in the [live log](admin-dashboard.md#get-apiadminlogs) (the app waits at most 2 minutes) |
 
 A collection:
 

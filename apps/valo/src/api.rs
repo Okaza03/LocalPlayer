@@ -121,6 +121,16 @@ pub struct Item {
     pub tmdb_id: Option<Value>,
 }
 
+/// "2021-11-06 00:00:00" (a database timestamp) -> "2021-11-06".
+fn trim_date(d: &mut Option<String>) {
+    if let Some(s) = d.as_mut() {
+        let b = s.as_bytes();
+        if s.len() > 10 && b[4] == b'-' && b[7] == b'-' && s.is_char_boundary(10) {
+            s.truncate(10);
+        }
+    }
+}
+
 /// `"Batman"` or `{"name": "Batman", …}`; anything else counts as missing.
 fn name_or_object<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
     let name = match Value::deserialize(d)? {
@@ -266,6 +276,7 @@ impl Item {
             }
         };
         self.kind = kind;
+        trim_date(&mut self.released);
         fix(&mut self.poster);
         fix(&mut self.backdrop);
         fix(&mut self.thumb);
@@ -288,6 +299,7 @@ impl Item {
         for s in &mut self.seasons {
             s.episodes.sort_by_key(|e| e.number);
             for e in &mut s.episodes {
+                trim_date(&mut e.aired);
                 fix(&mut e.still);
                 e.stream = join(base, &e.stream);
                 if e.id.is_empty() {
@@ -2084,6 +2096,22 @@ mod tests {
         .unwrap();
         assert_eq!(s.library.unwrap().movies, Some(3));
         assert_eq!(s.health[0].titles[0].key(), "movie:12");
+    }
+
+    #[test]
+    fn dates_lose_their_time() {
+        let mut lib: Library = serde_json::from_str(
+            r#"{"series": [{"id": 1, "title": "Arcane", "released": "2021-11-06 00:00:00",
+                "seasons": [{"number": 1, "episodes": [{"id": 1, "number": 1, "stream": "/e/1", "aired": "2021-11-06 00:00:00"}]}]}]}"#,
+        )
+        .unwrap();
+        lib.finish("http://h");
+        let s = &lib.series[0];
+        assert_eq!(s.released.as_deref(), Some("2021-11-06"));
+        assert_eq!(
+            s.seasons[0].episodes[0].aired.as_deref(),
+            Some("2021-11-06")
+        );
     }
 
     #[test]

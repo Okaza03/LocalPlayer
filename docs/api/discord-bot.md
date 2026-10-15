@@ -174,6 +174,7 @@ REQUEST_CHANNEL_ID=your-request-channel-id
 LARAVEL_URL=https://media.example.com   # or http://host.docker.internal if on the same machine
 BOT_API_SECRET=same-value-as-on-your-valo-server
 APP_URL=https://media.example.com       # used for the "Watch now" link
+ANNOUNCE_CHANNEL_ID=your-announcement-channel-id   # optional: where "Announce" in the Valo app posts
 ```
 
 Start it:
