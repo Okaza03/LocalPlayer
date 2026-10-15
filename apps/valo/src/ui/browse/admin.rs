@@ -7,6 +7,7 @@ mod collections;
 mod dashboard;
 mod library;
 mod requests;
+mod transcode;
 mod users;
 
 use std::time::Instant;
@@ -32,16 +33,18 @@ pub(super) enum Section {
     Requests,
     Library,
     Collections,
+    Transcode,
     Users,
 }
 
 impl Section {
-    const ALL: [Section; 6] = [
+    const ALL: [Section; 7] = [
         Section::Dashboard,
         Section::Analytics,
         Section::Requests,
         Section::Library,
         Section::Collections,
+        Section::Transcode,
         Section::Users,
     ];
 
@@ -52,6 +55,7 @@ impl Section {
             Section::Requests => "Requests",
             Section::Library => "Library",
             Section::Collections => "Collections",
+            Section::Transcode => "Transcode",
             Section::Users => "Users",
         }
     }
@@ -71,6 +75,9 @@ impl Section {
             Section::Collections => {
                 "Group titles like the Batman films, so A to Z keeps them together, oldest first."
             }
+            Section::Transcode => {
+                "Convert files that don't play smoothly everywhere (MKV, HEVC) to MP4."
+            }
             Section::Users => "Who can sign in, and who can manage the server.",
         }
     }
@@ -83,6 +90,7 @@ impl Section {
             Section::Requests => api::ADMIN_DOCS_REQUESTS,
             Section::Library => api::ADMIN_DOCS_LIBRARY,
             Section::Collections => api::ADMIN_DOCS_COLLECTIONS,
+            Section::Transcode => api::ADMIN_DOCS_TRANSCODE,
             Section::Users => api::ADMIN_API_DOCS,
         }
     }
@@ -103,6 +111,7 @@ impl Section {
                 "the endpoints for editing titles (/api/admin/movies/…, /api/admin/series/…)"
             }
             Section::Collections => "the collection endpoints (/api/admin/collections)",
+            Section::Transcode => "the transcode endpoints (/api/admin/transcode)",
             Section::Users => "Valo's admin API (/api/admin/users)",
         }
     }
@@ -269,6 +278,8 @@ pub(super) struct AdminState {
     op: Option<Task<Result<Done>>>,
     /// The last change's outcome, and whether it worked.
     notice: Option<(String, bool)>,
+    /// The last change failed because the server doesn't have it: link the guide.
+    notice_docs: bool,
     /// Whether the server has its own /admin web page.
     web: Option<bool>,
     web_check: Option<Task<bool>>,
@@ -277,6 +288,7 @@ pub(super) struct AdminState {
     requests: requests::State,
     library: library::State,
     collections: collections::State,
+    transcode: transcode::State,
     users: users::State,
     /// The server's own title lists (`GET /api/admin/movies`, `/series`).
     catalog: [Remote<Vec<Item>>; 2],
@@ -291,6 +303,7 @@ impl AdminState {
             Section::Requests => self.requests.refresh(),
             Section::Library => self.library.refresh(),
             Section::Collections => self.collections.refresh(),
+            Section::Transcode => self.transcode.refresh(),
             Section::Users => {}
         }
         self.users.refresh();
@@ -322,16 +335,8 @@ impl AdminState {
             Section::Requests => self.requests.missing(),
             Section::Library => self.library.missing,
             Section::Collections => self.collections.missing(),
+            Section::Transcode => self.transcode.missing(),
             Section::Users => self.users.missing(),
-        }
-    }
-
-    fn set_missing(&mut self) {
-        match self.section {
-            Section::Library => self.library.missing = true,
-            Section::Collections => self.collections.list.missing = true,
-            Section::Requests => self.requests.list.missing = true,
-            _ => {}
         }
     }
 }
@@ -435,6 +440,7 @@ impl Browse {
             if s != st.section {
                 st.section = s;
                 st.notice = None;
+                st.notice_docs = false;
                 self.to_top = true;
             }
         }
@@ -462,6 +468,7 @@ impl Browse {
             st.op = None;
             match r {
                 Ok(done) => {
+                    st.notice_docs = false;
                     st.notice = Some((done.msg, true));
                     for u in &done.forget {
                         images.forget(u);
@@ -473,8 +480,9 @@ impl Browse {
                 }
                 Err(e) if e.is::<Unauthorized>() => login = true,
                 Err(e) if e.is::<NoAdminApi>() => {
-                    self.admin.set_missing();
-                    self.admin.notice = None;
+                    self.admin.notice =
+                        Some(("This server doesn't support that yet.".into(), false));
+                    self.admin.notice_docs = true;
                 }
                 Err(e) => self.admin.notice = Some((format!("{e:#}"), false)),
             }
@@ -513,6 +521,10 @@ impl Browse {
             ui.label(RichText::new(section.about()).color(MUTED));
             ui.add_space(14.0);
             notice(ui, &st.notice);
+            if st.notice_docs && st.notice.is_some() {
+                needs_note(ui, "What the server needs is in the guide.", section);
+                ui.add_space(10.0);
+            }
         });
         ui.add_space(10.0);
 
@@ -545,6 +557,7 @@ impl Browse {
             Section::Requests => st.requests.ui(ui, &mut cx),
             Section::Library => st.library.ui(ui, &mut cx),
             Section::Collections => st.collections.ui(ui, &mut cx),
+            Section::Transcode => st.transcode.ui(ui, &mut cx),
             Section::Users => st.users.ui(ui, &mut cx),
         }
         let Cx {
@@ -561,12 +574,14 @@ impl Browse {
         }
         if let Some(job) = job {
             st.notice = None;
+            st.notice_docs = false;
             let c = self.client.clone();
             st.op = Some(Task::spawn(&ctx, move || job(&c)));
         }
         if let Some((s, item)) = goto {
             st.section = s;
             st.notice = None;
+            st.notice_docs = false;
             self.to_top = true;
             if let Some(id) = item {
                 let found = st.catalog.iter().filter_map(|c| c.data.as_ref()).flatten();
@@ -581,6 +596,7 @@ impl Browse {
         }
         if refresh {
             st.notice = None;
+            st.notice_docs = false;
             st.refresh();
             st.library.missing = false;
             self.reload(&ctx);

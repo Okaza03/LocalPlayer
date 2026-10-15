@@ -13,6 +13,8 @@ The Admin page's _Requests_ section is a queue of movies and series people asked
 
 The server sits in the middle, so the bot and the app never talk to each other directly. That means any bot works, as long as it speaks the two small APIs below, and the requests survive the bot being offline.
 
+**The quickest way:** invite the ready-made Valo bot to your Discord server and point it at your server with `/setup`. It needs only step 1 below and a public HTTPS address; see [The Valo Discord bot](discord-bot.md). To keep everything on your own network instead, run your own bot (steps 2 and 3, or [the Valo bot's own code](discord-bot.md#7-run-your-own-bot-instead)).
+
 You need three things:
 
 1. [The server endpoints](#1-the-server-endpoints): a request queue on your server.
@@ -35,7 +37,7 @@ Every endpoint below sends and returns requests in this shape:
   "kind": "movie",
   "imdb_id": "tt15239678",
   "poster": "https://m.media-amazon.com/images/…jpg",
-  "requested_by": "noah",
+  "requested_by": "user",
   "requester_id": "123456789012345678",
   "source": "discord",
   "status": "pending",
@@ -77,6 +79,7 @@ The bot signs in with its own secret, not a user's password: a long random strin
 | `GET /api/requests/<id>`             |                         | one request, `404` if unknown                                                   |
 | `PATCH /api/requests/<id>`           | `{"notified": false}`, `{"message_id": "…"}` | optional: the bot reports back. May also take `status` and `note` (a bot-side answer) |
 | `DELETE /api/requests/<id>`          |                         | optional: for a bot command that clears requests                                |
+| `POST /api/log`                      | `{"level": "warning", "message": "…"}` | optional: the bot writes a line to the admin's [live log](admin-dashboard.md#get-apiadminlogs) (a failed DM, a card it couldn't delete) |
 
 The server sets `id`, `created` and `updated`, and `status` to `"pending"`. A bot that finds the title is already on disk may send `"status": "available"`, so the request is kept as asked for and fulfilled at once. After telling (or failing to tell) the requester, the bot can report `notified` with `PATCH /api/requests/<id>` and `{"notified": false}`. A signed-in user's token may use the same endpoints (then `requested_by` is their username, `source` is `"app"`, and they only see their own requests); that's optional.
 
@@ -93,6 +96,18 @@ Admins only, under the [usual rules](admin.md#rules-for-every-request).
 | `GET /api/admin/requests`            |                                            | every request, newest first                               |
 | `PATCH /api/admin/requests/<id>`     | `{"status": "denied", "note": "No 4K yet"}` | `200`; set `updated` to now. `note` is optional           |
 | `DELETE /api/admin/requests/<id>`    |                                            | `200`. The requester isn't told                           |
+
+### Discord library sync and announcements
+
+Optional. The Requests section has a _Discord_ panel for them; without these endpoints it says the server can't do it yet.
+
+| Request                                   | Body                                   | Answer                                                    |
+| ----------------------------------------- | -------------------------------------- | --------------------------------------------------------- |
+| `GET /api/admin/discord/sync-status`      |                                        | `{"running": false, "phase": "Movies", "done": 120, "total": 468, "error": null}` (`syncing` works for `running`) |
+| `POST /api/admin/discord/sync`            | `{}` for everything, or `{"items": [{"title", "type"}]}` | `202`: tells the bot what's in the library, so it can answer "already in the library" and match requests. `409` with a message while one runs |
+| `POST /api/admin/discord/announce`        | `{"type": "movies"}`, `"series"` or `"both"` | `200`: the bot posts the library to its announcement channel |
+
+While a sync runs, the app asks for its status every 2 seconds and shows `phase` and `done` of `total`.
 
 The app checks for new requests every 30 seconds while the Admin page is open and shows how many are pending in the sidebar.
 
@@ -319,7 +334,7 @@ Any bot works if it does what the script above does: `POST /api/requests` with t
 ```sh
 # the bot asks for something
 curl -s -X POST -H "Authorization: Bearer $BOT_TOKEN" -H 'Content-Type: application/json' \
-  -d '{"title":"Dune","year":2021,"kind":"movie","requested_by":"noah","requester_id":"123"}' $SERVER/api/requests
+  -d '{"title":"Dune","year":2021,"kind":"movie","requested_by":"user","requester_id":"123"}' $SERVER/api/requests
 
 # the admin sees it, and answers
 curl -s -H "Authorization: Bearer $TOKEN" $SERVER/api/admin/requests

@@ -16,8 +16,10 @@ This guide is for whoever runs the media server. It covers what Valo asks the se
 | Fill the Admin dashboard: status, syncs, live log            | [Dashboard](admin-dashboard.md)            |
 | Show watching analytics to admins                            | [Analytics](admin-analytics.md)            |
 | Take requests through a Discord bot                          | [Requests and the Discord bot](admin-requests.md) |
+| Invite or run the ready-made Valo Discord bot                | [The Valo Discord bot](discord-bot.md)     |
 | Edit titles and fetch details from IMDb in the app           | [Library editing](admin-library.md)        |
 | Group titles into collections (Batman, Harry Potter, …)      | [Collections](admin-collections.md)        |
+| Convert MKV/HEVC files to MP4 from the app                   | [Transcode](admin-transcode.md)            |
 | List and sign out a user's devices                           | [Sign-in](auth.md#get-apisessions-optional) |
 | Copy a working server in Laravel, Express or Flask           | [Examples](examples.md)                    |
 | Test the server by hand with curl                            | [Testing with curl](testing.md)            |
@@ -41,6 +43,9 @@ This guide is for whoever runs the media server. It covers what Valo asks the se
 | `/api/admin/requests`, `/api/requests`  | optional                     | [Requests](admin-requests.md)         |
 | `/api/admin/movies/…`, `/api/admin/series/…` | optional                | [Library editing](admin-library.md)   |
 | `/api/admin/collections`                | optional                     | [Collections](admin-collections.md)   |
+| `/api/admin/transcode`                  | optional                     | [Transcode](admin-transcode.md)       |
+| `/api/admin/discord/…`                  | optional                     | [Requests](admin-requests.md#discord-library-sync-and-announcements) |
+| `/api/admin/subtitles/bulk`, `/api/admin/episodes/…` | optional        | [Library editing](admin-library.md)   |
 | `GET /admin`                            | optional                     | [Admin API](admin.md#get-admin-optional) |
 
 ## Conventions

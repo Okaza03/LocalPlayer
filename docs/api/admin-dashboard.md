@@ -40,7 +40,7 @@ How the server and what it depends on are doing. The app asks every 30 seconds w
 | ---------- | -------- | ----------------------------------------------------------------------------------- |
 | `version`  | string   | Your server's version                                                               |
 | `uptime`   | int      | Seconds since it started                                                            |
-| `library`  | object   | Your own numbers: `movies`, `series`, `episodes`, `size` (bytes), `users`. Each one is optional |
+| `library`  | object   | Your own numbers: `movies`, `series`, `episodes`, `size` (bytes), `users`. Each one is optional. **Any other number** in it becomes one more tile, labelled from its key: `"mp4": 271` shows as _MP4_, `"series_complete": 17` as _Series complete_ |
 | `services` | array    | Anything it depends on: `name`, `ok` (green or red dot), optional `detail`         |
 | `health`   | array    | Your library checks, in place of the app's: `label`, `count`, and what to list when the row is opened: `titles` (`{type, id, title, year}`, clickable: they open in the Library editor) and/or `items` (plain text, such as file paths). Send up to about 100 |
 
@@ -77,6 +77,10 @@ Answer:
 | `applied` | bool     | `false` for `folders` (a dry run); `true` when the database was changed. The app then reloads the library |
 | `running` | bool     | `true` when the work carries on in the background. The app points the admin at the live log      |
 | `message` | string   | One line shown above the lists                                                                   |
+
+### Applying the folder sync
+
+After a `folders` dry run that found changes, the app offers _Apply these changes_ (with a confirmation, since removed files lose their entries and watch progress). It sends `POST /api/admin/sync/folders?apply=1` and expects the same answer with `"applied": true`. Without `apply=1`, `folders` must never write anything.
 
 The app waits up to 10 minutes for an answer. For anything slower, start the work, answer `{"running": true}` at once, and log progress to the [live log](#get-apiadminlogs).
 

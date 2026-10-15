@@ -18,11 +18,14 @@ The Admin page's _Analytics_ section: plays per day, the most watched titles, an
     { "day": "2026-09-18", "plays": 0, "hours": 0 }
   ],
   "top": [
-    { "title": "The Office", "kind": "series", "plays": 41, "hours": 15.3 },
-    { "title": "Inception", "kind": "movie", "plays": 4, "hours": 9.6 }
+    { "title": "The Office", "kind": "series", "plays": 41, "hours": 15.3, "users": 3 },
+    { "title": "Inception", "kind": "movie", "plays": 4, "hours": 9.6, "users": 2 }
+  ],
+  "top_rated": [
+    { "title": "Arcane", "kind": "series", "avg_rating": 9.1, "rating_count": 4 }
   ],
   "users": [
-    { "name": "noah", "plays": 60, "hours": 101.2, "last_active": 1792103422 }
+    { "name": "user", "plays": 60, "hours": 101.2, "movies": 12, "episodes": 48, "last_active": 1792103422 }
   ]
 }
 ```
@@ -33,10 +36,13 @@ The Admin page's _Analytics_ section: plays per day, the most watched titles, an
 | `hours`        | number | Hours watched in the range                                                              |
 | `active_users` | int    | Users who watched anything in the range                                                 |
 | `days`         | array  | One entry per day of the range, **oldest first**, days without plays included: `day` (`YYYY-MM-DD`), `plays`, `hours` |
-| `top`          | array  | Most played first, about 20: `title`, `kind` (`"movie"`/`"series"`), `plays`, `hours`. Episodes count toward their series |
-| `users`        | array  | `name`, `plays`, `hours`, `last_active` (unix time)                                     |
+| `top`          | array  | Most played first, about 20 **of each kind**: `title`, `kind` (`"movie"`/`"series"`), `plays`, `hours`, optional `users` (how many different users played it). Episodes count toward their series. The app has Both / Movies / Series tabs, so send `kind` |
+| `top_rated`    | array  | Optional, best first: `title`, `kind`, `avg_rating` (out of 10), `rating_count`, from users' own ratings. Shown as _Top rated_ |
+| `users`        | array  | `name`, `plays`, `hours`, `last_active` (unix time), optional `movies` and `episodes` (how many of each they watched) |
 
 Every field is optional; missing numbers show as 0 and missing lists as empty.
+
+`hours` is up to you: time actually watched (from progress positions) or the full length of everything played. Use the same rule as your website so the numbers match.
 
 ## Where the numbers come from
 

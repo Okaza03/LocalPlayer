@@ -108,6 +108,17 @@ pub struct Item {
     pub collection: Option<String>,
     /// Its place in the collection, 0 first.
     pub collection_index: Option<u32>,
+
+    // Admin lists and records only.
+    /// Movies: it has at least one subtitle.
+    pub has_subtitles: Option<bool>,
+    /// Series: episodes without a subtitle.
+    #[serde(alias = "missing_subtitle_count")]
+    pub missing_subtitles: Option<u32>,
+    /// Fields an admin edited, which syncs leave alone.
+    #[serde(deserialize_with = "null_as_empty")]
+    pub locked: Vec<String>,
+    pub tmdb_id: Option<Value>,
 }
 
 /// `"Batman"` or `{"name": "Batman", …}`; anything else counts as missing.
@@ -455,6 +466,9 @@ pub struct Me {
 #[derive(Clone, Debug, Deserialize)]
 pub struct AdminUser {
     pub name: String,
+    /// Shown instead of the username, when it differs.
+    #[serde(default)]
+    pub display_name: Option<String>,
     #[serde(default)]
     pub admin: bool,
     /// How many devices are signed in.
@@ -504,6 +518,10 @@ pub struct LibraryStats {
     /// Bytes.
     pub size: Option<u64>,
     pub users: Option<u64>,
+    /// Any other numbers the server counts ("mp4", "series_complete"),
+    /// shown as more tiles.
+    #[serde(flatten)]
+    pub extra: std::collections::BTreeMap<String, Value>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -605,6 +623,20 @@ pub struct Analytics {
     pub top: Vec<TitleStat>,
     #[serde(deserialize_with = "null_as_empty")]
     pub users: Vec<UserStat>,
+    /// Best rated by users, best first.
+    #[serde(deserialize_with = "null_as_empty")]
+    pub top_rated: Vec<RatedStat>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct RatedStat {
+    pub title: String,
+    /// "movie" or "series"
+    pub kind: Option<String>,
+    /// Out of 10.
+    pub avg_rating: f32,
+    pub rating_count: u32,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -624,6 +656,8 @@ pub struct TitleStat {
     pub kind: Option<String>,
     pub plays: u32,
     pub hours: f64,
+    /// How many different users played it.
+    pub users: Option<u32>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -632,6 +666,8 @@ pub struct UserStat {
     pub name: String,
     pub plays: u32,
     pub hours: f64,
+    pub movies: Option<u32>,
+    pub episodes: Option<u32>,
     pub last_active: Option<i64>,
 }
 
@@ -661,6 +697,87 @@ pub struct MediaRequest {
     /// `false`: the requester couldn't be told about the last answer
     /// (their Discord DMs are closed, …).
     pub notified: Option<bool>,
+}
+
+/// A TMDB search result, to match a title by hand.
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct TmdbMatch {
+    #[serde(deserialize_with = "id_string")]
+    pub tmdb_id: String,
+    pub title: String,
+    pub year: Option<u32>,
+    pub poster: Option<String>,
+    pub overview: Option<String>,
+}
+
+/// A subtitle file the server has for a title or episode.
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct Subtitle {
+    #[serde(deserialize_with = "id_string")]
+    pub id: String,
+    /// "en", "nb", …
+    pub language: String,
+    /// "English (SDH)"
+    pub label: Option<String>,
+    /// "upload", "opensubtitles", "embedded"
+    pub source: Option<String>,
+    /// For a series: which episode ("S01E02").
+    pub episode: Option<String>,
+}
+
+/// A subtitle the server can download (`GET …/subtitles/search`).
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct SubtitleResult {
+    #[serde(deserialize_with = "id_string")]
+    pub id: String,
+    pub name: String,
+    pub language: Option<String>,
+    pub downloads: Option<u32>,
+    pub episode: Option<String>,
+}
+
+/// How a long server job is getting on (Discord library sync).
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct JobStatus {
+    #[serde(alias = "syncing")]
+    pub running: bool,
+    pub phase: Option<String>,
+    pub done: u64,
+    pub total: u64,
+    pub error: Option<String>,
+}
+
+/// `GET /api/admin/transcode`: files that could be converted for smoother playback.
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct Transcode {
+    #[serde(deserialize_with = "null_as_empty")]
+    pub files: Vec<TranscodeFile>,
+    pub running: bool,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct TranscodeFile {
+    #[serde(deserialize_with = "id_string")]
+    pub key: String,
+    pub title: String,
+    pub kind: Option<String>,
+    /// Bytes.
+    pub size: Option<u64>,
+    /// "mkv"
+    pub container: Option<String>,
+    pub video_codec: Option<String>,
+    pub audio_codec: Option<String>,
+    /// "idle", "queued", "running", "done", "failed"
+    pub status: String,
+    /// 0 to 1 while running.
+    pub progress: Option<f32>,
+    pub error: Option<String>,
 }
 
 /// A hand-made collection (`GET /api/admin/collections`).
@@ -728,7 +845,7 @@ pub struct DeviceSession {
     /// Not the token: an id the server gives the session.
     #[serde(deserialize_with = "id_string")]
     pub id: String,
-    /// What the app said it is at sign-in: "Valo on noah-pc (Linux)".
+    /// What the app said it is at sign-in: "Valo on user-pc (Linux)".
     pub device: Option<String>,
     pub ip: Option<String>,
     /// Unix seconds.
@@ -739,7 +856,7 @@ pub struct DeviceSession {
 }
 
 /// What this app calls itself at sign-in, so the user can tell their
-/// devices apart: "Valo on noah-pc (Linux)".
+/// devices apart: "Valo on user-pc (Linux)".
 pub fn device_name() -> String {
     let host = std::env::var("COMPUTERNAME")
         .or_else(|_| std::env::var("HOSTNAME"))
@@ -802,7 +919,7 @@ fn admin_missing(e: ureq::Error) -> anyhow::Error {
 }
 
 /// Percent-encode one URL path segment (a user name).
-fn encode_segment(s: &str) -> String {
+pub fn encode_segment(s: &str) -> String {
     let mut out = String::new();
     for b in s.bytes() {
         if b.is_ascii_alphanumeric() || b"-._~".contains(&b) {
@@ -830,6 +947,8 @@ pub const ADMIN_DOCS_REQUESTS: &str =
     "https://github.com/Okaza03/Valo/blob/main/docs/api/admin-requests.md";
 pub const ADMIN_DOCS_LIBRARY: &str =
     "https://github.com/Okaza03/Valo/blob/main/docs/api/admin-library.md";
+pub const ADMIN_DOCS_TRANSCODE: &str =
+    "https://github.com/Okaza03/Valo/blob/main/docs/api/admin-transcode.md";
 pub const ADMIN_DOCS_COLLECTIONS: &str =
     "https://github.com/Okaza03/Valo/blob/main/docs/api/admin-collections.md";
 
@@ -1217,8 +1336,18 @@ impl Client {
         }
     }
 
-    pub fn admin_add_user(&self, name: &str, password: &str, admin: bool) -> Result<()> {
-        let body = serde_json::json!({ "username": name, "password": password, "admin": admin });
+    pub fn admin_add_user(
+        &self,
+        name: &str,
+        password: &str,
+        admin: bool,
+        display_name: Option<&str>,
+    ) -> Result<()> {
+        let mut body =
+            serde_json::json!({ "username": name, "password": password, "admin": admin });
+        if let Some(d) = display_name.map(str::trim).filter(|d| !d.is_empty()) {
+            body["display_name"] = d.into();
+        }
         self.admin("POST", "users")
             .send_json(body)
             .map_err(admin_err)?;
@@ -1320,8 +1449,35 @@ impl Client {
         Ok(())
     }
 
+    /// Any admin request with an optional JSON body; the answer as JSON
+    /// (`null` for an empty one). `404`/`405`/`501`: not on this server.
+    pub fn admin_call(&self, method: &str, path: &str, body: Option<&Value>) -> Result<Value> {
+        let r = self.admin(method, path).timeout(Duration::from_secs(120));
+        let r = match body {
+            Some(b) => r.send_json(b),
+            None => r.call(),
+        }
+        .map_err(admin_missing)?;
+        Ok(r.into_json().unwrap_or(Value::Null))
+    }
+
+    /// GET an admin endpoint as `T`.
+    pub fn admin_get<T: serde::de::DeserializeOwned>(&self, path: &str) -> Result<T> {
+        self.admin_json(path)
+    }
+
+    /// PUT a file (subtitle, image) as the request body.
+    pub fn admin_upload(&self, path: &str, data: &[u8], mime: &str) -> Result<()> {
+        self.admin("PUT", path)
+            .set("Content-Type", mime)
+            .timeout(Duration::from_secs(120))
+            .send_bytes(data)
+            .map_err(admin_missing)?;
+        Ok(())
+    }
+
     /// "movies/<id>" or "series/<id>" for an item of the library.
-    fn item_path(item: &Item) -> String {
+    pub fn item_path(item: &Item) -> String {
         let kind = match item.kind {
             Kind::Movie => "movies",
             Kind::Series => "series",
@@ -1928,6 +2084,30 @@ mod tests {
         .unwrap();
         assert_eq!(s.library.unwrap().movies, Some(3));
         assert_eq!(s.health[0].titles[0].key(), "movie:12");
+    }
+
+    #[test]
+    fn website_parity_shapes() {
+        let s: LibraryStats =
+            serde_json::from_str(r#"{"movies": 468, "mp4": 271, "series_complete": 17}"#).unwrap();
+        assert_eq!((s.movies, s.extra.len()), (Some(468), 2));
+        let i: Item = serde_json::from_str(
+            r#"{"id": 1, "title": "Arcane", "missing_subtitle_count": 3, "locked": ["genres"], "tmdb_id": 94605}"#,
+        )
+        .unwrap();
+        assert_eq!((i.missing_subtitles, i.locked.len()), (Some(3), 1));
+        let j: JobStatus =
+            serde_json::from_str(r#"{"syncing": true, "done": 2, "total": 9}"#).unwrap();
+        assert!(j.running && j.total == 9);
+        let a: Analytics = serde_json::from_str(
+            r#"{"top": [{"title": "Heat", "kind": "movie", "plays": 3, "users": 2}],
+                "top_rated": [{"title": "Heat", "avg_rating": 8.5, "rating_count": 4}]}"#,
+        )
+        .unwrap();
+        assert_eq!((a.top[0].users, a.top_rated[0].rating_count), (Some(2), 4));
+        let u: AdminUser =
+            serde_json::from_str(r#"{"name": "jo", "display_name": "Jo Ann"}"#).unwrap();
+        assert_eq!(u.display_name.as_deref(), Some("Jo Ann"));
     }
 
     #[test]

@@ -3,7 +3,7 @@
 use eframe::egui::{self, pos2, vec2, Align2, Color32, FontId, Rect, RichText, Sense, Stroke, Ui};
 
 use super::super::details::{caps, padded, panel, GOLD, TEAL};
-use super::super::people::{ago, bar, columns, stats};
+use super::super::people::{ago, bar, columns_with, stats};
 use super::{not_set_up, Cx, Remote, Section};
 use crate::api::{Analytics, DayStat};
 use crate::ui::{bold, mono, segmented, ERROR, LINE, MUTED, TEXT};
@@ -13,6 +13,8 @@ pub(in super::super) struct State {
     data: Remote<Analytics>,
     /// The range `data` is for.
     loaded: u32,
+    /// Which kind the top lists show: None for both.
+    kind: Option<&'static str>,
 }
 
 impl Default for State {
@@ -21,6 +23,7 @@ impl Default for State {
             days: 30,
             data: Remote::default(),
             loaded: 30,
+            kind: None,
         }
     }
 }
@@ -106,29 +109,75 @@ impl State {
         });
         ui.add_space(24.0);
 
-        columns(
+        let kind = &mut self.kind;
+        let fits =
+            |k: &Option<String>, want: Option<&str>| want.is_none_or(|w| k.as_deref() == Some(w));
+        columns_with(
             ui,
-            |ui| {
+            kind,
+            |ui, kind| {
                 caps(ui, "Most watched", TEAL);
                 ui.add_space(4.0);
-                ui.label(bold("Top titles", 22.0));
+                ui.horizontal(|ui| {
+                    ui.label(bold("Top titles", 22.0));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        segmented(
+                            ui,
+                            kind,
+                            &[
+                                (None, "Both", None),
+                                (Some("movie"), "Movies", None),
+                                (Some("series"), "Series", None),
+                            ],
+                        );
+                    });
+                });
                 ui.add_space(12.0);
-                if a.top.is_empty() {
+                let top: Vec<_> = a.top.iter().filter(|t| fits(&t.kind, *kind)).collect();
+                if top.is_empty() {
                     ui.label(RichText::new("Nothing watched in this range.").color(MUTED));
                 }
-                let max = a.top.iter().map(|t| t.plays).max().unwrap_or(1).max(1);
-                for t in a.top.iter().take(15) {
-                    let value = format!(
+                let max = top.iter().map(|t| t.plays).max().unwrap_or(1).max(1);
+                for t in top.iter().take(15) {
+                    let mut value = format!(
                         "{} play{}   ·   {:.1} h",
                         t.plays,
                         if t.plays == 1 { "" } else { "s" },
                         t.hours
                     );
+                    if let Some(u) = t.users {
+                        value.push_str(&format!(
+                            "   ·   {u} viewer{}",
+                            if u == 1 { "" } else { "s" }
+                        ));
+                    }
                     bar(ui, &t.title, &value, t.plays as f32 / max as f32);
                     ui.add_space(4.0);
                 }
+                let rated: Vec<_> = a
+                    .top_rated
+                    .iter()
+                    .filter(|t| fits(&t.kind, *kind))
+                    .collect();
+                if !rated.is_empty() {
+                    ui.add_space(20.0);
+                    caps(ui, "Users' ratings", TEAL);
+                    ui.add_space(4.0);
+                    ui.label(bold("Top rated", 22.0));
+                    ui.add_space(12.0);
+                    for t in rated.iter().take(15) {
+                        let value = format!(
+                            "{:.1} / 10   ·   {} rating{}",
+                            t.avg_rating,
+                            t.rating_count,
+                            if t.rating_count == 1 { "" } else { "s" }
+                        );
+                        bar(ui, &t.title, &value, t.avg_rating / 10.0);
+                        ui.add_space(4.0);
+                    }
+                }
             },
-            |ui| {
+            |ui, _| {
                 panel(ui, |ui| {
                     caps(ui, "By user", TEAL);
                     ui.add_space(10.0);
@@ -143,6 +192,9 @@ impl State {
                                 ui.spacing_mut().item_spacing.y = 1.0;
                                 ui.label(RichText::new(&u.name).color(TEXT));
                                 let mut line = format!("{} plays · {:.1} h", u.plays, u.hours);
+                                if let (Some(m), Some(e)) = (u.movies, u.episodes) {
+                                    line = format!("{m} movies · {e} episodes · {:.1} h", u.hours);
+                                }
                                 if let Some(t) = u.last_active {
                                     line.push_str(&format!(" · {}", ago(t)));
                                 }

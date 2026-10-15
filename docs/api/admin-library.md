@@ -15,6 +15,19 @@ The Admin page's _Library_ section lets an admin fix a title by hand (title, yea
 | `PATCH /api/admin/<kind>/<id>`                | changed fields                | `200`; the app reloads the library                          |
 | `POST /api/admin/<kind>/<id>/fetch`           | `{"title", "year", "imdb_id"}` | details found, library-shaped; **nothing is saved**        |
 | `PUT /api/admin/<kind>/<id>/art/<which>`      | the image file                | `200`. `<which>` is `poster`, `backdrop`, `thumb` or `logo`          |
+| `POST /api/admin/<kind>/<id>/art/refetch`     |                               | download only the missing images: `{"downloaded": 2, "kept": 2}` |
+| `GET /api/admin/<kind>/<id>/tmdb-search?q=…`  |                               | `[{"tmdb_id", "title", "year", "poster", "overview"}]`     |
+| `PUT /api/admin/<kind>/<id>/tmdb`             | `{"tmdb_id": 1197306, "refetch": true}` | `200`: match the title to that TMDB entry and refresh its details |
+| `DELETE /api/admin/<kind>/<id>`               |                               | `200`: remove the title from the library                    |
+| `GET /api/admin/<kind>/<id>/subtitles`        |                               | `[{"id", "language", "label", "source", "episode"}]`       |
+| `PUT /api/admin/<kind>/<id>/subtitles?language=en[&episode=S01E02]` | the subtitle file | `200`                                     |
+| `DELETE /api/admin/<kind>/<id>/subtitles/<sid>` |                             | `200`                                                       |
+| `GET /api/admin/<kind>/<id>/subtitles/search?language=en[&episode=…]` |       | `[{"id", "name", "language", "downloads", "episode"}]`     |
+| `POST /api/admin/<kind>/<id>/subtitles/download` | `{"id": "<result id>"}`    | `200`                                                       |
+| `POST /api/admin/subtitles/bulk`              | `{"type": "movies", "ids": […], "language": "en"}` | `202`; progress goes to the [live log](admin-dashboard.md#get-apiadminlogs) |
+| `PATCH /api/admin/episodes/<id>`              | `{"title", "aired", "duration", "overview"}` | `200`. `duration` in seconds, `null` clears        |
+| `POST /api/admin/series/<id>/seasons/<n>/refresh` |                           | `200`: fetch the season's episode details again             |
+| `POST /api/admin/episodes/<id>/fetch-image`   |                               | `200`: fetch the episode's still again                      |
 
 Admins only, under the [usual rules](admin.md#rules-for-every-request). Errors with a short message (`{"error": "…"}` or `{"message": "…"}`) are shown to the admin.
 
@@ -22,11 +35,20 @@ Admins only, under the [usual rules](admin.md#rules-for-every-request). Errors w
 
 Every title, as your own admin website lists them: the same shape as [`/api/library`](library.md), but **including titles users don't see**, such as ones without a file yet or hidden ones. The Library section's list, the Collections section's "Add titles" list and the Dashboard's numbers and health checks all use it, so the app shows the same titles as your website. Without it, they fall back to `/api/library` and the list says so.
 
+Extra fields the list may carry:
+
+| Field               | Type     |                                                                         |
+| ------------------- | -------- | ----------------------------------------------------------------------- |
+| `has_subtitles`     | bool     | Movies: at least one subtitle. With it (or the next one), the list gets an _Only titles missing subtitles_ filter and a bulk download |
+| `missing_subtitles` | int      | Series: episodes without a subtitle (`missing_subtitle_count` works too) |
+| `locked`            | string[] | Fields an admin edited, which syncs leave alone; shown under the fields |
+| `tmdb_id`           | int      | Shown in the TMDB match panel                                           |
+
 The `id`s must be the same as in `/api/library`. Leave out the heavy parts the admin pages don't need (`seasons`, `cast`, `reviews`) if the list gets big.
 
 ## `GET /api/admin/<kind>/<id>`
 
-One title, with every field your database keeps for it, in the library's names. The editor opens with these values, so fields that `/api/library` leaves out (`imdb_id`, an unpublished overview, …) show up and aren't lost on save. Without it, the editor uses the list's copy.
+One title, with every field your database keeps for it, in the library's names. Put the video file's details in `file` (`name`, `path`, `quality`, `container`, `video_codec`, `audio_codec`, `audio_channels`, `bitrate`, `size`, the [File info](library.md#file-info) shape) for the editor's _Files_ tab; a series gets `seasons` with `episodes` (each with its own `file`) for the _Files_ and _Episodes_ tabs. The editor opens with these values, so fields that `/api/library` leaves out (`imdb_id`, an unpublished overview, …) show up and aren't lost on save. Without it, the editor uses the list's copy.
 
 ## `PATCH /api/admin/<kind>/<id>`
 
@@ -86,6 +108,18 @@ IMDb itself has no public API. Ways to get its data:
 - [OMDb](https://www.omdbapi.com/apikey.aspx): IMDb's data, free key (1,000 requests a day). The reference server uses it: `--omdb-key` or `OMDB_API_KEY`.
 - [TMDB](https://developer.themoviedb.org/docs): free key, better posters and backdrops, has the IMDb id (`/find/{imdb_id}?external_source=imdb_id`).
 - [IMDb's datasets](https://developer.imdb.com/non-commercial-datasets/): daily TSV files, no images.
+
+## The editor's tabs
+
+| Tab       | Needs                                                                                      |
+| --------- | ------------------------------------------------------------------------------------------ |
+| Details   | `PATCH`, `fetch`; under the fields, the TMDB match (`tmdb-search`, `PUT …/tmdb`) and _Delete title_ (`DELETE`) |
+| Images    | `PATCH` (addresses, `null` removes), `PUT …/art/<which>`, `POST …/art/refetch`             |
+| Files     | `file` (and `seasons`) in `GET /api/admin/<kind>/<id>`                                     |
+| Subtitles | the `…/subtitles` endpoints                                                                |
+| Episodes  | series only: `seasons` in the record, `PATCH /api/admin/episodes/<id>`, the season refresh and still fetch |
+
+Episode `<id>`s are the ids `/api/library` gives episodes. Any of these the server answers with `404`, `405` or `501` shows "This server doesn't support that yet" and a link here; the rest of the editor keeps working.
 
 ## `PUT /api/admin/<kind>/<id>/art/<which>`
 

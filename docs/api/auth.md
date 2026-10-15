@@ -23,7 +23,7 @@ This must answer without a token, even when `auth` is `true`.
 Request body:
 
 ```json
-{ "username": "user", "password": "hunter2", "device": "Valo on noah-pc (Linux)" }
+{ "username": "user", "password": "hunter2", "device": "Valo on user-pc (Linux)" }
 ```
 
 `device` names the app and machine, so the user can tell their devices apart in [`/api/sessions`](#get-apisessions-optional). Store it with the token if you list sessions; otherwise ignore it.
@@ -56,7 +56,7 @@ Where the signed-in user is signed in. The profile page lists these under _Your 
 
 ```json
 [
-  { "id": "44def5fabd634374", "device": "Valo on noah-pc (Linux)", "ip": "192.168.1.20", "created": 1792101466, "last_used": 1792103422, "current": true },
+  { "id": "44def5fabd634374", "device": "Valo on user-pc (Linux)", "ip": "192.168.1.20", "created": 1792101466, "last_used": 1792103422, "current": true },
   { "id": "85f552dd6e5e91c6", "device": "Valo TV on SHIELD Android TV", "ip": "192.168.1.31", "created": 1791900000, "last_used": 1792000000, "current": false }
 ]
 ```

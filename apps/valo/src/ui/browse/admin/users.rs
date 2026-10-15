@@ -17,14 +17,18 @@ pub(in super::super) struct State {
     confirm_delete: Option<String>,
     /// Resetting this user's password, to this.
     reset: Option<(String, String)>,
+    /// Changing this user's display name, to this.
+    rename: Option<(String, String)>,
     new_name: String,
+    new_display: String,
     new_pass: String,
     new_admin: bool,
 }
 
 /// A change to a user, run in the background.
 enum Req {
-    Add(String, String, bool),
+    Add(String, String, bool, String),
+    Rename(String, String),
     SetAdmin(String, bool),
     Password(String, String),
     Logout(String),
@@ -34,9 +38,18 @@ enum Req {
 impl Req {
     fn run(self, c: &Client) -> Result<Done> {
         Ok(Done::msg(match self {
-            Req::Add(name, pass, admin) => {
-                c.admin_add_user(&name, &pass, admin)?;
+            Req::Add(name, pass, admin, display) => {
+                c.admin_add_user(&name, &pass, admin, Some(&display))?;
                 format!("Added {name}.")
+            }
+            Req::Rename(name, display) => {
+                let body = serde_json::json!({ "display_name": display.trim() });
+                c.admin_call(
+                    "PATCH",
+                    &format!("users/{}", crate::api::encode_segment(&name)),
+                    Some(&body),
+                )?;
+                format!("{name} is now shown as {}.", display.trim())
             }
             Req::SetAdmin(name, admin) => {
                 c.admin_update_user(&name, None, Some(admin))?;
@@ -104,7 +117,9 @@ impl State {
             list,
             confirm_delete,
             reset,
+            rename,
             new_name,
+            new_display,
             new_pass,
             new_admin,
         } = self;
@@ -125,7 +140,7 @@ impl State {
                 };
                 for u in users {
                     let you = u.name.to_lowercase() == cx.me;
-                    if let Some(r) = user_row(ui, u, you, busy, confirm_delete, reset) {
+                    if let Some(r) = user_row(ui, u, you, busy, confirm_delete, reset, rename) {
                         *req = Some(r);
                     }
                     ui.add_space(8.0);
@@ -137,6 +152,9 @@ impl State {
                     ui.add_space(10.0);
                     ui.label(mono("Username", 11.0).color(MUTED));
                     text_field(ui, new_name, "", false);
+                    ui.add_space(4.0);
+                    ui.label(mono("Display name (optional)", 11.0).color(MUTED));
+                    text_field(ui, new_display, "", false);
                     ui.add_space(4.0);
                     ui.label(mono("Password", 11.0).color(MUTED));
                     let p = text_field(ui, new_pass, "", true);
@@ -153,6 +171,7 @@ impl State {
                             new_name.trim().to_owned(),
                             std::mem::take(new_pass),
                             *new_admin,
+                            std::mem::take(new_display),
                         ));
                         new_name.clear();
                         *new_admin = false;
@@ -197,6 +216,7 @@ fn user_row(
     busy: bool,
     confirm_delete: &mut Option<String>,
     reset: &mut Option<(String, String)>,
+    rename: &mut Option<(String, String)>,
 ) -> Option<Req> {
     let mut req = None;
     egui::Frame::new()
@@ -212,7 +232,14 @@ fn user_row(
                 ui.vertical(|ui| {
                     ui.spacing_mut().item_spacing.y = 2.0;
                     ui.horizontal(|ui| {
-                        ui.label(bold(&u.name, 15.0));
+                        let shown = u
+                            .display_name
+                            .as_deref()
+                            .filter(|d| !d.is_empty() && *d != u.name);
+                        ui.label(bold(shown.unwrap_or(&u.name), 15.0));
+                        if shown.is_some() {
+                            ui.label(mono(format!("@{}", u.name), 10.0).color(MUTED));
+                        }
                         if you {
                             ui.label(mono("YOU", 10.0).color(TEAL));
                         }
@@ -233,6 +260,12 @@ fn user_row(
                             egui::PopupCloseBehavior::CloseOnClickOutside,
                             |ui| {
                                 ui.set_min_width(220.0);
+                                if menu_item(ui, "Change display name") {
+                                    let d =
+                                        u.display_name.clone().unwrap_or_else(|| u.name.clone());
+                                    *rename = Some((u.name.clone(), d));
+                                    ui.memory_mut(|m| m.close_popup());
+                                }
                                 if menu_item(ui, "Reset password") {
                                     *reset = Some((u.name.clone(), String::new()));
                                     ui.memory_mut(|m| m.close_popup());
@@ -286,6 +319,28 @@ fn user_row(
                         *confirm_delete = None;
                     }
                 });
+            }
+
+            if let Some((name, display)) = rename.as_mut().filter(|(n, _)| *n == u.name) {
+                ui.add_space(10.0);
+                ui.label(mono("Display name", 11.0).color(MUTED));
+                let f = text_field(ui, display, "", false);
+                ui.add_space(6.0);
+                let enter = f.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                let mut close = false;
+                ui.horizontal(|ui| {
+                    let ok = !busy && !display.trim().is_empty();
+                    if primary_button(ui, "Save name", ok).clicked() || (ok && enter) {
+                        req = Some(Req::Rename(name.clone(), display.clone()));
+                        close = true;
+                    }
+                    if small_button(ui, "Cancel").clicked() {
+                        close = true;
+                    }
+                });
+                if close {
+                    *rename = None;
+                }
             }
 
             if let Some((name, pass)) = reset.as_mut().filter(|(n, _)| *n == u.name) {

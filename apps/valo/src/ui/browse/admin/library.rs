@@ -1,5 +1,7 @@
 //! Admin › Library: edit a title's details and artwork by hand, or fetch
 //! them from IMDb and check them before saving.
+mod extras;
+
 use std::path::Path;
 
 use anyhow::{Context, Result};
@@ -203,8 +205,26 @@ impl Form {
     }
 }
 
+/// The editor's tabs.
+#[derive(Clone, Copy, PartialEq, Default)]
+enum Tab {
+    #[default]
+    Details,
+    Images,
+    Files,
+    Subtitles,
+    Episodes,
+}
+
 #[derive(Default)]
 pub(in super::super) struct State {
+    tab: Tab,
+    /// Subtitles, TMDB matches and episode edits for the open title.
+    extras: extras::Extras,
+    /// Only titles missing subtitles.
+    subs_only: bool,
+    /// Language for the bulk subtitle download.
+    bulk_lang: String,
     /// Saving or fetching said the server doesn't have this part.
     pub missing: bool,
     kind: Kind,
@@ -236,12 +256,17 @@ impl State {
         self.error = None;
         self.search.clear();
         self.detail = Remote::default(); // load the server's full record
+        self.extras.reset();
+        if i.kind == Kind::Movie && self.tab == Tab::Episodes {
+            self.tab = Tab::Details;
+        }
     }
 
     /// Load the open title again (after a save, or Refresh).
     pub fn refresh(&mut self) {
         self.missing = false;
         self.detail.retry();
+        self.extras.refresh();
     }
 
     /// The open title: the server's full record once it's here, else the
@@ -357,6 +382,13 @@ impl State {
         text_field(ui, &mut self.search, "Search titles", false);
         ui.add_space(6.0);
         ui.checkbox(&mut self.attention, "Only titles missing something");
+        let knows_subs = cx
+            .titles(self.kind)
+            .iter()
+            .any(|i| i.has_subtitles.is_some() || i.missing_subtitles.is_some());
+        if knows_subs {
+            ui.checkbox(&mut self.subs_only, "Only titles missing subtitles");
+        }
         ui.add_space(8.0);
         if !cx.catalog {
             needs_note(
@@ -373,7 +405,46 @@ impl State {
             .iter()
             .filter(|i| q.is_empty() || i.title.to_lowercase().contains(&q))
             .filter(|i| !self.attention || !gaps(i).is_empty())
+            .filter(|i| !self.subs_only || !knows_subs || no_subs(i))
             .collect();
+        if self.subs_only && knows_subs && !shown.is_empty() {
+            if self.bulk_lang.is_empty() {
+                self.bulk_lang = "en".into();
+            }
+            ui.horizontal(|ui| {
+                ui.add_sized(
+                    [56.0, 30.0],
+                    egui::TextEdit::singleline(&mut self.bulk_lang)
+                        .margin(egui::Margin::symmetric(8, 6)),
+                );
+                let label = format!("Download subtitles for these {}", shown.len());
+                if ui
+                    .add_enabled_ui(!cx.busy, |ui| small_button(ui, &label))
+                    .inner
+                    .clicked()
+                {
+                    let kind = if self.kind == Kind::Movie {
+                        "movies"
+                    } else {
+                        "series"
+                    };
+                    let ids: Vec<String> = shown.iter().map(|i| i.server_id().to_owned()).collect();
+                    let lang = self.bulk_lang.trim().to_owned();
+                    cx.run(move |c| {
+                        let body =
+                            serde_json::json!({ "type": kind, "ids": ids, "language": lang });
+                        c.admin_call("POST", "subtitles/bulk", Some(&body))?;
+                        Ok(Done {
+                            msg: "Downloading subtitles; follow the live log on the Dashboard."
+                                .into(),
+                            library: true,
+                            ..Default::default()
+                        })
+                    });
+                }
+            });
+            ui.add_space(6.0);
+        }
         egui::Frame::new()
             .stroke(Stroke::new(1.0f32, LINE))
             .corner_radius(8)
@@ -500,129 +571,174 @@ impl State {
         }
 
         let series = item.kind == Kind::Series;
+        let mut tabs = vec![
+            (Tab::Details, "Details", None),
+            (Tab::Images, "Images", None),
+            (Tab::Files, "Files", None),
+            (Tab::Subtitles, "Subtitles", None),
+        ];
+        if series {
+            tabs.push((Tab::Episodes, "Episodes", None));
+        }
+        segmented(ui, &mut self.tab, &tabs);
+        ui.add_space(14.0);
+        match self.tab {
+            Tab::Files => return self.files_tab(ui, cx, item),
+            Tab::Subtitles => return self.subtitles_tab(ui, cx, item),
+            Tab::Episodes => return self.episodes_tab(ui, cx, item),
+            Tab::Details | Tab::Images => {}
+        }
+        let details = self.tab == Tab::Details;
         let f = &mut self.form;
-        panel(ui, |ui| {
-            caps(ui, "Details", TEAL);
-            ui.add_space(8.0);
-            field(ui, "Title", &mut f.title, "");
-            pair(
-                ui,
-                ("Year", &mut f.year, "2010"),
-                ("IMDb ID", &mut f.imdb_id, "tt1375666"),
-            );
-            ui.label(mono("Overview", 10.5).color(MUTED));
-            ui.add(
-                egui::TextEdit::multiline(&mut f.overview)
-                    .desired_rows(4)
-                    .desired_width(f32::INFINITY)
-                    .margin(egui::Margin::symmetric(10, 8)),
-            );
-            ui.add_space(6.0);
-            field(
-                ui,
-                "Genres (comma-separated)",
-                &mut f.genres,
-                "Action, Sci-Fi",
-            );
-            if series {
-                field(ui, "Creators (comma-separated)", &mut f.maker, "");
+        if details {
+            panel(ui, |ui| {
+                caps(ui, "Details", TEAL);
+                ui.add_space(8.0);
+                field(ui, "Title", &mut f.title, "");
                 pair(
                     ui,
-                    ("Network", &mut f.network, "HBO"),
-                    ("Status", &mut f.status, "Ended"),
+                    ("Year", &mut f.year, "2010"),
+                    ("IMDb ID", &mut f.imdb_id, "tt1375666"),
                 );
+                ui.label(mono("Overview", 10.5).color(MUTED));
+                ui.add(
+                    egui::TextEdit::multiline(&mut f.overview)
+                        .desired_rows(4)
+                        .desired_width(f32::INFINITY)
+                        .margin(egui::Margin::symmetric(10, 8)),
+                );
+                ui.add_space(6.0);
+                field(
+                    ui,
+                    "Genres (comma-separated)",
+                    &mut f.genres,
+                    "Action, Sci-Fi",
+                );
+                if series {
+                    field(ui, "Creators (comma-separated)", &mut f.maker, "");
+                    pair(
+                        ui,
+                        ("Network", &mut f.network, "HBO"),
+                        ("Status", &mut f.status, "Ended"),
+                    );
+                    pair(
+                        ui,
+                        ("First aired", &mut f.released, "YYYY-MM-DD"),
+                        ("Last year", &mut f.end_year, "2024"),
+                    );
+                } else {
+                    field(ui, "Director", &mut f.maker, "");
+                    pair(
+                        ui,
+                        ("Released", &mut f.released, "YYYY-MM-DD"),
+                        ("Age rating", &mut f.rating, "PG-13"),
+                    );
+                }
                 pair(
                     ui,
-                    ("First aired", &mut f.released, "YYYY-MM-DD"),
-                    ("Last year", &mut f.end_year, "2024"),
+                    ("Score (out of 10)", &mut f.score, "7.4"),
+                    ("", &mut String::new(), ""),
                 );
-            } else {
-                field(ui, "Director", &mut f.maker, "");
-                pair(
-                    ui,
-                    ("Released", &mut f.released, "YYYY-MM-DD"),
-                    ("Age rating", &mut f.rating, "PG-13"),
-                );
-            }
-            pair(
-                ui,
-                ("Score (out of 10)", &mut f.score, "7.4"),
-                ("", &mut String::new(), ""),
-            );
-            if series {
-                field(ui, "Age rating", &mut f.rating, "TV-MA");
-            }
-        });
-        ui.add_space(16.0);
+                if series {
+                    field(ui, "Age rating", &mut f.rating, "TV-MA");
+                }
+                if !item.locked.is_empty() {
+                    ui.add_space(6.0);
+                    ui.label(
+                        RichText::new(format!(
+                            "Kept as edited, so syncs leave them alone: {}",
+                            item.locked.join(", ")
+                        ))
+                        .small()
+                        .color(MUTED),
+                    );
+                }
+            });
+            ui.add_space(16.0);
+        }
 
         let mut upload = None;
-        panel(ui, |ui| {
-            caps(ui, "Artwork", TEAL);
-            ui.add_space(4.0);
-            ui.label(
+        let mut refetch = false;
+        if !details {
+            panel(ui, |ui| {
+                caps(ui, "Artwork", TEAL);
+                ui.add_space(4.0);
+                if ui
+                    .add_enabled_ui(!busy, |ui| small_button(ui, "Refetch missing images"))
+                    .inner
+                    .on_hover_text(
+                        "Downloads only the ones this title doesn't have; existing images are kept",
+                    )
+                    .clicked()
+                {
+                    refetch = true;
+                }
+                ui.add_space(4.0);
+                ui.label(
                 RichText::new("Paste an image address (the server downloads it when you save), or upload a file.")
                     .small()
                     .color(MUTED),
             );
-            ui.add_space(8.0);
-            for (which, label, hint, url) in [
-                ("poster", "Poster", "2:3, shown on tiles", &mut f.poster),
-                (
-                    "backdrop",
-                    "Backdrop",
-                    "16:9, behind the details page",
-                    &mut f.backdrop,
-                ),
-                (
-                    "thumb",
-                    "Thumbnail",
-                    "16:9 with the title, for wide cards like Continue watching",
-                    &mut f.thumb,
-                ),
-                (
-                    "logo",
-                    "Logo",
-                    "transparent PNG, replaces the title text",
-                    &mut f.logo,
-                ),
-            ] {
-                ui.horizontal_top(|ui| {
-                    let size = if which == "poster" {
-                        vec2(80.0, 120.0)
-                    } else {
-                        vec2(160.0, 90.0)
-                    };
-                    art_preview(ui, cx, url.trim(), size, which == "logo");
-                    ui.add_space(12.0);
-                    ui.vertical(|ui| {
-                        ui.label(mono(label, 10.5).color(MUTED));
-                        ui.label(RichText::new(hint).small().color(MUTED));
-                        ui.add_space(4.0);
-                        ui.add(
-                            egui::TextEdit::singleline(url)
-                                .hint_text("https://…")
-                                .desired_width(f32::INFINITY)
-                                .margin(egui::Margin::symmetric(10, 8)),
-                        );
-                        ui.add_space(4.0);
-                        ui.horizontal(|ui| {
-                            if ui
-                                .add_enabled_ui(!busy, |ui| small_button(ui, "Upload…"))
-                                .inner
-                                .clicked()
-                            {
-                                upload = Some(which);
-                            }
-                            if !url.trim().is_empty() && small_button(ui, "Remove").clicked() {
-                                url.clear();
-                            }
+                ui.add_space(8.0);
+                for (which, label, hint, url) in [
+                    ("poster", "Poster", "2:3, shown on tiles", &mut f.poster),
+                    (
+                        "backdrop",
+                        "Backdrop",
+                        "16:9, behind the details page",
+                        &mut f.backdrop,
+                    ),
+                    (
+                        "thumb",
+                        "Thumbnail",
+                        "16:9 with the title, for wide cards like Continue watching",
+                        &mut f.thumb,
+                    ),
+                    (
+                        "logo",
+                        "Logo",
+                        "transparent PNG, replaces the title text",
+                        &mut f.logo,
+                    ),
+                ] {
+                    ui.horizontal_top(|ui| {
+                        let size = if which == "poster" {
+                            vec2(80.0, 120.0)
+                        } else {
+                            vec2(160.0, 90.0)
+                        };
+                        art_preview(ui, cx, url.trim(), size, which == "logo");
+                        ui.add_space(12.0);
+                        ui.vertical(|ui| {
+                            ui.label(mono(label, 10.5).color(MUTED));
+                            ui.label(RichText::new(hint).small().color(MUTED));
+                            ui.add_space(4.0);
+                            ui.add(
+                                egui::TextEdit::singleline(url)
+                                    .hint_text("https://…")
+                                    .desired_width(f32::INFINITY)
+                                    .margin(egui::Margin::symmetric(10, 8)),
+                            );
+                            ui.add_space(4.0);
+                            ui.horizontal(|ui| {
+                                if ui
+                                    .add_enabled_ui(!busy, |ui| small_button(ui, "Upload…"))
+                                    .inner
+                                    .clicked()
+                                {
+                                    upload = Some(which);
+                                }
+                                if !url.trim().is_empty() && small_button(ui, "Remove").clicked() {
+                                    url.clear();
+                                }
+                            });
                         });
                     });
-                });
-                ui.add_space(14.0);
-            }
-        });
-        ui.add_space(16.0);
+                    ui.add_space(14.0);
+                }
+            });
+            ui.add_space(16.0);
+        }
 
         if let Some(e) = &self.error {
             ui.label(RichText::new(e).color(ERROR));
@@ -667,6 +783,28 @@ impl State {
             }
         });
 
+        if refetch {
+            let it = item.clone();
+            let old: Vec<String> = [&item.poster, &item.backdrop, &item.thumb, &item.logo]
+                .into_iter()
+                .flatten()
+                .cloned()
+                .collect();
+            cx.run(move |c| {
+                let path = crate::api::Client::item_path(&it);
+                let r = c.admin_call("POST", &format!("{path}/art/refetch"), None)?;
+                let n = |k: &str| r.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+                Ok(Done {
+                    msg: format!("Downloaded {} images, kept {}.", n("downloaded"), n("kept")),
+                    library: true,
+                    forget: old,
+                })
+            });
+        }
+        if details {
+            self.match_and_delete(ui, cx, item);
+        }
+
         if let Some(which) = upload {
             if let Some(path) = rfd::FileDialog::new()
                 .add_filter("Image", &["jpg", "jpeg", "png", "webp"])
@@ -693,6 +831,11 @@ impl State {
             }
         }
     }
+}
+
+/// The server says the title (or some of its episodes) has no subtitles.
+fn no_subs(i: &Item) -> bool {
+    i.has_subtitles == Some(false) || i.missing_subtitles.is_some_and(|n| n > 0)
 }
 
 /// What a title is missing, for the list and the editor.

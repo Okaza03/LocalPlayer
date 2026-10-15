@@ -55,6 +55,8 @@ pub(in super::super) struct State {
     report: Option<(&'static str, SyncReport)>,
     sync_error: Option<String>,
     sync_missing: bool,
+    /// Asking "write the folder sync's changes?".
+    confirm_apply: bool,
     /// The health row that's open.
     open: Option<String>,
 }
@@ -162,29 +164,35 @@ impl State {
                     .filter_map(|f| f.size)
             })
             .sum();
+        // any other numbers the server counts, as more tiles
+        let extra: Vec<(String, String)> = srv
+            .extra
+            .iter()
+            .filter_map(|(k, v)| Some((v.as_f64()?, k)))
+            .map(|(v, k)| (format!("{v}"), tile_label(k)))
+            .collect();
         padded(ui, |ui| {
-            stats(
-                ui,
-                &[
-                    (num(srv.movies, cx.movies.len()), "Movies"),
-                    (num(srv.series, cx.series.len()), "Series"),
-                    (num(srv.episodes, episodes), "Episodes"),
-                    (
-                        match srv.size.unwrap_or(size) {
-                            0 => "—".into(),
-                            n => bytes(n),
-                        },
-                        "Library size",
-                    ),
-                    (
-                        srv.users
-                            .map(|n| n.to_string())
-                            .or(cx.users.map(|n| n.to_string()))
-                            .unwrap_or_else(|| "—".into()),
-                        "Users",
-                    ),
-                ],
-            );
+            let mut tiles: Vec<(String, &str)> = vec![
+                (num(srv.movies, cx.movies.len()), "Movies"),
+                (num(srv.series, cx.series.len()), "Series"),
+                (num(srv.episodes, episodes), "Episodes"),
+                (
+                    match srv.size.unwrap_or(size) {
+                        0 => "—".into(),
+                        n => bytes(n),
+                    },
+                    "Library size",
+                ),
+                (
+                    srv.users
+                        .map(|n| n.to_string())
+                        .or(cx.users.map(|n| n.to_string()))
+                        .unwrap_or_else(|| "—".into()),
+                    "Users",
+                ),
+            ];
+            tiles.extend(extra.iter().map(|(v, l)| (v.clone(), l.as_str())));
+            stats(ui, &tiles);
         });
         ui.add_space(10.0);
 
@@ -397,6 +405,7 @@ impl State {
     }
 
     fn syncs(&mut self, ui: &mut Ui, cx: &mut Cx) {
+        let mut apply = false;
         panel(ui, |ui| {
             caps(ui, "Sync operations", TEAL);
             ui.add_space(10.0);
@@ -498,6 +507,36 @@ impl State {
                             }
                         });
                 }
+                // a dry run with changes: offer to write them
+                let changes = rep.added.len() + rep.removed.len();
+                if *what == "folders" && !rep.applied && changes > 0 {
+                    ui.add_space(8.0);
+                    if self.confirm_apply {
+                        ui.label(
+                            RichText::new(format!(
+                                "Write these {changes} changes to the database? Removed files \
+                                 lose their entries, watch progress included."
+                            ))
+                            .color(TEXT),
+                        );
+                        ui.horizontal(|ui| {
+                            if ui
+                                .add_enabled_ui(self.syncing.is_none(), |ui| {
+                                    super::users::danger_button(ui, "Apply changes")
+                                })
+                                .inner
+                                .clicked()
+                            {
+                                apply = true;
+                            }
+                            if small_button(ui, "Cancel").clicked() {
+                                self.confirm_apply = false;
+                            }
+                        });
+                    } else if small_button(ui, "Apply these changes…").clicked() {
+                        self.confirm_apply = true;
+                    }
+                }
                 if rep.added.is_empty()
                     && rep.removed.is_empty()
                     && rep.updated.is_empty()
@@ -510,6 +549,15 @@ impl State {
                 }
             }
         });
+        if apply {
+            self.confirm_apply = false;
+            let c = cx.client.clone();
+            self.sync_error = None;
+            self.syncing = Some((
+                "folders",
+                Task::spawn(&cx.ctx, move || c.admin_sync("folders?apply=1")),
+            ));
+        }
     }
 
     fn log(&mut self, ui: &mut Ui) {
@@ -610,6 +658,17 @@ fn checks() -> [Check; 5] {
         ("Missing year", |i| i.year.is_none()),
         ("Missing genres", |i| i.genres.is_empty()),
     ]
+}
+
+/// "mp4" -> "MP4", "series_complete" -> "Series complete".
+fn tile_label(key: &str) -> String {
+    if key.len() <= 4 && !key.contains('_') {
+        return key.to_uppercase();
+    }
+    let words = key.replace('_', " ");
+    let mut c = words.chars();
+    c.next()
+        .map_or(String::new(), |f| f.to_uppercase().chain(c).collect())
 }
 
 /// "3d 4h", "5h 12m", "8m"

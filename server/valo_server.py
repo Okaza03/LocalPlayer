@@ -338,7 +338,7 @@ class Library:
             e["id"][2:] for s in data["series"] for se in s["seasons"] for e in se["episodes"]
         }
 
-    def sync(self, what):
+    def sync(self, what, apply=False):
         """Compare the folders with the cached library; apply for movies/series."""
         with self.lock:
             old = self.cache or self.scan()
@@ -349,8 +349,11 @@ class Library:
                 a, b = self.files(old, k), self.files(fresh, k)
                 added += sorted(b - a)
                 removed += sorted(a - b)
-            if what == "folders":
+            if what == "folders" and not apply:
                 return {"added": added, "removed": removed, "applied": False}
+            if what == "folders":
+                self.cache, self.stamp = fresh, time.time()
+                return {"added": added, "removed": removed, "applied": True}
             new = dict(old)
             new[what] = fresh[what]
             self.cache, self.stamp = new, time.time()
@@ -630,13 +633,15 @@ class Users:
         path.write_text(json.dumps(data, indent=2))
         path.chmod(0o600)
 
-    def add(self, name, password, admin=False):
+    def add(self, name, password, admin=False, display_name=None):
         salt = secrets.token_hex(16)
         self.users[name] = {
             "salt": salt,
             "hash": self.hash(password, salt),
             "admin": admin,
         }
+        if display_name:
+            self.users[name]["display_name"] = display_name
         self.save("users.json", self.users)
 
     def login(self, name, password, device=None, ip=None):
@@ -734,6 +739,7 @@ class Users:
         return [
             {
                 "name": n,
+                "display_name": self.users[n].get("display_name"),
                 "admin": self.is_admin(n),
                 "sessions": sessions.get(n, 0),
                 "last_active": max(
@@ -1044,7 +1050,7 @@ def make_handler(lib, users, progress, name, cols, reqs, omdb_key=None, bot_toke
                 if parts[1] not in ("folders", "movies", "series"):
                     return self.send_json({"error": "not found"}, 404)
                 log(f"sync {parts[1]} started by {user}")
-                r = lib.sync(parts[1])
+                r = lib.sync(parts[1], apply=self.query().get("apply") == "1")
                 log(f"sync {parts[1]}: {len(r['added'])} new, {len(r['removed'])} removed"
                     + ("" if r["applied"] else " (dry run)"))
                 return self.send_json(r)
@@ -1129,7 +1135,8 @@ def make_handler(lib, users, progress, name, cols, reqs, omdb_key=None, bot_toke
                     )
                 if name in users.users:
                     return self.send_json({"error": f"{name} already exists"}, 409)
-                users.add(name, password, bool(req.get("admin")))
+                display = str(req.get("display_name") or "").strip()[:64] or None
+                users.add(name, password, bool(req.get("admin")), display)
                 return self.send_json({"name": name}, 201)
             if len(parts) < 2 or parts[0] != "users":
                 return self.send_json({"error": "not found"}, 404)
@@ -1151,6 +1158,9 @@ def make_handler(lib, users, progress, name, cols, reqs, omdb_key=None, bot_toke
                     users.set_admin(name, bool(req["admin"]))
                 if req.get("password"):
                     users.set_password(name, str(req["password"]))
+                if "display_name" in req:
+                    users.users[name]["display_name"] = str(req["display_name"] or "").strip()[:64] or None
+                    users.save("users.json", users.users)
                 return self.send_json({})
             if method == "DELETE":
                 if last_admin:

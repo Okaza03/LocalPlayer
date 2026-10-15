@@ -2,7 +2,7 @@
 
 [← Back to the API guide](README.md)
 
-The app's Admin page has a sidebar with six sections. Each one needs its own endpoints, and all of them are optional: a section the server doesn't support says _Not set up_ and links to its guide.
+The app's Admin page has a sidebar of sections. Each one needs its own endpoints, and all of them are optional: a section the server doesn't support says _Not set up_ and links to its guide.
 
 | Section     | What it does                                                              | Guide                                       |
 | ----------- | ------------------------------------------------------------------------- | ------------------------------------------- |
@@ -11,9 +11,10 @@ The app's Admin page has a sidebar with six sections. Each one needs its own end
 | Requests    | Titles people asked for through a Discord bot                             | [Requests and the Discord bot](admin-requests.md) |
 | Library     | Edit a title's details and artwork, fetch them from IMDb                  | [Library editing](admin-library.md)         |
 | Collections | Group titles so A to Z keeps them together, in an order the admin picks   | [Collections](admin-collections.md)         |
+| Transcode   | Convert files that don't play smoothly everywhere to MP4, with a log      | [Transcode](admin-transcode.md)             |
 | Users       | List, add and remove users, admin rights, passwords, sign out everywhere  | this page                                   |
 
-This page covers the Users section and the rules every admin endpoint follows. The library numbers and health checks on the Dashboard work with no admin endpoints at all; they come from the library.
+The sidebar has seven sections. This page covers the Users section and the rules every admin endpoint follows. The library numbers and health checks on the Dashboard work with no admin endpoints at all; they come from the library.
 
 The bundled [reference server](setup.md) has all of it.
 
@@ -32,8 +33,8 @@ The app shows the Admin page when [`/api/login`](auth.md#post-apilogin-required-
 | Request                               | Body                                                 | Answer                                                                          |
 | ------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------- |
 | `GET /api/admin/users`                |                                                      | `[{"name": "user", "admin": false, "sessions": 2, "last_active": 1760400000}]`  |
-| `POST /api/admin/users`               | `{"username": "…", "password": "…", "admin": false}` | `201`; `409` or `422` when the name is taken, `422` when a field is missing     |
-| `PATCH /api/admin/users/<name>`       | `{"admin": true}` and/or `{"password": "…"}`         | `200`. A new password ends the user's sessions                                  |
+| `POST /api/admin/users`               | `{"username": "…", "password": "…", "admin": false, "display_name": "…"}` | `201`; `409` or `422` when the name is taken, `422` when a field is missing     |
+| `PATCH /api/admin/users/<name>`       | `{"admin": true}`, `{"password": "…"}` and/or `{"display_name": "…"}` | `200`. A new password ends the user's sessions                                  |
 | `DELETE /api/admin/users/<name>`      |                                                      | `200`                                                                           |
 | `POST /api/admin/users/<name>/logout` |                                                      | `200`: every session of that user ends                                          |
 | `POST /api/admin/rescan`              |                                                      | `{"movies": 12, "series": 3, "episodes": 80}`: read the media folders again now |
@@ -56,6 +57,7 @@ The app shows the Admin page when [`/api/login`](auth.md#post-apilogin-required-
 | `name`        | string      | **required** | The username, used in the URLs below                                                              |
 | `admin`       | bool        |              | Shown as _Admin_ or _User_. Missing counts as `false`                                             |
 | `sessions`    | int         |              | How many devices are signed in (active tokens)                                                    |
+| `display_name` | string     |              | Shown instead of the username when set; the username goes under it as `@name` |
 | `last_active` | int or null |              | Unix time the user was last active: their last saved watch progress or last token use, whichever is later. `null` if never |
 
 This is also how the app finds out the server has an admin API at all: without it, the Admin page says the server can't be managed from the app.
@@ -69,6 +71,7 @@ Adds a user.
 | `username` | string | **required** | Also used as the display name       |
 | `password` | string | **required** |                                     |
 | `admin`    | bool   |              | Defaults to `false`                 |
+| `display_name` | string |          | Optional; defaults to the username  |
 
 `201` on success. The body is ignored; returning the new user in the list shape is a good choice. `409` or `422` with a message when the username is taken, `422` when a field is missing or too short (for example `{"message": "That username is already taken"}`). Length rules are up to you; put them in the message.
 
@@ -76,7 +79,7 @@ Users created here must be able to sign in from the app right away. The app has 
 
 ## `PATCH /api/admin/users/<name>`
 
-Changes a user. The body has `admin`, `password`, or both:
+Changes a user. The body has any of `admin`, `password` and `display_name`:
 
 ```json
 { "admin": true }

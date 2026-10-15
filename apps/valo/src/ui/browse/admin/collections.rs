@@ -111,7 +111,7 @@ impl State {
             ui,
             &mut (&mut *self, &mut *cx),
             |ui, (st, cx)| st.editor(ui, cx),
-            |ui, (st, _)| {
+            |ui, (st, cx)| {
                 let st = &mut **st;
                 panel(ui, |ui| {
                     caps(ui, "Collections", TEAL);
@@ -130,9 +130,30 @@ impl State {
                         }
                     }
                     ui.add_space(10.0);
-                    if small_button(ui, "New collection").clicked() {
-                        new = true;
-                    }
+                    ui.horizontal(|ui| {
+                        if small_button(ui, "New collection").clicked() {
+                            new = true;
+                        }
+                        let b = ui
+                            .add_enabled_ui(!cx.busy, |ui| small_button(ui, "Detect from TMDB"))
+                            .inner
+                            .on_hover_text("Make collections from TMDB's (Batman, Harry Potter, …) for every title");
+                        if b.clicked() {
+                            cx.run(|c| {
+                                let r = c.admin_call("POST", "collections/detect", None)?;
+                                let n = |k: &str| r.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+                                Ok(Done {
+                                    msg: format!(
+                                        "Detected collections: {} new, {} updated.",
+                                        n("created"),
+                                        n("updated")
+                                    ),
+                                    library: true,
+                                    ..Default::default()
+                                })
+                            });
+                        }
+                    });
                 });
             },
         );
