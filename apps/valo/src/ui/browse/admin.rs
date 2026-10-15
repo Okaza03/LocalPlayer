@@ -145,6 +145,14 @@ impl<T: Send + 'static> Remote<T> {
         self.data.is_none() && self.task.is_none() && self.error.is_none() && !self.missing
     }
 
+    /// Time to load: never loaded, or asked to load again with [`retry`](Self::retry).
+    pub fn due(&self) -> bool {
+        self.task.is_none()
+            && self.error.is_none()
+            && !self.missing
+            && (self.data.is_none() || self.at.is_none())
+    }
+
     /// Older than `secs` (and not loading): time to load again.
     pub fn stale(&self, secs: u64) -> bool {
         self.task.is_none() && self.at.is_none_or(|t| t.elapsed().as_secs() >= secs)
@@ -630,4 +638,22 @@ fn nav_item(ui: &mut Ui, label: &str, badge: Option<&str>, selected: bool) -> bo
     }
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
         .clicked()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Remote;
+
+    #[test]
+    fn reloads_after_retry_even_with_data() {
+        let mut r: Remote<u32> = Remote::default();
+        assert!(r.due()); // never loaded
+        r.data = Some(1);
+        r.at = Some(std::time::Instant::now());
+        assert!(!r.due()); // loaded, fresh
+        r.retry(); // e.g. after a save
+        assert!(r.due() && r.data == Some(1)); // reloads, keeps showing the old data meanwhile
+        r.missing = true;
+        assert!(!r.due()); // the server doesn't have it: don't ask again
+    }
 }

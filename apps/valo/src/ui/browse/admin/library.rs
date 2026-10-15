@@ -297,7 +297,7 @@ impl State {
         }
         // the server's full record; without the endpoint, the list's copy will do
         self.detail.poll(&mut cx.login);
-        if let Some(item) = self.current(cx).filter(|_| self.detail.idle()) {
+        if let Some(item) = self.current(cx).filter(|_| self.detail.due()) {
             let c = cx.client.clone();
             self.detail.load(&cx.ctx, move || c.admin_item(&item));
         }

@@ -90,7 +90,7 @@ impl State {
                 }
             }
         }
-        if self.list.idle() {
+        if self.list.due() {
             let c = cx.client.clone();
             self.list.load(&cx.ctx, move || c.admin_collections());
         }

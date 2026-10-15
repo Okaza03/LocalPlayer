@@ -131,7 +131,7 @@ impl State {
         let x = &mut self.extras;
         x.subs.poll(&mut cx.login);
         x.found.poll(&mut cx.login);
-        if x.subs.idle() {
+        if x.subs.due() {
             let (c, p) = (cx.client.clone(), path.clone());
             x.subs
                 .load(&cx.ctx, move || c.admin_get(&format!("{p}/subtitles")));
