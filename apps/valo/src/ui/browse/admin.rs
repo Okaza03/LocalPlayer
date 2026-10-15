@@ -7,7 +7,6 @@ mod collections;
 mod dashboard;
 mod library;
 mod requests;
-mod transcode;
 mod users;
 
 use std::time::Instant;
@@ -33,18 +32,16 @@ pub(super) enum Section {
     Requests,
     Library,
     Collections,
-    Transcode,
     Users,
 }
 
 impl Section {
-    const ALL: [Section; 7] = [
+    const ALL: [Section; 6] = [
         Section::Dashboard,
         Section::Analytics,
         Section::Requests,
         Section::Library,
         Section::Collections,
-        Section::Transcode,
         Section::Users,
     ];
 
@@ -55,7 +52,6 @@ impl Section {
             Section::Requests => "Requests",
             Section::Library => "Library",
             Section::Collections => "Collections",
-            Section::Transcode => "Transcode",
             Section::Users => "Users",
         }
     }
@@ -75,9 +71,6 @@ impl Section {
             Section::Collections => {
                 "Group titles like the Batman films, so A to Z keeps them together, oldest first."
             }
-            Section::Transcode => {
-                "Convert files that don't play smoothly everywhere (MKV, HEVC) to MP4."
-            }
             Section::Users => "Who can sign in, and who can manage the server.",
         }
     }
@@ -90,7 +83,6 @@ impl Section {
             Section::Requests => api::ADMIN_DOCS_REQUESTS,
             Section::Library => api::ADMIN_DOCS_LIBRARY,
             Section::Collections => api::ADMIN_DOCS_COLLECTIONS,
-            Section::Transcode => api::ADMIN_DOCS_TRANSCODE,
             Section::Users => api::ADMIN_API_DOCS,
         }
     }
@@ -111,7 +103,6 @@ impl Section {
                 "the endpoints for editing titles (/api/admin/movies/…, /api/admin/series/…)"
             }
             Section::Collections => "the collection endpoints (/api/admin/collections)",
-            Section::Transcode => "the transcode endpoints (/api/admin/transcode)",
             Section::Users => "Valo's admin API (/api/admin/users)",
         }
     }
@@ -288,7 +279,6 @@ pub(super) struct AdminState {
     requests: requests::State,
     library: library::State,
     collections: collections::State,
-    transcode: transcode::State,
     users: users::State,
     /// The server's own title lists (`GET /api/admin/movies`, `/series`).
     catalog: [Remote<Vec<Item>>; 2],
@@ -303,7 +293,6 @@ impl AdminState {
             Section::Requests => self.requests.refresh(),
             Section::Library => self.library.refresh(),
             Section::Collections => self.collections.refresh(),
-            Section::Transcode => self.transcode.refresh(),
             Section::Users => {}
         }
         self.users.refresh();
@@ -335,7 +324,6 @@ impl AdminState {
             Section::Requests => self.requests.missing(),
             Section::Library => self.library.missing,
             Section::Collections => self.collections.missing(),
-            Section::Transcode => self.transcode.missing(),
             Section::Users => self.users.missing(),
         }
     }
@@ -557,7 +545,6 @@ impl Browse {
             Section::Requests => st.requests.ui(ui, &mut cx),
             Section::Library => st.library.ui(ui, &mut cx),
             Section::Collections => st.collections.ui(ui, &mut cx),
-            Section::Transcode => st.transcode.ui(ui, &mut cx),
             Section::Users => st.users.ui(ui, &mut cx),
         }
         let Cx {

@@ -11,10 +11,9 @@ The app's Admin page has a sidebar of sections. Each one needs its own endpoints
 | Requests    | Titles people asked for through a Discord bot                             | [Requests and the Discord bot](admin-requests.md) |
 | Library     | Edit a title's details and artwork, fetch them from IMDb                  | [Library editing](admin-library.md)         |
 | Collections | Group titles so A to Z keeps them together, in an order the admin picks   | [Collections](admin-collections.md)         |
-| Transcode   | Convert files that don't play smoothly everywhere to MP4, with a log      | [Transcode](admin-transcode.md)             |
 | Users       | List, add and remove users, admin rights, passwords, sign out everywhere  | this page                                   |
 
-The sidebar has seven sections. This page covers the Users section and the rules every admin endpoint follows. The library numbers and health checks on the Dashboard work with no admin endpoints at all; they come from the library.
+This page covers the Users section and the rules every admin endpoint follows. The library numbers and health checks on the Dashboard work with no admin endpoints at all; they come from the library.
 
 The bundled [reference server](setup.md) has all of it.
 

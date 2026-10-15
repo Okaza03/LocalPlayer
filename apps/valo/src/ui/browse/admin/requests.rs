@@ -6,8 +6,8 @@ use eframe::egui::{self, vec2, Align, Layout, RichText, Sense, Stroke, Ui};
 use super::super::details::{caps, padded, panel, TEAL};
 use super::super::people::{ago, columns_with};
 use super::users::danger_button;
-use super::{needs_note, not_set_up, Cx, Done, Remote, Section};
-use crate::api::{Client, JobStatus, Library, MediaRequest};
+use super::{not_set_up, Cx, Done, Remote, Section};
+use crate::api::{Client, Library, MediaRequest};
 use crate::ui::{
     bold, image_cover, menu_item, mono, placeholder, segmented, small_button, text_field,
 };
@@ -45,8 +45,6 @@ pub(in super::super) struct State {
     /// Denying this request, with this reason.
     deny: Option<(String, String)>,
     confirm_delete: Option<String>,
-    /// The bot's library sync (`GET /api/admin/discord/sync-status`).
-    discord: Remote<JobStatus>,
 }
 
 impl State {
@@ -138,7 +136,7 @@ impl State {
                     ui.add_space(8.0);
                 }
             },
-            |ui, (st, cx, _, _)| {
+            |ui, _| {
                 panel(ui, |ui| {
                     caps(ui, "How requests work", TEAL);
                     ui.add_space(8.0);
@@ -155,8 +153,6 @@ impl State {
                         crate::ui::chrome::open_url(Section::Requests.docs());
                     }
                 });
-                ui.add_space(20.0);
-                st.discord_panel(ui, cx);
             },
         );
 
@@ -345,105 +341,6 @@ impl State {
                 }
             });
         answer
-    }
-}
-
-impl State {
-    /// Tell Discord what's in the library: the bot's library sync and announcements.
-    fn discord_panel(&mut self, ui: &mut Ui, cx: &mut Cx) {
-        self.discord.poll(&mut cx.login);
-        let running = self.discord.data.as_ref().is_some_and(|d| d.running);
-        if self.discord.idle() || (running && self.discord.stale(2)) {
-            let c = cx.client.clone();
-            self.discord
-                .load(&cx.ctx, move || c.admin_get("discord/sync-status"));
-        }
-        if running {
-            cx.ctx
-                .request_repaint_after(std::time::Duration::from_secs(2));
-        }
-        panel(ui, |ui| {
-            caps(ui, "Discord", TEAL);
-            ui.add_space(8.0);
-            if self.discord.missing {
-                needs_note(
-                    ui,
-                    "This server can't sync the library to Discord or announce titles yet.",
-                    Section::Requests,
-                );
-                return;
-            }
-            ui.label(
-                RichText::new(
-                    "Sync tells the bot what's in the library, so it can answer \
-                     \"already in the library\" and match requests.",
-                )
-                .small()
-                .color(MUTED),
-            );
-            ui.add_space(6.0);
-            match &self.discord.data {
-                Some(d) if d.running => {
-                    let phase = d.phase.clone().unwrap_or_else(|| "Syncing".into());
-                    ui.label(
-                        RichText::new(format!("{phase}: {} of {}", d.done, d.total)).color(TEXT),
-                    );
-                    if d.total > 0 {
-                        ui.add(
-                            egui::ProgressBar::new(d.done as f32 / d.total as f32)
-                                .desired_height(4.0),
-                        );
-                    }
-                }
-                Some(d) => {
-                    if let Some(e) = &d.error {
-                        ui.label(
-                            RichText::new(format!("Last sync failed: {e}"))
-                                .small()
-                                .color(ERROR),
-                        );
-                    }
-                    let b = ui
-                        .add_enabled_ui(!cx.busy, |ui| small_button(ui, "Sync library to Discord"))
-                        .inner;
-                    if b.clicked() {
-                        cx.run(|c| {
-                            c.admin_call("POST", "discord/sync", Some(&serde_json::json!({})))?;
-                            Ok(Done::msg("Started syncing the library to Discord."))
-                        });
-                        self.discord.retry();
-                    }
-                }
-                None => {
-                    ui.add(egui::Spinner::new().size(14.0).color(MUTED));
-                }
-            }
-            ui.add_space(12.0);
-            ui.label(
-                RichText::new("Post what's in the library to the announcement channel:")
-                    .small()
-                    .color(MUTED),
-            );
-            ui.horizontal(|ui| {
-                for (kind, label) in [("movies", "Movies"), ("series", "Series"), ("both", "Both")]
-                {
-                    if ui
-                        .add_enabled_ui(!cx.busy, |ui| small_button(ui, label))
-                        .inner
-                        .clicked()
-                    {
-                        cx.run(move |c| {
-                            c.admin_call(
-                                "POST",
-                                "discord/announce",
-                                Some(&serde_json::json!({ "type": kind })),
-                            )?;
-                            Ok(Done::msg(format!("Announced {kind} on Discord.")))
-                        });
-                    }
-                }
-            });
-        });
     }
 }
 

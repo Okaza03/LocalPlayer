@@ -97,18 +97,6 @@ Admins only, under the [usual rules](admin.md#rules-for-every-request).
 | `PATCH /api/admin/requests/<id>`     | `{"status": "denied", "note": "No 4K yet"}` | `200`; set `updated` to now. `note` is optional           |
 | `DELETE /api/admin/requests/<id>`    |                                            | `200`. The requester isn't told                           |
 
-### Discord library sync and announcements
-
-Optional. The Requests section has a _Discord_ panel for them; without these endpoints it says the server can't do it yet.
-
-| Request                                   | Body                                   | Answer                                                    |
-| ----------------------------------------- | -------------------------------------- | --------------------------------------------------------- |
-| `GET /api/admin/discord/sync-status`      |                                        | `{"running": false, "phase": "Movies", "done": 120, "total": 468, "error": null}` (`syncing` works for `running`) |
-| `POST /api/admin/discord/sync`            | `{}` for everything, or `{"items": [{"title", "type"}]}` | `202`: tells the bot what's in the library, so it can answer "already in the library" and match requests. `409` with a message while one runs |
-| `POST /api/admin/discord/announce`        | `{"type": "movies"}`, `"series"` or `"both"` | `200`: post the library to the announcement channel (a Discord webhook, or the bot's own channel). `501` with a message when neither is set up |
-
-While a sync runs, the app asks for its status every 2 seconds and shows `phase` and `done` of `total`.
-
 The app checks for new requests every 30 seconds while the Admin page is open and shows how many are pending in the sidebar.
 
 ## 2. Create the Discord bot

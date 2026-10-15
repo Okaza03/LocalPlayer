@@ -751,47 +751,6 @@ pub struct SubtitleResult {
     pub episode: Option<String>,
 }
 
-/// How a long server job is getting on (Discord library sync).
-#[derive(Clone, Debug, Default, Deserialize)]
-#[serde(default)]
-pub struct JobStatus {
-    #[serde(alias = "syncing")]
-    pub running: bool,
-    pub phase: Option<String>,
-    pub done: u64,
-    pub total: u64,
-    pub error: Option<String>,
-}
-
-/// `GET /api/admin/transcode`: files that could be converted for smoother playback.
-#[derive(Clone, Debug, Default, Deserialize)]
-#[serde(default)]
-pub struct Transcode {
-    #[serde(deserialize_with = "null_as_empty")]
-    pub files: Vec<TranscodeFile>,
-    pub running: bool,
-}
-
-#[derive(Clone, Debug, Default, Deserialize)]
-#[serde(default)]
-pub struct TranscodeFile {
-    #[serde(deserialize_with = "id_string")]
-    pub key: String,
-    pub title: String,
-    pub kind: Option<String>,
-    /// Bytes.
-    pub size: Option<u64>,
-    /// "mkv"
-    pub container: Option<String>,
-    pub video_codec: Option<String>,
-    pub audio_codec: Option<String>,
-    /// "idle", "queued", "running", "done", "failed"
-    pub status: String,
-    /// 0 to 1 while running.
-    pub progress: Option<f32>,
-    pub error: Option<String>,
-}
-
 /// A hand-made collection (`GET /api/admin/collections`).
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(default)]
@@ -959,8 +918,6 @@ pub const ADMIN_DOCS_REQUESTS: &str =
     "https://github.com/Okaza03/Valo/blob/main/docs/api/admin-requests.md";
 pub const ADMIN_DOCS_LIBRARY: &str =
     "https://github.com/Okaza03/Valo/blob/main/docs/api/admin-library.md";
-pub const ADMIN_DOCS_TRANSCODE: &str =
-    "https://github.com/Okaza03/Valo/blob/main/docs/api/admin-transcode.md";
 pub const ADMIN_DOCS_COLLECTIONS: &str =
     "https://github.com/Okaza03/Valo/blob/main/docs/api/admin-collections.md";
 
@@ -2124,9 +2081,6 @@ mod tests {
         )
         .unwrap();
         assert_eq!((i.missing_subtitles, i.locked.len()), (Some(3), 1));
-        let j: JobStatus =
-            serde_json::from_str(r#"{"syncing": true, "done": 2, "total": 9}"#).unwrap();
-        assert!(j.running && j.total == 9);
         let a: Analytics = serde_json::from_str(
             r#"{"top": [{"title": "Heat", "kind": "movie", "plays": 3, "users": 2}],
                 "top_rated": [{"title": "Heat", "avg_rating": 8.5, "rating_count": 4}]}"#,
