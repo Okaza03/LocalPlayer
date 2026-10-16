@@ -102,6 +102,15 @@ const NOTES: &[(&str, &[Note])] = &[
             },
         ],
     ),
+    (
+        "0.8.3",
+        &[Note {
+            title: "Subtitles",
+            text: "Pick subtitles from the subtitle button in the player (C turns them on \
+                   and off). The language you pick comes on by itself next time.",
+            admin: false,
+        }],
+    ),
 ];
 
 /// The notes for versions after `seen`, up to `current`.

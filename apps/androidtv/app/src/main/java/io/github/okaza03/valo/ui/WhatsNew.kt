@@ -37,6 +37,9 @@ private val NOTES: List<Pair<String, List<Note>>> = listOf(
         Note("Updates in one go", "Choosing Update downloads the new version and opens the installer right away."),
         Note("What's new", "After an update, this page shows what changed."),
     ),
+    "0.8.3" to listOf(
+        Note("Subtitles", "Subtitles in a movie's or series' Subs folder on the server can be picked with the subtitle button, and the language you pick comes on by itself next time."),
+    ),
 )
 
 /** The notes for versions after `seen`, up to this build; a fallback when none were written. */

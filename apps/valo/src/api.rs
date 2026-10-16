@@ -63,6 +63,9 @@ pub struct Item {
     pub added: Option<i64>,
     /// Movies only.
     pub stream: Option<String>,
+    /// Movies only: subtitle files to pick from in the player.
+    #[serde(deserialize_with = "null_as_empty")]
+    pub subtitles: Vec<SubtitleTrack>,
     /// Series only.
     #[serde(deserialize_with = "null_as_empty")]
     pub seasons: Vec<Season>,
@@ -241,6 +244,37 @@ pub struct Episode {
     /// Audience score out of 10.
     pub score: Option<f32>,
     pub file: Option<FileInfo>,
+    #[serde(deserialize_with = "null_as_empty")]
+    pub subtitles: Vec<SubtitleTrack>,
+}
+
+/// A subtitle file for a movie or episode (`"subtitles"` in the library).
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct SubtitleTrack {
+    #[serde(deserialize_with = "id_string")]
+    pub id: String,
+    /// "en", "nb", …; "und" when unknown.
+    pub language: String,
+    /// "English (SDH)"
+    pub label: Option<String>,
+    /// "srt", "vtt", "ass" or "ssa"; taken from the URL when missing.
+    pub format: Option<String>,
+    /// Only the parts in another language (signs, foreign dialogue).
+    pub forced: bool,
+    /// With sound descriptions, for the deaf and hard of hearing.
+    pub sdh: bool,
+    pub url: String,
+}
+
+impl SubtitleTrack {
+    pub fn label(&self) -> String {
+        match &self.label {
+            Some(l) if !l.trim().is_empty() => l.trim().to_owned(),
+            _ if self.language.is_empty() || self.language == "und" => "Unknown".into(),
+            _ => self.language.clone(),
+        }
+    }
 }
 
 #[derive(Default, Deserialize)]
@@ -285,6 +319,10 @@ impl Item {
             fix(&mut c.photo);
         }
         fix(&mut self.stream);
+        self.subtitles.retain(|t| !t.url.is_empty());
+        for t in &mut self.subtitles {
+            t.url = join(base, &t.url);
+        }
         if self.id.is_empty() {
             self.id = self.stream.clone().unwrap_or_else(|| self.title.clone());
         }
@@ -302,6 +340,10 @@ impl Item {
                 trim_date(&mut e.aired);
                 fix(&mut e.still);
                 e.stream = join(base, &e.stream);
+                e.subtitles.retain(|t| !t.url.is_empty());
+                for t in &mut e.subtitles {
+                    t.url = join(base, &t.url);
+                }
                 if e.id.is_empty() {
                     e.id = e.stream.clone();
                 }

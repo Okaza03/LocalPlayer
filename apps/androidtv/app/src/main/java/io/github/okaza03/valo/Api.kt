@@ -42,6 +42,20 @@ data class FileInfo(
     @SerialName("audio_channels") val audioChannels: Int? = null,
 )
 
+/** A subtitle file for a movie or episode; picked from the player's subtitle button. */
+@Serializable
+data class Subtitle(
+    val id: String = "",
+    /** "en", "nb", …; "und" when unknown. */
+    val language: String = "und",
+    val label: String? = null,
+    /** "srt", "vtt", "ass" or "ssa"; taken from the URL when missing. */
+    val format: String? = null,
+    val forced: Boolean = false,
+    val sdh: Boolean = false,
+    val url: String = "",
+)
+
 @Serializable
 data class Episode(
     /** "episode:<server id>" once the library is loaded. */
@@ -55,6 +69,7 @@ data class Episode(
     val stream: String = "",
     val aired: String? = null,
     val score: Float? = null,
+    val subtitles: List<Subtitle> = emptyList(),
 )
 
 @Serializable
@@ -77,6 +92,8 @@ data class Item(
     val duration: Double? = null,
     val added: Long? = null,
     val stream: String? = null,
+    /** Movies only. */
+    val subtitles: List<Subtitle> = emptyList(),
     val seasons: List<Season> = emptyList(),
     val director: String? = null,
     val creators: List<String> = emptyList(),
@@ -108,19 +125,23 @@ data class Library(val movies: List<Item> = emptyList(), val series: List<Item> 
     /** Resolve relative URLs, tag ids by kind, drop what can't be played. */
     fun finish(base: String): Library {
         fun fix(u: String?) = u?.let { join(base, it) }
+        fun subs(l: List<Subtitle>) = l.filter { it.url.isNotEmpty() }.map { it.copy(url = join(base, it.url)) }
         fun item(it: Item, kind: Kind): Item {
             val stream = fix(it.stream)
             val raw = it.id.ifEmpty { stream ?: it.title }
             // servers often number movies, series and episodes separately
             val tag = if (kind == Kind.Movie) "movie" else "series"
             return it.copy(
-                id = "$tag:$raw", kind = kind, stream = stream,
+                id = "$tag:$raw", kind = kind, stream = stream, subtitles = subs(it.subtitles),
                 poster = fix(it.poster), backdrop = fix(it.backdrop), logo = fix(it.logo),
                 cast = it.cast.map { c -> c.copy(photo = fix(c.photo)) },
                 seasons = it.seasons.sortedBy { s -> s.number }.map { s ->
                     s.copy(episodes = s.episodes.sortedBy { e -> e.number }.map { e ->
                         val es = join(base, e.stream)
-                        e.copy(id = "episode:" + e.id.ifEmpty { es }, stream = es, still = fix(e.still))
+                        e.copy(
+                            id = "episode:" + e.id.ifEmpty { es }, stream = es, still = fix(e.still),
+                            subtitles = subs(e.subtitles),
+                        )
                     })
                 },
             )

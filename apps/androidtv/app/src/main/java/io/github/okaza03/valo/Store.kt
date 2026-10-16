@@ -21,6 +21,11 @@ class Prefs(context: Context) {
         get() = p.getString("user", null)
         set(v) = p.edit().putString("user", v).apply()
 
+    /** Subtitles in this language are turned on by themselves; null = off. */
+    var subtitleLanguage: String?
+        get() = p.getString("subtitle_language", null)
+        set(v) = p.edit().putString("subtitle_language", v).apply()
+
     /** The last version whose "What's new" was shown. */
     var seenVersion: String?
         get() = p.getString("seen_version", null)

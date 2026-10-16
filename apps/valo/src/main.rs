@@ -9,6 +9,7 @@ mod inhibit;
 mod integrate;
 mod player;
 mod presence;
+mod subs;
 mod sync;
 mod ui;
 mod update;

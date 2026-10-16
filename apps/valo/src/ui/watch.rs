@@ -10,10 +10,12 @@ use eframe::egui::{
 use super::chrome::{self, Icon};
 use super::theme::{self, PlayerLayout, Skin, Times, TitleAt};
 use super::{gradient, mono, ERROR, MUTED, TEXT};
+use crate::api::SubtitleTrack;
 use crate::audio::AudioOut;
 use crate::config::{Config, Progress};
 use crate::inhibit::Inhibit;
 use crate::player::{Player, Source};
+use crate::subs::{self, Subs};
 use crate::util::{fmt_time, Task};
 
 const TOP_H: f32 = 64.0;
@@ -57,6 +59,8 @@ pub struct PlayItem {
     pub key: Option<String>,
     /// Resume position in seconds.
     pub start: f64,
+    /// Subtitle files on the server.
+    pub subtitles: Vec<SubtitleTrack>,
 }
 
 impl PlayItem {
@@ -69,9 +73,30 @@ impl PlayItem {
             source,
             key: None,
             start: 0.0,
+            subtitles: Vec::new(),
         }
     }
 }
+
+/// The subtitle track that's on, and its file.
+enum SubState {
+    Off,
+    Loading(usize, Task<Result<Subs>>),
+    Ready(usize, Subs),
+    Failed(usize, String),
+}
+
+impl SubState {
+    fn track(&self) -> Option<usize> {
+        match self {
+            SubState::Off => None,
+            SubState::Loading(i, _) | SubState::Ready(i, _) | SubState::Failed(i, _) => Some(*i),
+        }
+    }
+}
+
+/// A row in the player's menus.
+const MENU_ROW: f32 = 34.0;
 
 /// How long the volume slider stays up after ↑/↓.
 const VOL_SHOW: Duration = Duration::from_secs(3);
@@ -96,6 +121,7 @@ pub struct Watch {
     vol_key: Option<Instant>,
     /// Keeps the screen from blanking or sleeping while playing.
     inhibit: Inhibit,
+    subs: SubState,
 }
 
 impl Watch {
@@ -117,6 +143,7 @@ impl Watch {
             vol_hover: None,
             vol_key: None,
             inhibit: Inhibit::new(),
+            subs: SubState::Off,
         }
     }
 
@@ -159,12 +186,44 @@ impl Watch {
         self.last_save = Instant::now();
     }
 
+    /// Turn on track `t` of the current item (None: off) and fetch its file.
+    fn set_subs(&mut self, ctx: &egui::Context, t: Option<usize>) {
+        let item = self.current.and_then(|i| self.items.get(i));
+        self.subs = match (item, t) {
+            (Some(item), Some(t)) if t < item.subtitles.len() => {
+                let track = item.subtitles[t].clone();
+                let auth = match &item.source {
+                    Source::Url { auth, .. } => auth.clone(),
+                    Source::File(_) => None,
+                };
+                SubState::Loading(
+                    t,
+                    Task::spawn(ctx, move || subs::load(&track, auth.as_deref())),
+                )
+            }
+            _ => SubState::Off,
+        };
+    }
+
+    /// A pick from the menu (or C), remembered for the next video.
+    fn choose_subs(&mut self, ctx: &egui::Context, cfg: &mut Config, t: Option<usize>) {
+        let item = self.current.and_then(|i| self.items.get(i));
+        let track = item.and_then(|it| t.and_then(|t| it.subtitles.get(t)));
+        cfg.subtitle_language = track.map(|tr| tr.language.clone());
+        if let Some(tr) = track {
+            cfg.subtitle_sdh = tr.sdh;
+        }
+        cfg.save();
+        self.set_subs(ctx, t);
+    }
+
     fn open_index(
         &mut self,
         ctx: &egui::Context,
         i: usize,
         audio: &AudioOut,
         progress: &mut Progress,
+        cfg: &Config,
     ) {
         if self.opening.is_some() {
             self.queued = Some(i); // one open at a time; picked up when it lands
@@ -175,6 +234,15 @@ impl Watch {
         self.tex = None;
         self.current = Some(i);
         self.status.clear();
+        let Some(item) = self.items.get(i) else {
+            return;
+        };
+        let t = subs::pick(
+            &item.subtitles,
+            cfg.subtitle_language.as_deref(),
+            cfg.subtitle_sdh,
+        );
+        self.set_subs(ctx, t);
         let Some(item) = self.items.get(i) else {
             return;
         };
@@ -229,7 +297,8 @@ impl Watch {
         progress: &mut Progress,
     ) -> bool {
         let (skip, autoplay) = (f64::from(cfg.skip_seconds.max(1)), cfg.autoplay_next);
-        let volume = &mut cfg.volume;
+        let mut vol = cfg.volume;
+        let volume = &mut vol;
         let now = Instant::now();
         let dt = now.duration_since(self.last_tick).as_secs_f64();
         self.last_tick = now;
@@ -252,9 +321,18 @@ impl Watch {
                 }
             }
         }
+        if let SubState::Loading(t, task) = &mut self.subs {
+            if let Some(r) = task.poll() {
+                let t = *t;
+                self.subs = match r {
+                    Ok(s) => SubState::Ready(t, s),
+                    Err(e) => SubState::Failed(t, format!("{e:#}")),
+                };
+            }
+        }
         if self.opening.is_none() {
             if let Some(q) = self.queued.take() {
-                self.open_index(ctx, q, audio, progress);
+                self.open_index(ctx, q, audio, progress, cfg);
             }
         }
 
@@ -263,6 +341,14 @@ impl Watch {
         let mut seek_to: Option<f64> = None;
         let mut skip_by: Option<f64> = None;
         let mut pick: Option<usize> = None;
+        // a subtitle track picked (Some(None): turned off)
+        let mut sub_pick: Option<Option<usize>> = None;
+        let tracks: Vec<String> = self
+            .current
+            .and_then(|i| self.items.get(i))
+            .map(|it| it.subtitles.iter().map(SubtitleTrack::label).collect())
+            .unwrap_or_default();
+        let sub_on = self.subs.track();
 
         // keys. Only read them here: anything that talks back to egui (like
         // leaving fullscreen) waits until the input lock is released, or the app freezes.
@@ -291,6 +377,24 @@ impl Watch {
             }
             if i.key_pressed(Key::M) {
                 *muted = !*muted;
+            }
+            // C: subtitles on (the language used last, else the first) or off
+            if i.key_pressed(Key::C) && !tracks.is_empty() {
+                sub_pick = Some(match sub_on {
+                    Some(_) => None,
+                    None => Some(
+                        self.current
+                            .and_then(|c| {
+                                let it = &self.items[c];
+                                let lang = cfg
+                                    .subtitle_language
+                                    .as_deref()
+                                    .or_else(|| it.subtitles.first().map(|t| t.language.as_str()));
+                                subs::pick(&it.subtitles, lang, cfg.subtitle_sdh)
+                            })
+                            .unwrap_or(0),
+                    ),
+                });
             }
             do_next |= i.key_pressed(Key::N);
             do_prev |= i.key_pressed(Key::P);
@@ -351,7 +455,7 @@ impl Watch {
             self.save_progress(progress);
             match self.current {
                 Some(i) if autoplay && i + 1 < self.items.len() => {
-                    self.open_index(ctx, i + 1, audio, progress)
+                    self.open_index(ctx, i + 1, audio, progress, cfg)
                 }
                 _ => {
                     if let Some(p) = self.player.as_mut() {
@@ -427,6 +531,16 @@ impl Watch {
                     let dest = Rect::from_center_size(rect.center(), sz * scale);
                     let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
                     ui.painter().image(t.id(), dest, uv, Color32::WHITE);
+                    if let SubState::Ready(_, subs) = &self.subs {
+                        if let Some(text) = subs.at(pos) {
+                            // above the controls while they're up
+                            let mut base = dest.bottom().min(rect.bottom()) - dest.height() * 0.06;
+                            if !hide_ui {
+                                base = base.min(rect.bottom() - BOTTOM_H - 4.0);
+                            }
+                            draw_subtitle(ui.painter(), dest, base, &text);
+                        }
+                    }
                 } else if !self.status.is_empty() {
                     ui.painter().text(
                         rect.center(),
@@ -656,64 +770,146 @@ impl Watch {
                     // ---- menus (opening upward from the bottom row)
                     if let Some(m) = self.menu {
                         let anchor = if m == Menu::Settings { more_r } else { sub_r };
-                        let w = 260.0;
-                        let h = if m == Menu::Settings { 150.0 } else { 78.0 };
+                        let w = 280.0;
+                        let h = if m == Menu::Settings {
+                            44.0 + MENU_ROW + 22.0 + 44.0 + 14.0
+                        } else {
+                            let room = rect.height() - TOP_H - BOTTOM_H;
+                            (44.0 + MENU_ROW * (tracks.len() + 1) as f32 + 10.0)
+                                .min(room.max(140.0))
+                        };
                         let left = (anchor.right() - w).max(rect.left() + 8.0);
                         let mr = if row {
                             Rect::from_min_size(pos2(left, anchor.top() - 8.0 - h), vec2(w, h))
                         } else {
                             Rect::from_min_size(pos2(left, anchor.bottom() + 8.0), vec2(w, h))
                         };
-                        let lp = ui.ctx().layer_painter(egui::LayerId::new(
-                            egui::Order::Foreground,
-                            egui::Id::new("player_menu"),
-                        ));
-                        lp.rect_filled(mr, 8.0, Color32::from_rgba_unmultiplied(28, 28, 31, 245));
-                        lp.rect_stroke(
-                            mr,
-                            8.0,
-                            egui::Stroke::new(1.0f32, Color32::from_gray(48)),
-                            egui::StrokeKind::Inside,
-                        );
-                        let heading = |y: f32, t: &str| {
-                            lp.text(
-                                pos2(mr.left() + 18.0, y),
-                                Align2::LEFT_TOP,
-                                t,
-                                bold(11.5),
-                                Color32::from_gray(150),
-                            );
-                        };
-                        let line = |y: f32, t: &str| {
-                            lp.text(
-                                pos2(mr.left() + 18.0, y),
-                                Align2::LEFT_TOP,
-                                t,
-                                FontId::proportional(14.0),
-                                Color32::from_gray(200),
-                            );
-                        };
-                        heading(mr.top() + 16.0, "SUBTITLES");
-                        line(mr.top() + 38.0, "No subtitles for this video");
-                        if m == Menu::Settings {
-                            lp.hline(
-                                mr.x_range().shrink(18.0),
-                                mr.top() + 72.0,
-                                egui::Stroke::new(1.0f32, Color32::from_gray(48)),
-                            );
-                            heading(mr.top() + 88.0, "AUDIO");
-                            line(
-                                mr.top() + 110.0,
-                                if has_audio {
-                                    "Default"
+                        let area = egui::Area::new(egui::Id::new("player_menu"))
+                            .order(egui::Order::Foreground)
+                            .fixed_pos(mr.min)
+                            .show(ctx, |ui| {
+                                ui.set_min_size(mr.size());
+                                ui.set_max_size(mr.size());
+                                let lp = ui.painter();
+                                lp.rect_filled(
+                                    mr,
+                                    8.0,
+                                    Color32::from_rgba_unmultiplied(28, 28, 31, 245),
+                                );
+                                lp.rect_stroke(
+                                    mr,
+                                    8.0,
+                                    egui::Stroke::new(1.0f32, Color32::from_gray(48)),
+                                    egui::StrokeKind::Inside,
+                                );
+                                let heading = |ui: &mut egui::Ui, t: &str| {
+                                    let (r, _) =
+                                        ui.allocate_exact_size(vec2(w, 44.0), Sense::hover());
+                                    ui.painter().text(
+                                        pos2(r.left() + 18.0, r.top() + 16.0),
+                                        Align2::LEFT_TOP,
+                                        t,
+                                        bold(11.5),
+                                        Color32::from_gray(150),
+                                    );
+                                };
+                                ui.spacing_mut().item_spacing = Vec2::ZERO;
+                                let current = sub_on.and_then(|t| tracks.get(t));
+                                if m == Menu::Settings {
+                                    heading(ui, "SUBTITLES");
+                                    let label = match (current, tracks.is_empty()) {
+                                        (_, true) => "No subtitles for this video",
+                                        (Some(l), _) => l.as_str(),
+                                        (None, _) => "Off",
+                                    };
+                                    let more = !tracks.is_empty();
+                                    if menu_row(ui, w, label, None, more).clicked() && more {
+                                        self.menu = Some(Menu::Subtitles);
+                                    }
+                                    ui.add_space(4.0);
+                                    let y = ui.cursor().top() + 9.0;
+                                    ui.painter().hline(
+                                        mr.x_range().shrink(18.0),
+                                        y,
+                                        egui::Stroke::new(1.0f32, Color32::from_gray(48)),
+                                    );
+                                    ui.add_space(18.0);
+                                    heading(ui, "AUDIO");
+                                    let a = if has_audio {
+                                        "Default"
+                                    } else {
+                                        "No audio track"
+                                    };
+                                    ui.painter().text(
+                                        pos2(mr.left() + 18.0, ui.cursor().top() - 8.0),
+                                        Align2::LEFT_TOP,
+                                        a,
+                                        FontId::proportional(14.0),
+                                        Color32::from_gray(200),
+                                    );
                                 } else {
-                                    "No audio track"
-                                },
-                            );
-                        }
-                        on_controls |= ui.rect_contains_pointer(mr);
+                                    heading(ui, "SUBTITLES");
+                                    if tracks.is_empty() {
+                                        ui.painter().text(
+                                            pos2(mr.left() + 18.0, ui.cursor().top() - 6.0),
+                                            Align2::LEFT_TOP,
+                                            "No subtitles for this video",
+                                            FontId::proportional(14.0),
+                                            Color32::from_gray(200),
+                                        );
+                                        return;
+                                    }
+                                    let note = match &self.subs {
+                                        SubState::Loading(..) => Some(("Loading…", MUTED())),
+                                        SubState::Failed(_, e) => Some((e.as_str(), ERROR())),
+                                        _ => None,
+                                    };
+                                    egui::ScrollArea::vertical()
+                                        .max_height(h - 54.0)
+                                        .auto_shrink([false, true])
+                                        .show(ui, |ui| {
+                                            ui.spacing_mut().item_spacing = Vec2::ZERO;
+                                            let off = sub_on.is_none();
+                                            if menu_row(ui, w, "Off", Some(off), false).clicked() {
+                                                sub_pick = Some(None);
+                                            }
+                                            for (t, label) in tracks.iter().enumerate() {
+                                                let on = sub_on == Some(t);
+                                                let r = menu_row(ui, w, label, Some(on), false);
+                                                let r = match note {
+                                                    Some((n, _)) if on => r.on_hover_text(n),
+                                                    _ => r,
+                                                };
+                                                if on {
+                                                    if let Some((n, c)) = note {
+                                                        let short = if n.chars().count() > 22 {
+                                                            "Couldn't load"
+                                                        } else {
+                                                            n
+                                                        };
+                                                        ui.painter().text(
+                                                            pos2(
+                                                                r.rect.right() - 14.0,
+                                                                r.rect.center().y,
+                                                            ),
+                                                            Align2::RIGHT_CENTER,
+                                                            short,
+                                                            FontId::proportional(12.0),
+                                                            c,
+                                                        );
+                                                    }
+                                                }
+                                                if r.clicked() {
+                                                    sub_pick = Some(Some(t));
+                                                }
+                                            }
+                                        });
+                                }
+                            });
+                        let area_r = area.response.rect.union(mr);
+                        on_controls |= ui.rect_contains_pointer(area_r);
                         let clicked_away = ui.input(|i| i.pointer.any_click())
-                            && !ui.rect_contains_pointer(mr)
+                            && !ui.rect_contains_pointer(area_r)
                             && !ui.rect_contains_pointer(anchor);
                         if clicked_away {
                             self.menu = None;
@@ -1043,7 +1239,7 @@ impl Watch {
             p.seek(t);
         }
         if let Some(i) = pick {
-            self.open_index(ctx, i, audio, progress);
+            self.open_index(ctx, i, audio, progress, cfg);
         }
 
         if close {
@@ -1053,7 +1249,92 @@ impl Watch {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
             }
         }
+        if let Some(t) = sub_pick {
+            self.choose_subs(ctx, cfg, t);
+        }
+        cfg.volume = vol;
         ctx.request_repaint_after(Duration::from_millis(if playing { 8 } else { 100 }));
         close
     }
+}
+
+/// A clickable line in a player menu: a check when `checked` is Some(true),
+/// a chevron when it opens more.
+fn menu_row(ui: &mut egui::Ui, w: f32, label: &str, checked: Option<bool>, more: bool) -> Response {
+    let (r, resp) = ui.allocate_exact_size(vec2(w, MENU_ROW), Sense::click());
+    let p = ui.painter();
+    if resp.hovered() {
+        p.rect_filled(
+            r.shrink2(vec2(6.0, 1.0)),
+            5.0,
+            Color32::from_white_alpha(18),
+        );
+    }
+    let x = if checked.is_some() {
+        r.left() + 40.0
+    } else {
+        r.left() + 18.0
+    };
+    if checked == Some(true) {
+        let c = pos2(r.left() + 22.0, r.center().y);
+        let s = egui::Stroke::new(2.0f32, Color32::WHITE);
+        p.line_segment([c + vec2(-5.0, 0.0), c + vec2(-1.5, 3.5)], s);
+        p.line_segment([c + vec2(-1.5, 3.5), c + vec2(5.5, -4.0)], s);
+    }
+    let on = checked == Some(true);
+    p.text(
+        pos2(x, r.center().y),
+        Align2::LEFT_CENTER,
+        label,
+        FontId::proportional(14.0),
+        if on {
+            Color32::WHITE
+        } else {
+            Color32::from_gray(200)
+        },
+    );
+    if more {
+        chrome::draw_icon(
+            p,
+            pos2(r.right() - 20.0, r.center().y),
+            Icon::ChevronRight,
+            Color32::from_gray(170),
+        );
+    }
+    resp.on_hover_cursor(CursorIcon::PointingHand)
+}
+
+/// Subtitle text centered over the video, its last line ending at `base`,
+/// white with a dark outline so it reads on any picture.
+fn draw_subtitle(p: &egui::Painter, video: Rect, base: f32, text: &str) {
+    let size = (video.height() * 0.048).clamp(16.0, 64.0);
+    let layout = |color: Color32| {
+        let mut job = egui::text::LayoutJob::simple(
+            text.to_owned(),
+            FontId::proportional(size),
+            color,
+            video.width() * 0.86,
+        );
+        job.halign = egui::Align::Center;
+        p.layout_job(job)
+    };
+    let (fg, shadow) = (
+        layout(Color32::WHITE),
+        layout(Color32::from_black_alpha(230)),
+    );
+    let top = pos2(video.center().x, base - fg.size().y);
+    let o = (size / 14.0).max(1.5);
+    for (dx, dy) in [
+        (-o, 0.0),
+        (o, 0.0),
+        (0.0, -o),
+        (0.0, o),
+        (-o, -o),
+        (o, -o),
+        (-o, o),
+        (o, o),
+    ] {
+        p.galley(top + vec2(dx, dy), shadow.clone(), Color32::BLACK);
+    }
+    p.galley(top, fg, Color32::WHITE);
 }

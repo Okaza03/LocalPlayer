@@ -3,6 +3,7 @@
 package io.github.okaza03.valo.ui
 
 import androidx.annotation.OptIn
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,8 +31,10 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
@@ -43,6 +46,7 @@ import io.github.okaza03.valo.AppModel
 import io.github.okaza03.valo.Client
 import io.github.okaza03.valo.Item
 import io.github.okaza03.valo.Screen
+import io.github.okaza03.valo.Subtitle
 import kotlinx.coroutines.delay
 
 /** Save the position this often while playing. */
@@ -74,7 +78,15 @@ fun PlayerScreen(model: AppModel, item: Item, screen: Screen.Player) {
             .build()
             .apply {
                 val resume = model.entry(key)?.takeIf { it.inProgress && !screen.fromStart }
-                setMediaItem(MediaItem.fromUri(url), ((resume?.pos ?: 0.0) * 1000).toLong())
+                // the language picked last comes on by itself
+                trackSelectionParameters = trackSelectionParameters.buildUpon()
+                    .setPreferredTextLanguage(model.prefs.subtitleLanguage)
+                    .build()
+                val media = MediaItem.Builder()
+                    .setUri(url)
+                    .setSubtitleConfigurations((episode?.subtitles ?: item.subtitles).map(::subtitleConfig))
+                    .build()
+                setMediaItem(media, ((resume?.pos ?: 0.0) * 1000).toLong())
                 prepare()
                 playWhenReady = true
             }
@@ -92,6 +104,22 @@ fun PlayerScreen(model: AppModel, item: Item, screen: Screen.Player) {
                 save()
                 val next = if (episode != null) model.episodeAfter(item, episode.id) else null
                 if (next != null) model.swap(Screen.Player(item.id, next.id)) else model.back()
+            }
+
+            // remember the language picked with the subtitle button, or that they were turned off
+            override fun onTracksChanged(tracks: Tracks) {
+                val text = tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
+                val picked = text.flatMap { g -> (0 until g.length).filter(g::isTrackSelected).map(g::getTrackFormat) }
+                    .firstOrNull { it.selectionFlags and C.SELECTION_FLAG_FORCED == 0 }
+                val saved = model.prefs.subtitleLanguage
+                if (picked != null) {
+                    picked.language?.let { if (it != saved) model.prefs.subtitleLanguage = it }
+                } else if (saved != null && text.any { g ->
+                        (0 until g.length).any { g.getTrackFormat(it).language == saved }
+                    }
+                ) {
+                    model.prefs.subtitleLanguage = null
+                }
             }
 
             override fun onPlayerError(e: PlaybackException) {
@@ -158,4 +186,22 @@ fun PlayerScreen(model: AppModel, item: Item, screen: Screen.Player) {
             }
         }
     }
+}
+
+/** A subtitle file from the library, for ExoPlayer (fetched with the stream's credentials). */
+private fun subtitleConfig(s: Subtitle): MediaItem.SubtitleConfiguration {
+    val format = s.format ?: s.url.substringBefore('?').substringAfterLast('.').lowercase()
+    return MediaItem.SubtitleConfiguration.Builder(Uri.parse(s.url))
+        .setMimeType(
+            when (format) {
+                "vtt" -> MimeTypes.TEXT_VTT
+                "ass", "ssa" -> MimeTypes.TEXT_SSA
+                else -> MimeTypes.APPLICATION_SUBRIP
+            },
+        )
+        .setLanguage(s.language.takeIf { it.isNotEmpty() && it != "und" })
+        .setLabel(s.label ?: s.language)
+        .setId(s.id.ifEmpty { s.url })
+        .setSelectionFlags(if (s.forced) C.SELECTION_FLAG_FORCED else 0)
+        .build()
 }

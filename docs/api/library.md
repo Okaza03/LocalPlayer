@@ -43,6 +43,7 @@ Either list can be empty, missing or `null`. Any field can be left out or set to
 | `budget`       | int                    |              | US dollars                                      | `160000000`              |
 | `revenue`      | int                    |              | box office, US dollars                          | `836800000`              |
 | `file`         | [File](#file-info)     |              | file details (read from the video when missing) |                          |
+| `subtitles`    | [Subtitle](#subtitle)[] |             | the player's subtitle menu                      |                          |
 | `imdb_id`      | string                 |              | requests: "already in the library"              | `"tt1375666"`            |
 | `collection`   | string                 |              | A to Z: sorted under this name                  | `"Batman"`               |
 | `collection_index` | int                |              | its place in the collection, `0` first          | `2`                      |
@@ -51,7 +52,7 @@ Titles with a `collection` sit together in A to Z under the collection's name, i
 
 ### Series
 
-Same as a movie, minus `stream`, `director`, `budget`, `revenue` and `duration`, plus:
+Same as a movie, minus `stream`, `subtitles`, `director`, `budget`, `revenue` and `duration`, plus:
 
 | Field      | Type                | Needed                              | Shown         | Example                         |
 | ---------- | ------------------- | ----------------------------------- | ------------- | ------------------------------- |
@@ -83,6 +84,7 @@ Same as a movie, minus `stream`, `director`, `budget`, `revenue` and `duration`,
 | `aired`    | string             |              | `YYYY-MM-DD`                |
 | `score`    | number             |              | Out of 10                   |
 | `file`     | [File](#file-info) |              |                             |
+| `subtitles` | [Subtitle](#subtitle)[] |         | The player's subtitle menu  |
 
 ### Cast member
 
@@ -95,6 +97,32 @@ Same as a movie, minus `stream`, `director`, `budget`, `revenue` and `duration`,
 ```json
 { "quote": "…", "source": "Reverse Shot", "score": "4.5 / 5" }
 ```
+
+### Subtitle
+
+```json
+{
+  "id": "9f6600f04462",
+  "language": "en",
+  "label": "English (SDH)",
+  "format": "srt",
+  "forced": false,
+  "sdh": true,
+  "url": "/api/subtitles/movie/461/9f6600f04462"
+}
+```
+
+| Field      | Type   |                                                                                        |
+| ---------- | ------ | -------------------------------------------------------------------------------------- |
+| `url`      | URL    | **Required.** Serves the file. Gets the same `Authorization` header as streams.        |
+| `language` | string | ISO 639-1 (`"en"`, `"nb"`), `"und"` when unknown. The app turns on the language picked last. |
+| `label`    | string | Shown in the menu. Falls back to `language`.                                           |
+| `format`   | string | `"srt"`, `"vtt"`, `"ass"` or `"ssa"`. Taken from the URL's extension when missing.     |
+| `forced`   | bool   | Only the parts in another language. Not turned on by itself when a full track exists.  |
+| `sdh`      | bool   | With sound descriptions. The app remembers whether this kind was picked.               |
+| `id`       | string | Recommended; keep it stable across rescans.                                            |
+
+Send the file as UTF-8 if you can (the desktop app also reads UTF-16 with a BOM, and falls back to Windows-1252). The [reference server](../../server/valo_server.py) picks subtitles up from a `Subs` folder in each movie's or series' folder.
 
 ### File info
 

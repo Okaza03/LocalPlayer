@@ -9,6 +9,12 @@ Expected layout (anything else is ignored):
     Movies/Inception (2010)/Inception.mkv   (+ poster.jpg, fanart.jpg, info.json)
     Series/The Office/Season 1/The.Office.S01E01.Pilot.mkv   (+ poster.jpg, fanart.jpg, info.json)
 
+Subtitles (.srt, .vtt, .ass, .ssa) go in a Subs folder in the movie's or the
+series' folder (or a season folder): Subs/English.srt for a movie; for an
+episode, put its code in the name (Subs/S01E01.en.srt) or use a folder named
+like the video (Subs/The.Office.S01E01.Pilot/2_English.srt). Files next to the
+video named after it (Inception.en.srt) work too.
+
 info.json may set title, year, overview, genres, rating, duration, and the
 details-page extras: director, creators, cast ([{"name", "character", "photo"}],
 photo being a URL or an image file next to info.json), released, end_year,
@@ -30,6 +36,7 @@ import argparse
 import collections
 import datetime
 import getpass
+import glob
 import hashlib
 import hmac
 import json
@@ -103,6 +110,108 @@ def clean(name):
     m = re.search(r"\b(19\d\d|20\d\d)\b", name[1:])
     year = int(m.group(1)) if m else None
     return re.sub(r"[._()]+", " ", name[:1] + JUNK.sub("", name[1:])).strip(" -"), year
+
+
+SUB_EXTS = {".srt": "srt", ".vtt": "vtt", ".ass": "ass", ".ssa": "ssa"}
+LANGUAGES = {
+    "en": "English", "nb": "Norwegian", "sv": "Swedish",
+    "da": "Danish", "fi": "Finnish", "is": "Icelandic", "de": "German",
+    "nl": "Dutch", "fr": "French", "es": "Spanish", "pt": "Portuguese",
+    "it": "Italian", "pl": "Polish", "cs": "Czech", "sk": "Slovak",
+    "hu": "Hungarian", "ro": "Romanian", "bg": "Bulgarian", "el": "Greek",
+    "tr": "Turkish", "ru": "Russian", "uk": "Ukrainian", "hr": "Croatian",
+    "sr": "Serbian", "sl": "Slovenian", "et": "Estonian", "lv": "Latvian",
+    "lt": "Lithuanian", "ar": "Arabic", "he": "Hebrew", "fa": "Persian",
+    "hi": "Hindi", "th": "Thai", "vi": "Vietnamese", "id": "Indonesian",
+    "ms": "Malay", "zh": "Chinese", "ja": "Japanese", "ko": "Korean",
+}
+# three-letter codes and other spellings seen in file names
+LANGUAGE_ALIASES = {
+    "eng": "en", "no": "nb", "nor": "nb", "nob": "nb", "norsk": "nb", "bokmal": "nb", "swe": "sv",
+    "dan": "da", "fin": "fi", "ger": "de", "deu": "de", "dut": "nl", "nld": "nl",
+    "fre": "fr", "fra": "fr", "spa": "es", "por": "pt", "ita": "it", "pol": "pl",
+    "cze": "cs", "ces": "cs", "hun": "hu", "rum": "ro", "ron": "ro", "gre": "el",
+    "ell": "el", "tur": "tr", "rus": "ru", "ukr": "uk", "ara": "ar", "heb": "he",
+    "chi": "zh", "zho": "zh", "jpn": "ja", "kor": "ko", "brazilian": "pt",
+    "chs": "zh", "cht": "zh", "simplified": "zh", "traditional": "zh",
+}
+LANGUAGE_NAMES = {v.lower(): k for k, v in LANGUAGES.items()}
+
+
+def sub_language(stem):
+    """("en", forced, sdh) from a subtitle's file name."""
+    words = [w for w in re.split(r"[^a-z]+", stem.lower()) if w]
+    forced = "forced" in words
+    sdh = "sdh" in words or "hi" in words or "cc" in words
+    for w in reversed(words):
+        if w in LANGUAGE_NAMES:
+            return LANGUAGE_NAMES[w], forced, sdh
+        if w in LANGUAGE_ALIASES:
+            return LANGUAGE_ALIASES[w], forced, sdh
+    # two-letter codes only as their own part ("Movie.en.srt", "en.srt"), where
+    # they can't be part of a word; "hi" is also SDH, so it never means Hindi here
+    for w in reversed(words):
+        if len(w) == 2 and w in LANGUAGES and w != "hi":
+            return w, forced, sdh
+    return "und", forced, sdh
+
+
+def subs_dirs(folder):
+    """The Subs folders in `folder` (any letter case)."""
+    try:
+        return [d for d in folder.iterdir() if d.is_dir() and d.name.lower() == "subs"]
+    except OSError:
+        return []
+
+
+def subtitles(lib, video, places, episode=None):
+    """The subtitle list for a video: files under the Subs folders in `places`
+    (for an episode, only the ones naming it) and files named after the video."""
+    files = []
+    for folder in places:
+        for d in subs_dirs(folder):
+            for f in sorted(d.rglob("*")):
+                if f.suffix.lower() not in SUB_EXTS or not f.is_file():
+                    continue
+                if episode is not None:
+                    owner = f.parent.name if f.parent != d else ""
+                    hit = owner == video.stem
+                    for name in (f.stem, owner):
+                        m = EPISODE.search(name)
+                        if m:
+                            got = (m.group(1), m.group(2)) if m.group(1) else (m.group(4), m.group(5))
+                            hit = hit or tuple(int(x) for x in got) == episode
+                    if not hit:
+                        continue
+                files.append(f)
+    for f in sorted(video.parent.glob(glob.escape(video.stem) + ".*")):
+        if f.suffix.lower() in SUB_EXTS and f.is_file() and f not in files:
+            files.append(f)
+    out, seen = [], collections.Counter()
+    for f in files:
+        rest = f.stem[len(video.stem) :] if f.stem.startswith(video.stem) else f.stem
+        lang, forced, sdh = sub_language(rest)
+        label = LANGUAGES.get(lang, "Unknown")
+        if sdh:
+            label += " (SDH)"
+        elif forced:
+            label += " (Forced)"
+        seen[label] += 1
+        if seen[label] > 1:
+            label += f" {seen[label]}"
+        out.append(
+            {
+                "id": hashlib.sha1(str(f.relative_to(lib.root)).encode()).hexdigest()[:12],
+                "language": lang,
+                "label": label,
+                "format": SUB_EXTS[f.suffix.lower()],
+                "forced": forced,
+                "sdh": sdh,
+                "url": lib.url("media", f),
+            }
+        )
+    return out
+
 
 
 def find_art(folder, names):
@@ -255,6 +364,7 @@ class Library:
                         "backdrop": backdrop and self.url("art", backdrop),
                         "thumb": thumb and self.url("art", thumb),
                         "stream": self.url("media", f),
+                        "subtitles": subtitles(self, f, [folder] if own else []),
                         "imdb_id": info.get("imdb_id"),
                         "file": file_info(self, f),
                         **(extras(self, info, folder) if own else {}),
@@ -291,6 +401,12 @@ class Library:
                             "duration": meta.get("duration"),
                             "still": still and self.url("art", still),
                             "stream": self.url("media", f),
+                            "subtitles": subtitles(
+                                self,
+                                f,
+                                [show] + [p for p in f.parents if show in p.parents],
+                                (s, e),
+                            ),
                             "aired": meta.get("aired"),
                             "score": meta.get("score"),
                             "file": file_info(self, f),

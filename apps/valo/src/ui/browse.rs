@@ -1416,6 +1416,7 @@ impl Browse {
                     },
                     start: resume(&key),
                     key: Some(key),
+                    subtitles: item.subtitles.clone(),
                 }]))
             }
             Kind::Series => {
@@ -1445,6 +1446,7 @@ impl Browse {
                             },
                             start: if queue.is_empty() { resume(&key) } else { 0.0 },
                             key: Some(key),
+                            subtitles: e.subtitles.clone(),
                         });
                     }
                 }

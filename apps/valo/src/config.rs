@@ -111,6 +111,10 @@ pub struct Config {
     pub theme: crate::ui::theme::Mode,
     /// App style: Valo, Netflix, …
     pub style: crate::ui::theme::Skin,
+    /// Subtitles in this language are turned on by themselves; `None` = off.
+    pub subtitle_language: Option<String>,
+    /// … and the SDH kind of them was picked last.
+    pub subtitle_sdh: bool,
 }
 
 impl Default for Config {
@@ -134,6 +138,8 @@ impl Default for Config {
             window: None,
             theme: Default::default(),
             style: Default::default(),
+            subtitle_language: None,
+            subtitle_sdh: false,
         }
     }
 }
