@@ -377,14 +377,19 @@ impl State {
         let resp = ui
             .horizontal(|ui| {
                 status_dot(ui, if n == 0 { OK } else { WARN });
-                let text = if n == 0 {
-                    label.to_owned()
-                } else {
-                    format!("{label}   {}", if open { "▾" } else { "▸" })
-                };
                 let r = ui.add(
-                    egui::Label::new(RichText::new(text).color(TEXT)).sense(egui::Sense::click()),
+                    egui::Label::new(RichText::new(label).color(TEXT)).sense(egui::Sense::click()),
                 );
+                if n > 0 {
+                    let (cr, _) =
+                        ui.allocate_exact_size(egui::vec2(12.0, 12.0), egui::Sense::hover());
+                    let icon = if open {
+                        crate::ui::chrome::Icon::ChevronDown
+                    } else {
+                        crate::ui::chrome::Icon::ChevronRight
+                    };
+                    crate::ui::chrome::draw_icon(ui.painter(), cr.center(), icon, MUTED);
+                }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.label(mono(n.to_string(), 11.0).color(if n == 0 { MUTED } else { WARN }));
                 });

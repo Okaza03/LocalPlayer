@@ -470,7 +470,13 @@ impl Updates {
                                     ui.spinner();
                                     return;
                                 }
-                                if small_button(ui, "✕").clicked() {
+                                if crate::ui::small_icon_button(
+                                    ui,
+                                    crate::ui::chrome::Icon::Close,
+                                    "Dismiss",
+                                )
+                                .clicked()
+                                {
                                     close = true;
                                 }
                                 let Some(r) = &self.available else { return };

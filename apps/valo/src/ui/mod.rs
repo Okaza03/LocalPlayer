@@ -226,6 +226,122 @@ pub fn small_button(ui: &mut Ui, text: &str) -> Response {
     ui.add(b)
 }
 
+/// A square [`small_button`] with a drawn icon (the "⋮" menu, close).
+pub fn small_icon_button(ui: &mut Ui, icon: chrome::Icon, tip: &str) -> Response {
+    let (r, resp) = ui.allocate_exact_size(vec2(30.0, 30.0), Sense::click());
+    let p = ui.painter();
+    if resp.hovered() {
+        p.rect_filled(r, 2.0, SURFACE_HI);
+    }
+    p.rect_stroke(r, 2.0, Stroke::new(1.0f32, LINE_HI), StrokeKind::Inside);
+    chrome::draw_icon(p, r.center(), icon, TEXT);
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text(tip)
+}
+
+/// A [`small_button`] with a drawn icon: before the text, or after it for
+/// [`Icon::External`](chrome::Icon::External) and chevrons pointing right.
+pub fn small_button_icon(ui: &mut Ui, icon: chrome::Icon, text: &str) -> Response {
+    icon_text_button(ui, icon, text, false, true)
+}
+
+/// A [`primary_button`] with a drawn icon before the text ("▶ Play").
+pub fn primary_button_icon(ui: &mut Ui, icon: chrome::Icon, text: &str, enabled: bool) -> Response {
+    icon_text_button(ui, icon, text, true, enabled)
+}
+
+fn icon_text_button(
+    ui: &mut Ui,
+    icon: chrome::Icon,
+    text: &str,
+    primary: bool,
+    enabled: bool,
+) -> Response {
+    use chrome::Icon;
+    let (size, h, col) = if primary {
+        (12.5, 38.0, INK)
+    } else {
+        (11.5, 30.0, TEXT)
+    };
+    let after = matches!(icon, Icon::External | Icon::ChevronRight | Icon::ArrowRight);
+    let col = if enabled {
+        col
+    } else {
+        col.gamma_multiply(0.4)
+    };
+    // the same look as mono()
+    let job = LayoutJob::single_section(
+        text.to_uppercase(),
+        TextFormat {
+            font_id: FontId::monospace(size),
+            color: col,
+            extra_letter_spacing: size * 0.14,
+            ..Default::default()
+        },
+    );
+    let g = ui.fonts(|f| f.layout_job(job));
+    let text_w = g.size().x;
+    let w = text_w + 16.0 + 8.0 + 2.0 * if primary { 18.0 } else { 10.0 };
+    let sense = if enabled {
+        Sense::click()
+    } else {
+        Sense::hover()
+    };
+    let (r, resp) = ui.allocate_exact_size(vec2(w, h), sense);
+    let p = ui.painter();
+    if primary {
+        let fill = if enabled {
+            Color32::WHITE
+        } else {
+            Color32::from_gray(120)
+        };
+        p.rect_filled(
+            r,
+            2.0,
+            if resp.hovered() {
+                Color32::from_gray(225)
+            } else {
+                fill
+            },
+        );
+    } else {
+        if resp.hovered() {
+            p.rect_filled(r, 2.0, SURFACE_HI);
+        }
+        p.rect_stroke(r, 2.0, Stroke::new(1.0f32, LINE_HI), StrokeKind::Inside);
+    }
+    let pad = if primary { 18.0 } else { 10.0 };
+    let (icon_x, text_x) = if after {
+        (r.left() + pad + text_w + 8.0 + 8.0, r.left() + pad)
+    } else {
+        (r.left() + pad + 8.0, r.left() + pad + 16.0 + 8.0)
+    };
+    chrome::draw_icon(p, pos2(icon_x, r.center().y), icon, col);
+    p.galley(pos2(text_x, r.center().y - g.size().y / 2.0), g, col);
+    if enabled {
+        resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+    } else {
+        resp
+    }
+}
+
+/// A link that opens outside the app, with the "opens in browser" icon.
+pub fn ext_link(ui: &mut Ui, text: impl Into<RichText>) -> bool {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 4.0;
+        let l = ui.link(text.into());
+        let (r, i) = ui.allocate_exact_size(vec2(11.0, 11.0), Sense::click());
+        let col = if l.hovered() || i.hovered() {
+            TEXT
+        } else {
+            MUTED
+        };
+        chrome::draw_icon(ui.painter(), r.center(), chrome::Icon::External, col);
+        l.clicked() || i.on_hover_cursor(egui::CursorIcon::PointingHand).clicked()
+    })
+    .inner
+}
+
 pub fn text_field(ui: &mut Ui, value: &mut String, hint: &str, password: bool) -> Response {
     ui.add(
         egui::TextEdit::singleline(value)

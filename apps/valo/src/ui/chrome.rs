@@ -35,6 +35,12 @@ pub enum Icon {
     /// Circular arrows; the caller writes the seconds inside.
     SkipBack,
     SkipForward,
+    ChevronUp,
+    ChevronDown,
+    ArrowUp,
+    ArrowDown,
+    /// Opens outside the app (a web page): an arrow out of a corner.
+    External,
 }
 
 /// Top bar: word mark, `left` (tabs), `right` (search, buttons), window buttons.
@@ -365,6 +371,35 @@ pub fn draw_icon(p: &egui::Painter, c: Pos2, icon: Icon, col: Color32) {
             for dy in [-5.5, 0.0, 5.5] {
                 p.circle_filled(c + vec2(0.0, dy), 1.7, col);
             }
+        }
+        Icon::ChevronUp => {
+            p.line_segment([c + vec2(-4.0, 2.0), c + vec2(0.0, -2.0)], s);
+            p.line_segment([c + vec2(0.0, -2.0), c + vec2(4.0, 2.0)], s);
+        }
+        Icon::ChevronDown => {
+            p.line_segment([c + vec2(-4.0, -2.0), c + vec2(0.0, 2.0)], s);
+            p.line_segment([c + vec2(0.0, 2.0), c + vec2(4.0, -2.0)], s);
+        }
+        Icon::ArrowUp => {
+            p.line_segment([c + vec2(0.0, 5.0), c + vec2(0.0, -5.0)], s);
+            p.line_segment([c + vec2(-4.0, -1.0), c + vec2(0.0, -5.0)], s);
+            p.line_segment([c + vec2(0.0, -5.0), c + vec2(4.0, -1.0)], s);
+        }
+        Icon::ArrowDown => {
+            p.line_segment([c + vec2(0.0, -5.0), c + vec2(0.0, 5.0)], s);
+            p.line_segment([c + vec2(-4.0, 1.0), c + vec2(0.0, 5.0)], s);
+            p.line_segment([c + vec2(0.0, 5.0), c + vec2(4.0, 1.0)], s);
+        }
+        Icon::External => {
+            // a box open at the top right, and an arrow leaving it
+            let s = Stroke::new(1.2f32, col);
+            p.line_segment([c + vec2(-1.0, -4.0), c + vec2(-4.0, -4.0)], s);
+            p.line_segment([c + vec2(-4.0, -4.0), c + vec2(-4.0, 4.0)], s);
+            p.line_segment([c + vec2(-4.0, 4.0), c + vec2(4.0, 4.0)], s);
+            p.line_segment([c + vec2(4.0, 4.0), c + vec2(4.0, 1.0)], s);
+            p.line_segment([c + vec2(-0.5, 0.5), c + vec2(4.5, -4.5)], s);
+            p.line_segment([c + vec2(1.0, -4.5), c + vec2(4.5, -4.5)], s);
+            p.line_segment([c + vec2(4.5, -4.5), c + vec2(4.5, -1.0)], s);
         }
         Icon::List => {
             for dy in [-5.0, 0.0, 5.0] {

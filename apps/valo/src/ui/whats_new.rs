@@ -31,6 +31,12 @@ const NOTES: &[(&str, &[Note])] = &[(
             admin: false,
         },
         Note {
+            title: "A fresh home page",
+            text: "The Movies, TV shows and genre rows show a new mix each time you \
+                   open Valo, and a Top rated row shows the best scored titles.",
+            admin: false,
+        },
+        Note {
             title: "Your devices",
             text: "Your profile lists every device you're signed in on, and you can \
                    sign any of them out.",

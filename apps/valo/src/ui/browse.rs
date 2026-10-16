@@ -19,7 +19,7 @@ use eframe::egui::{
 use super::chrome::{self, Icon};
 use super::{
     bold, gradient, image_cover, menu_item, mono, placeholder, primary_button, secondary_button,
-    segmented, small_button, tab,
+    segmented, tab,
 };
 use super::{ACCENT, BG, ERROR, MUTED, SURFACE, SURFACE_HI, TEXT};
 use crate::api::{Client, Item, Kind, Library, Me, Missing, Mode, Unauthorized};
@@ -703,12 +703,23 @@ impl Browse {
             let cards = self.poster_cards(recent.into_iter().take(24), progress);
             click = click.or(self.row(ui, "Recently added", &cards, false, None, images));
         }
+        // best rated first, from the server's scores
+        let mut rated: Vec<&Item> = lib.all().filter(|i| i.score.is_some()).collect();
+        if rated.len() >= 5 {
+            rated = shuffled(rated.into_iter(), "top", &self.shuffle); // ties in a random order
+            rated.sort_by(|a, b| b.score.unwrap_or(0.0).total_cmp(&a.score.unwrap_or(0.0)));
+            let cards = self.poster_cards(rated.into_iter().take(24), progress);
+            click = click.or(self.row(ui, "Top rated", &cards, false, None, images));
+        }
+        // the rest in a random order (the same all session), so the home page isn't A to Z
         if !lib.movies.is_empty() {
-            let cards = self.poster_cards(lib.movies.iter().take(30), progress);
+            let movies = shuffled(lib.movies.iter(), "movies", &self.shuffle);
+            let cards = self.poster_cards(movies.into_iter().take(30), progress);
             click = click.or(self.row(ui, "Movies", &cards, false, Some(View::Movies), images));
         }
         if !lib.series.is_empty() {
-            let cards = self.poster_cards(lib.series.iter().take(30), progress);
+            let series = shuffled(lib.series.iter(), "series", &self.shuffle);
+            let cards = self.poster_cards(series.into_iter().take(30), progress);
             click = click.or(self.row(ui, "TV shows", &cards, false, Some(View::Series), images));
         }
         let genres = if cfg.genre_rows {
@@ -717,8 +728,12 @@ impl Browse {
             Vec::new()
         };
         for g in genres.into_iter().take(8) {
-            let items = lib.all().filter(|i| i.genres.contains(&g));
-            let cards = self.poster_cards(items.take(30), progress);
+            let items = shuffled(
+                lib.all().filter(|i| i.genres.contains(&g)),
+                &g,
+                &self.shuffle,
+            );
+            let cards = self.poster_cards(items.into_iter().take(30), progress);
             if cards.len() >= 2 {
                 click = click.or(self.row(ui, &g, &cards, false, None, images));
             }
@@ -785,7 +800,7 @@ impl Browse {
         let ui = &mut child;
         ui.horizontal(|ui| {
             let (label, restart) = self.play_label(item, progress);
-            if primary_button(ui, &format!("▶  {label}"), true).clicked() {
+            if crate::ui::primary_button_icon(ui, Icon::Play, &label, true).clicked() {
                 click = Some(Click::Play(item.id.clone(), None, false));
             }
             if restart && secondary_button(ui, "Start over").clicked() {
@@ -1026,7 +1041,7 @@ impl Browse {
             if let Some(v) = all {
                 ui.add_space(10.0);
                 let r = ui.add(
-                    egui::Label::new(mono("See all ↗", 11.0).color(MUTED))
+                    egui::Label::new(mono("See all", 11.0).color(MUTED))
                         .sense(Sense::click())
                         .selectable(false),
                 );
@@ -1180,12 +1195,12 @@ impl Browse {
                     ui.label(mono("Genre", 11.0).color(MUTED));
                     ui.add_space(14.0);
                 }
-                let arrow = if self.desc {
-                    "↓  Descending"
+                let (icon, arrow) = if self.desc {
+                    (Icon::ArrowDown, "Descending")
                 } else {
-                    "↑  Ascending"
+                    (Icon::ArrowUp, "Ascending")
                 };
-                if small_button(ui, arrow)
+                if crate::ui::small_button_icon(ui, icon, arrow)
                     .on_hover_text("Sort direction")
                     .clicked()
                 {
@@ -1405,6 +1420,18 @@ fn view_index(v: &View) -> usize {
     }
 }
 
+/// `items` in a random order that stays the same all session; `row` gives
+/// each row its own order.
+fn shuffled<'a>(
+    items: impl Iterator<Item = &'a Item>,
+    row: &str,
+    shuffle: &RandomState,
+) -> Vec<&'a Item> {
+    let mut v: Vec<&Item> = items.collect();
+    v.sort_by_cached_key(|i| shuffle.hash_one((row, &i.id)));
+    v
+}
+
 /// Sort `items` by `key`, ascending or descending; ties keep their order and
 /// items without a key go last either way.
 fn sort_by<K: Ord>(items: &mut [&Item], desc: bool, key: impl Fn(&Item) -> Option<K>) {
@@ -1536,13 +1563,16 @@ fn card(ui: &mut Ui, c: &Card, wide: bool, images: &mut Images) -> Option<Click>
                 24.0,
                 Color32::from_black_alpha((160.0 * t) as u8),
             );
-            p.text(
-                art.center() + vec2(2.0, 0.0),
-                Align2::CENTER_CENTER,
-                "▶",
-                FontId::proportional(22.0),
+            let c = art.center() + vec2(2.0, 0.0);
+            p.add(egui::Shape::convex_polygon(
+                vec![
+                    c + vec2(-6.0, -9.0),
+                    c + vec2(9.0, 0.0),
+                    c + vec2(-6.0, 9.0),
+                ],
                 Color32::WHITE.gamma_multiply(t),
-            );
+                Stroke::NONE,
+            ));
         }
     }
     let tp = pos2(rect.left() + 2.0, rect.top() + size.y + 8.0);
@@ -1668,6 +1698,26 @@ fn grid(ui: &mut Ui, cards: &[Card], images: &mut Images) -> Option<Click> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shuffle_is_stable_and_keeps_everything() {
+        let items: Vec<Item> = (0..20)
+            .map(|n| Item {
+                id: format!("movie:{n}"),
+                ..Default::default()
+            })
+            .collect();
+        let st = RandomState::new();
+        let a = shuffled(items.iter(), "movies", &st);
+        let b = shuffled(items.iter(), "movies", &st);
+        let ids = |v: &[&Item]| v.iter().map(|i| i.id.clone()).collect::<Vec<_>>();
+        assert_eq!(ids(&a), ids(&b)); // same order every frame
+        let mut sorted = ids(&a);
+        sorted.sort();
+        let mut all = ids(&items.iter().collect::<Vec<_>>());
+        all.sort();
+        assert_eq!(sorted, all); // nothing lost or doubled
+    }
 
     #[test]
     fn sorts_both_ways_with_blanks_last() {

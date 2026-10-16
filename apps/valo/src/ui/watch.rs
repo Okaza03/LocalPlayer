@@ -688,7 +688,7 @@ impl Watch {
                         ui,
                         back_r,
                         Icon::SkipBack,
-                        &format!("Back {secs} seconds (←)"),
+                        &format!("Back {secs} seconds (left arrow key)"),
                     )
                     .clicked()
                     {
@@ -698,7 +698,7 @@ impl Watch {
                         ui,
                         fwd_r,
                         Icon::SkipForward,
-                        &format!("Forward {secs} seconds (→)"),
+                        &format!("Forward {secs} seconds (right arrow key)"),
                     )
                     .clicked()
                     {

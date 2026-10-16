@@ -529,7 +529,7 @@ impl State {
             }
             // buttons on the right: remove, down, up
             let mut x = r.right() - 8.0;
-            for (label, act) in [("Remove", 0), ("↓", 1), ("↑", 2)] {
+            for (label, act) in [("Remove", 0), ("down", 1), ("up", 2)] {
                 let bw = if act == 0 { 70.0 } else { 30.0 };
                 let br = egui::Rect::from_min_max(
                     pos2(x - bw, r.center().y - 14.0),
@@ -555,14 +555,29 @@ impl State {
                     Stroke::new(1.0f32, crate::ui::LINE_HI),
                     egui::StrokeKind::Inside,
                 );
-                let col = if act == 0 { ERROR } else { TEXT };
-                p.text(
-                    br.center(),
-                    egui::Align2::CENTER_CENTER,
-                    label.to_uppercase(),
-                    egui::FontId::monospace(10.5),
-                    col,
-                );
+                match act {
+                    0 => {
+                        p.text(
+                            br.center(),
+                            egui::Align2::CENTER_CENTER,
+                            label.to_uppercase(),
+                            egui::FontId::monospace(10.5),
+                            ERROR,
+                        );
+                    }
+                    1 => crate::ui::chrome::draw_icon(
+                        p,
+                        br.center(),
+                        crate::ui::chrome::Icon::ChevronDown,
+                        TEXT,
+                    ),
+                    _ => crate::ui::chrome::draw_icon(
+                        p,
+                        br.center(),
+                        crate::ui::chrome::Icon::ChevronUp,
+                        TEXT,
+                    ),
+                }
                 if b.clicked() {
                     match act {
                         0 => remove = Some(idx),

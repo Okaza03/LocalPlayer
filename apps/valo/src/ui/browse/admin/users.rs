@@ -248,7 +248,8 @@ fn user_row(
                 });
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     ui.add_enabled_ui(!busy, |ui| {
-                        let more = small_button(ui, "⋮").on_hover_text("More");
+                        let more =
+                            crate::ui::small_icon_button(ui, crate::ui::chrome::Icon::More, "More");
                         let id = ui.make_persistent_id(("admin-user-menu", &u.name));
                         if more.clicked() {
                             ui.memory_mut(|m| m.toggle_popup(id));

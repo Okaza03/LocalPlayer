@@ -77,7 +77,7 @@ impl Browse {
                         .color(MUTED),
                     );
                     ui.add_space(6.0);
-                    if ui.link("Setup guide for server admins ↗").clicked() {
+                    if crate::ui::ext_link(ui, "Setup guide for server admins") {
                         chrome::open_url(api::SESSIONS_DOCS);
                     }
                 }

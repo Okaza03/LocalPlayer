@@ -149,7 +149,7 @@ impl State {
                         ui.label(RichText::new(line).color(MUTED));
                         ui.add_space(6.0);
                     }
-                    if ui.link("Bot setup guide ↗").clicked() {
+                    if crate::ui::ext_link(ui, "Bot setup guide") {
                         crate::ui::chrome::open_url(Section::Requests.docs());
                     }
                 });
@@ -250,7 +250,11 @@ impl State {
                     });
                     ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
                         ui.add_enabled_ui(!busy, |ui| {
-                            let more = small_button(ui, "⋮");
+                            let more = crate::ui::small_icon_button(
+                                ui,
+                                crate::ui::chrome::Icon::More,
+                                "More",
+                            );
                             let id = ui.make_persistent_id(("request-menu", &r.id));
                             if more.clicked() {
                                 ui.memory_mut(|m| m.toggle_popup(id));

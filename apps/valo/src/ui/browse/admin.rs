@@ -359,7 +359,9 @@ pub(super) fn not_set_up(ui: &mut Ui, s: Section, server: &str) -> bool {
         );
         ui.add_space(12.0);
         ui.horizontal(|ui| {
-            if small_button(ui, "Setup guide ↗").clicked() {
+            if crate::ui::small_button_icon(ui, crate::ui::chrome::Icon::External, "Setup guide")
+                .clicked()
+            {
                 chrome::open_url(s.docs());
             }
             if small_button(ui, "Check again").clicked() {
@@ -374,7 +376,7 @@ pub(super) fn not_set_up(ui: &mut Ui, s: Section, server: &str) -> bool {
 pub(super) fn needs_note(ui: &mut Ui, text: &str, s: Section) {
     ui.horizontal_wrapped(|ui| {
         ui.label(RichText::new(text).small().color(MUTED));
-        if ui.link(RichText::new("Setup guide ↗").small()).clicked() {
+        if crate::ui::ext_link(ui, RichText::new("Setup guide").small()) {
             chrome::open_url(s.docs());
         }
     });
@@ -425,10 +427,10 @@ impl Browse {
                     ui.add_space(2.0);
                 }
                 ui.add_space(18.0);
-                if st.web == Some(true) && ui.link("Open web admin ↗").clicked() {
+                if st.web == Some(true) && crate::ui::ext_link(ui, "Open web admin") {
                     chrome::open_url(&format!("{}/admin", self.client.base));
                 }
-                if ui.link("Setup guides ↗").clicked() {
+                if crate::ui::ext_link(ui, "Setup guides") {
                     chrome::open_url(api::API_DOCS);
                 }
             });
