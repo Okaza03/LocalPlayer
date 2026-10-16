@@ -21,6 +21,10 @@ use ffmpeg_next as ffmpeg;
 use crate::audio::AudioShared;
 
 const MAX_QUEUED_FRAMES: usize = 5;
+/// While little audio is buffered, read on past [`MAX_QUEUED_FRAMES`] up to
+/// this many frames: some files put a second or so of video before their first
+/// audio, and the clock (driven by audio) would never start.
+const MAX_STARVED_FRAMES: usize = 48;
 const MAX_VIDEO_WIDTH: u32 = 1920;
 
 /// Where a video comes from.
@@ -438,7 +442,14 @@ impl Decoder {
                 thread::sleep(Duration::from_millis(20));
                 continue;
             }
-            if sh.vq.lock().unwrap().len() >= MAX_QUEUED_FRAMES || audio.buffered_secs() > 1.0 {
+            let queued = sh.vq.lock().unwrap().len();
+            let starved = self.audio.is_some() && audio.buffered_secs() < 0.3;
+            let full = if starved {
+                queued >= MAX_STARVED_FRAMES
+            } else {
+                queued >= MAX_QUEUED_FRAMES
+            };
+            if full || audio.buffered_secs() > 1.0 {
                 thread::sleep(Duration::from_millis(4));
                 continue;
             }
@@ -556,5 +567,43 @@ impl Decoder {
             audio.push(&samples);
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A clip with a second of video before its first audio (a fragmented
+    /// MP4), like some downloads: playback must still start.
+    #[test]
+    fn starts_when_audio_comes_late() {
+        let dir = std::env::temp_dir().join(format!("valo-late-audio-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let clip = dir.join("late.mp4");
+        let made = std::process::Command::new("ffmpeg")
+            .args(["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc=size=320x240:rate=24"])
+            .args(["-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000", "-t", "4"])
+            .args(["-c:v", "libx264", "-bf", "3", "-c:a", "aac"])
+            .args(["-movflags", "+frag_keyframe+empty_moov", "-frag_duration", "1000000"])
+            .arg(&clip)
+            .status();
+        if !made.is_ok_and(|s| s.success()) {
+            eprintln!("no ffmpeg with libx264 here; skipping");
+            return;
+        }
+        let audio = Arc::new(AudioShared::new(true, 48000));
+        let p = Player::open(&Source::File(clip), audio.clone()).unwrap();
+        assert!(p.meta.has_audio);
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while audio.buffered_secs() < 0.25 && std::time::Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(20));
+        }
+        assert!(
+            audio.buffered_secs() >= 0.25,
+            "the decoder stalled before reaching the audio"
+        );
+        drop(p);
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

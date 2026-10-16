@@ -19,7 +19,7 @@ pub struct AudioShared {
 }
 
 impl AudioShared {
-    fn new(available: bool, rate: u32) -> Self {
+    pub(crate) fn new(available: bool, rate: u32) -> Self {
         Self {
             available,
             rate,
