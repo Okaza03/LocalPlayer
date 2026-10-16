@@ -87,6 +87,8 @@ impl Browse {
         let w = ui.available_width();
         let h = (w * if skin == Skin::Apple { 0.52 } else { 0.46 }).clamp(380.0, 780.0);
         let (rect, resp) = ui.allocate_exact_size(vec2(w, h), Sense::hover());
+        // opens from anywhere on the banner, like More info
+        let hit = ui.interact(rect, ui.id().with("banner"), Sense::click());
         let p = ui.painter_at(rect);
         let art = item.backdrop.as_ref().or(item.poster.as_ref());
         match art.and_then(|u| images.get(u)) {
@@ -198,6 +200,9 @@ impl Browse {
             carousel.1,
             resp.hovered() || resp.contains_pointer(),
         );
+        if click.is_none() && hit.on_hover_cursor(CursorIcon::PointingHand).clicked() {
+            click = Some(Click::Open(item.id.clone()));
+        }
         (click, step)
     }
 
