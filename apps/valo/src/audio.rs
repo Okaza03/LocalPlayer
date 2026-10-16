@@ -1,5 +1,5 @@
 //! Audio output: a ring buffer drained by a cpal stream. The audio clock
-//! (frames actually played) is the master clock for video sync.
+//! (frames actually heard) is the master clock for video sync.
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering::Relaxed};
 use std::sync::{Arc, Mutex};
@@ -13,6 +13,9 @@ pub struct AudioShared {
     pub rate: u32,
     buf: Mutex<VecDeque<f32>>, // interleaved stereo
     consumed: AtomicU64,       // stereo frames played since last reset
+    /// Frames handed to the device but not heard yet: its buffer, plus
+    /// Bluetooth and the like (~0.3 s on a Bluetooth headset).
+    latency: AtomicU64,
     paused: AtomicBool,
     muted: AtomicBool,
     volume: AtomicU32,
@@ -25,6 +28,7 @@ impl AudioShared {
             rate,
             buf: Mutex::new(VecDeque::new()),
             consumed: AtomicU64::new(0),
+            latency: AtomicU64::new(0),
             paused: AtomicBool::new(false),
             muted: AtomicBool::new(false),
             volume: AtomicU32::new(1.0f32.to_bits()),
@@ -39,8 +43,13 @@ impl AudioShared {
         self.buf.lock().unwrap().len() as f64 / 2.0 / self.rate as f64
     }
 
+    /// Seconds heard since the last reset; picture and subtitles follow this.
     pub fn played_secs(&self) -> f64 {
-        self.consumed.load(Relaxed) as f64 / self.rate as f64
+        let heard = self
+            .consumed
+            .load(Relaxed)
+            .saturating_sub(self.latency.load(Relaxed));
+        heard as f64 / self.rate as f64
     }
 
     pub fn reset(&self) {
@@ -59,7 +68,12 @@ impl AudioShared {
         self.volume.store(v.clamp(0.0, 1.0).to_bits(), Relaxed);
     }
 
-    fn fill<T: cpal::SizedSample + cpal::FromSample<f32>>(&self, out: &mut [T], ch: usize) {
+    fn fill<T: cpal::SizedSample + cpal::FromSample<f32>>(
+        &self,
+        out: &mut [T],
+        ch: usize,
+        info: &cpal::OutputCallbackInfo,
+    ) {
         let mut buf = self.buf.lock().unwrap();
         let play = !self.paused.load(Relaxed);
         let vol = if self.muted.load(Relaxed) {
@@ -85,6 +99,12 @@ impl AudioShared {
             }
         }
         self.consumed.fetch_add(frames, Relaxed);
+        // the first frame of `out` is heard at `playback`; the rest after it
+        let ts = info.timestamp();
+        if let Some(d) = ts.playback.duration_since(&ts.callback) {
+            let ahead = (d.as_secs_f64() * self.rate as f64) as u64;
+            self.latency.store(ahead + (out.len() / ch) as u64, Relaxed);
+        }
     }
 }
 
@@ -141,7 +161,7 @@ where
 {
     Ok(dev.build_output_stream(
         cfg,
-        move |out: &mut [T], _| sh.fill(out, ch),
+        move |out: &mut [T], info: &cpal::OutputCallbackInfo| sh.fill(out, ch, info),
         |e| eprintln!("audio error: {e}"),
         None,
     )?)
