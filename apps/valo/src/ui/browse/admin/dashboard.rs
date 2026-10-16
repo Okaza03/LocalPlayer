@@ -214,14 +214,14 @@ impl State {
 
     fn api_status(&mut self, ui: &mut Ui) {
         panel(ui, |ui| {
-            caps(ui, "API status", TEAL);
+            caps(ui, "API status", TEAL());
             ui.add_space(10.0);
             let row = |ui: &mut Ui, ok: bool, name: &str, detail: &str| {
                 ui.horizontal(|ui| {
-                    status_dot(ui, if ok { OK } else { ERROR });
-                    ui.label(RichText::new(name).color(TEXT));
+                    status_dot(ui, if ok { OK() } else { ERROR() });
+                    ui.label(RichText::new(name).color(TEXT()));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.add(egui::Label::new(mono(detail, 10.5).color(MUTED)).truncate());
+                        ui.add(egui::Label::new(mono(detail, 10.5).color(MUTED())).truncate());
                     });
                 });
                 ui.add_space(4.0);
@@ -269,9 +269,9 @@ impl State {
                             Section::Dashboard,
                         );
                     } else if let Some(e) = &self.status.error {
-                        ui.label(RichText::new(e).small().color(ERROR));
+                        ui.label(RichText::new(e).small().color(ERROR()));
                     } else if self.status.loading() {
-                        ui.add(egui::Spinner::new().size(14.0).color(MUTED));
+                        ui.add(egui::Spinner::new().size(14.0).color(MUTED()));
                     }
                 }
             }
@@ -279,7 +279,7 @@ impl State {
     }
 
     fn health(&mut self, ui: &mut Ui, cx: &mut Cx) {
-        caps(ui, "Library health", TEAL);
+        caps(ui, "Library health", TEAL());
         ui.add_space(4.0);
         let server_checks = self
             .status
@@ -291,9 +291,9 @@ impl State {
             // the server's checks, the same ones its website shows
             let flagged: usize = server_checks.iter().map(|h| h.count).sum();
             ui.horizontal(|ui| {
-                let col = if flagged == 0 { OK } else { WARN };
+                let col = if flagged == 0 { OK() } else { WARN() };
                 ui.label(bold(flagged.to_string(), 24.0).color(col));
-                ui.label(RichText::new("issues found by the server").color(MUTED));
+                ui.label(RichText::new("issues found by the server").color(MUTED()));
             });
             ui.add_space(12.0);
             for h in &server_checks {
@@ -309,12 +309,12 @@ impl State {
                         }
                     }
                     for it in h.items.iter().take(60) {
-                        ui.label(mono(it, 10.5).color(TEXT));
+                        ui.label(mono(it, 10.5).color(TEXT()));
                     }
                     let shown = h.titles.len().min(60) + h.items.len().min(60);
                     if h.count > shown && shown > 0 {
                         ui.label(
-                            RichText::new(format!("and {} more", h.count - shown)).color(MUTED),
+                            RichText::new(format!("and {} more", h.count - shown)).color(MUTED()),
                         );
                     }
                 });
@@ -333,12 +333,12 @@ impl State {
         let score = (100 * (total - flawed)).checked_div(total).unwrap_or(100);
         ui.horizontal(|ui| {
             let col = match score {
-                90.. => OK,
-                60.. => WARN,
-                _ => ERROR,
+                90.. => OK(),
+                60.. => WARN(),
+                _ => ERROR(),
             };
             ui.label(bold(format!("{score}%"), 24.0).color(col));
-            ui.label(RichText::new(format!("of {total} titles have everything")).color(MUTED));
+            ui.label(RichText::new(format!("of {total} titles have everything")).color(MUTED()));
         });
         ui.add_space(12.0);
         for (label, f) in &checks {
@@ -355,11 +355,11 @@ impl State {
                         if ui.link(format!("{}{year}", i.title)).clicked() {
                             cx.goto = Some((Section::Library, Some(i.id.clone())));
                         }
-                        ui.label(mono(kind, 9.5).color(MUTED));
+                        ui.label(mono(kind, 9.5).color(MUTED()));
                     });
                 }
                 if hits.len() > 60 {
-                    ui.label(RichText::new(format!("and {} more", hits.len() - 60)).color(MUTED));
+                    ui.label(RichText::new(format!("and {} more", hits.len() - 60)).color(MUTED()));
                 }
             });
         }
@@ -376,9 +376,10 @@ impl State {
         let open = self.open.as_deref() == Some(label);
         let resp = ui
             .horizontal(|ui| {
-                status_dot(ui, if n == 0 { OK } else { WARN });
+                status_dot(ui, if n == 0 { OK() } else { WARN() });
                 let r = ui.add(
-                    egui::Label::new(RichText::new(label).color(TEXT)).sense(egui::Sense::click()),
+                    egui::Label::new(RichText::new(label).color(TEXT()))
+                        .sense(egui::Sense::click()),
                 );
                 if n > 0 {
                     let (cr, _) =
@@ -388,10 +389,14 @@ impl State {
                     } else {
                         crate::ui::chrome::Icon::ChevronRight
                     };
-                    crate::ui::chrome::draw_icon(ui.painter(), cr.center(), icon, MUTED);
+                    crate::ui::chrome::draw_icon(ui.painter(), cr.center(), icon, MUTED());
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.label(mono(n.to_string(), 11.0).color(if n == 0 { MUTED } else { WARN }));
+                    ui.label(mono(n.to_string(), 11.0).color(if n == 0 {
+                        MUTED()
+                    } else {
+                        WARN()
+                    }));
                 });
                 r
             })
@@ -412,7 +417,7 @@ impl State {
     fn syncs(&mut self, ui: &mut Ui, cx: &mut Cx) {
         let mut apply = false;
         panel(ui, |ui| {
-            caps(ui, "Sync operations", TEAL);
+            caps(ui, "Sync operations", TEAL());
             ui.add_space(10.0);
             if self.sync_missing {
                 needs_note(
@@ -428,7 +433,7 @@ impl State {
                     ui.label(bold(title, 15.0));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if running == Some(what) {
-                            ui.add(egui::Spinner::new().size(16.0).color(MUTED));
+                            ui.add(egui::Spinner::new().size(16.0).color(MUTED()));
                         } else {
                             let label = if what == "folders" { "Compare" } else { "Run" };
                             let b = ui
@@ -447,7 +452,7 @@ impl State {
                         }
                     });
                 });
-                ui.label(RichText::new(about).small().color(MUTED));
+                ui.label(RichText::new(about).small().color(MUTED()));
                 ui.add_space(12.0);
             }
             // the original admin API's one button, which every Valo admin server has
@@ -474,31 +479,31 @@ impl State {
             ui.label(
                 RichText::new("Reads the media folders again and reloads the library here.")
                     .small()
-                    .color(MUTED),
+                    .color(MUTED()),
             );
             ui.add_space(12.0);
             if let Some(e) = &self.sync_error {
-                ui.label(RichText::new(e).color(ERROR));
+                ui.label(RichText::new(e).color(ERROR()));
             }
             if let Some((what, rep)) = &self.report {
                 ui.separator();
                 ui.add_space(6.0);
                 let title = SYNCS.iter().find(|s| s.0 == *what).map_or("", |s| s.1);
                 let verb = if rep.applied { "done" } else { "dry run" };
-                caps(ui, &format!("{title}: {verb}"), MUTED);
+                caps(ui, &format!("{title}: {verb}"), MUTED());
                 if let Some(m) = &rep.message {
-                    ui.label(RichText::new(m).color(TEXT));
+                    ui.label(RichText::new(m).color(TEXT()));
                 }
                 if rep.running {
                     ui.label(
                         RichText::new("Still running on the server; follow the live log.")
-                            .color(MUTED),
+                            .color(MUTED()),
                     );
                 }
                 for (label, list, col) in [
-                    ("New", &rep.added, OK),
-                    ("Removed", &rep.removed, ERROR),
-                    ("Updated", &rep.updated, TEXT),
+                    ("New", &rep.added, OK()),
+                    ("Removed", &rep.removed, ERROR()),
+                    ("Updated", &rep.updated, TEXT()),
                 ] {
                     if list.is_empty() {
                         continue;
@@ -522,7 +527,7 @@ impl State {
                                 "Write these {changes} changes to the database? Removed files \
                                  lose their entries, watch progress included."
                             ))
-                            .color(TEXT),
+                            .color(TEXT()),
                         );
                         ui.horizontal(|ui| {
                             if ui
@@ -549,7 +554,7 @@ impl State {
                 {
                     ui.label(
                         RichText::new("Nothing changed: the database matches the folders.")
-                            .color(MUTED),
+                            .color(MUTED()),
                     );
                 }
             }
@@ -567,9 +572,9 @@ impl State {
 
     fn log(&mut self, ui: &mut Ui) {
         ui.horizontal(|ui| {
-            caps(ui, "Live log", TEAL);
+            caps(ui, "Live log", TEAL());
             if !self.paused && !self.log_missing {
-                status_dot(ui, OK);
+                status_dot(ui, OK());
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if !self.log_missing {
@@ -588,7 +593,7 @@ impl State {
                  Updates every few seconds.",
             )
             .small()
-            .color(MUTED),
+            .color(MUTED()),
         );
         ui.add_space(8.0);
         if self.log_missing {
@@ -600,11 +605,11 @@ impl State {
             return;
         }
         if let Some(e) = &self.log_error {
-            ui.label(RichText::new(e).small().color(ERROR));
+            ui.label(RichText::new(e).small().color(ERROR()));
         }
         egui::Frame::new()
-            .fill(egui::Color32::from_rgb(12, 13, 16))
-            .stroke(egui::Stroke::new(1.0f32, crate::ui::LINE))
+            .fill(crate::ui::FIELD())
+            .stroke(egui::Stroke::new(1.0f32, crate::ui::LINE()))
             .corner_radius(8)
             .inner_margin(12)
             .show(ui, |ui| {
@@ -617,15 +622,15 @@ impl State {
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
                         if self.logs.is_empty() {
-                            ui.label(mono("Waiting for log lines…", 10.5).color(MUTED));
+                            ui.label(mono("Waiting for log lines…", 10.5).color(MUTED()));
                         }
                         let now = now_unix();
                         for l in &self.logs {
                             let col = match l.level.to_lowercase().as_str() {
-                                "error" | "critical" => ERROR,
-                                "warning" | "warn" => WARN,
-                                "debug" => MUTED,
-                                _ => TEXT,
+                                "error" | "critical" => ERROR(),
+                                "warning" | "warn" => WARN(),
+                                "debug" => MUTED(),
+                                _ => TEXT(),
                             };
                             ui.horizontal_top(|ui| {
                                 ui.label(
@@ -637,7 +642,7 @@ impl State {
                                     })
                                     .monospace()
                                     .size(11.0)
-                                    .color(MUTED),
+                                    .color(MUTED()),
                                 );
                                 ui.add(
                                     egui::Label::new(

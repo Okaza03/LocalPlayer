@@ -60,11 +60,11 @@ impl Browse {
                 list.as_ref().map_or(0, Vec::len),
             );
             if let Some((msg, ok)) = &st.notice {
-                ui.label(RichText::new(msg).color(if *ok { OK } else { ERROR }));
+                ui.label(RichText::new(msg).color(if *ok { OK() } else { ERROR() }));
                 ui.add_space(8.0);
             }
             if let Some(e) = &st.list.error {
-                ui.label(RichText::new(format!("Couldn't load your devices: {e}")).color(ERROR));
+                ui.label(RichText::new(format!("Couldn't load your devices: {e}")).color(ERROR()));
             }
             match (&st.list.data, list) {
                 (Some(None), _) => {
@@ -74,7 +74,7 @@ impl Browse {
                              until then you can only sign out here.",
                             self.client.info.name
                         ))
-                        .color(MUTED),
+                        .color(MUTED()),
                     );
                     ui.add_space(6.0);
                     if crate::ui::ext_link(ui, "Setup guide for server admins") {
@@ -107,7 +107,7 @@ impl Browse {
                 }
                 _ => {
                     if st.list.loading() {
-                        ui.add(egui::Spinner::new().size(18.0).color(MUTED));
+                        ui.add(egui::Spinner::new().size(18.0).color(MUTED()));
                     }
                 }
             }
@@ -152,22 +152,22 @@ impl Browse {
 fn device_row(ui: &mut Ui, s: &DeviceSession, busy: bool) -> bool {
     let mut out = false;
     egui::Frame::new()
-        .stroke(Stroke::new(1.0f32, LINE))
+        .stroke(Stroke::new(1.0f32, LINE()))
         .corner_radius(8)
         .inner_margin(egui::Margin::symmetric(14, 12))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
                 let (r, _) = ui.allocate_exact_size(vec2(28.0, 28.0), Sense::hover());
-                screen(ui.painter(), r, if s.current { TEAL } else { MUTED });
+                screen(ui.painter(), r, if s.current { TEAL() } else { MUTED() });
                 ui.add_space(6.0);
                 ui.vertical(|ui| {
                     ui.spacing_mut().item_spacing.y = 2.0;
                     ui.horizontal(|ui| {
                         let name = s.device.clone().unwrap_or_else(|| "Unknown device".into());
-                        ui.label(RichText::new(name).size(15.0).color(TEXT));
+                        ui.label(RichText::new(name).size(15.0).color(TEXT()));
                         if s.current {
-                            ui.label(mono("This device", 10.0).color(TEAL));
+                            ui.label(mono("This device", 10.0).color(TEAL()));
                         }
                     });
                     let mut parts = Vec::new();
@@ -180,7 +180,7 @@ fn device_row(ui: &mut Ui, s: &DeviceSession, busy: bool) -> bool {
                     if let Some(ip) = &s.ip {
                         parts.push(ip.clone());
                     }
-                    ui.label(mono(parts.join("   ·   "), 10.0).color(MUTED));
+                    ui.label(mono(parts.join("   ·   "), 10.0).color(MUTED()));
                 });
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     let label = if s.current {

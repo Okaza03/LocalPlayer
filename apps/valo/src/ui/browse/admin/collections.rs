@@ -153,13 +153,13 @@ impl State {
         new: &mut bool,
     ) {
         panel(ui, |ui| {
-            caps(ui, "Collections", TEAL);
+            caps(ui, "Collections", TEAL());
             ui.add_space(8.0);
             if let Some(e) = &self.list.error {
-                ui.label(RichText::new(e).color(ERROR));
+                ui.label(RichText::new(e).color(ERROR()));
             }
             if list.is_empty() && self.list.data.is_some() {
-                ui.label(RichText::new("None yet.").color(MUTED));
+                ui.label(RichText::new("None yet.").color(MUTED()));
             }
             for c in list {
                 let n = c.members().len();
@@ -208,7 +208,7 @@ impl State {
     fn editor(&mut self, ui: &mut Ui, cx: &mut Cx) {
         let Some(id) = self.selected.clone() else {
             panel(ui, |ui| {
-                caps(ui, "How collections work", TEAL);
+                caps(ui, "How collections work", TEAL());
                 ui.add_space(6.0);
                 ui.label(
                     RichText::new(
@@ -217,10 +217,10 @@ impl State {
                          Batman sit next to each other under B, instead of spread across \
                          the alphabet.",
                     )
-                    .color(MUTED),
+                    .color(MUTED()),
                 );
                 ui.add_space(10.0);
-                ui.label(RichText::new("Pick one on the right, or make a new one.").color(MUTED));
+                ui.label(RichText::new("Pick one on the right, or make a new one.").color(MUTED()));
             });
             return;
         };
@@ -235,26 +235,26 @@ impl State {
             } else {
                 "Collection"
             },
-            TEAL,
+            TEAL(),
         );
         ui.add_space(6.0);
-        ui.label(mono("Name", 10.5).color(MUTED));
+        ui.label(mono("Name", 10.5).color(MUTED()));
         text_field(ui, &mut self.name, "Batman", false);
         ui.add_space(12.0);
 
         // members, in the order the app shows them; drag to reorder
         ui.horizontal(|ui| {
             ui.label(bold("Titles", 20.0));
-            ui.label(mono(self.members.len().to_string(), 12.0).color(MUTED));
+            ui.label(mono(self.members.len().to_string(), 12.0).color(MUTED()));
         });
         ui.label(
             RichText::new("Shown in this order in the app, top first. Drag a title to move it.")
                 .small()
-                .color(MUTED),
+                .color(MUTED()),
         );
         ui.add_space(8.0);
         if self.members.is_empty() {
-            ui.label(RichText::new("Add titles from the list below.").color(MUTED));
+            ui.label(RichText::new("Add titles from the list below.").color(MUTED()));
         }
         self.member_rows(ui, cx);
         ui.add_space(10.0);
@@ -317,7 +317,7 @@ impl State {
                      own place in A to Z.",
                     self.saved.0
                 ))
-                .color(TEXT),
+                .color(TEXT()),
             );
             ui.horizontal(|ui| {
                 if ui
@@ -346,7 +346,7 @@ impl State {
         ui.add_space(24.0);
 
         // adding titles
-        caps(ui, "Add titles", TEAL);
+        caps(ui, "Add titles", TEAL());
         ui.add_space(6.0);
         text_field(ui, &mut self.search, "Search movies and series", false);
         ui.add_space(8.0);
@@ -360,7 +360,7 @@ impl State {
         found.sort_by_key(|i| i.title.to_lowercase());
         let mut toggle = None;
         egui::Frame::new()
-            .stroke(Stroke::new(1.0f32, LINE))
+            .stroke(Stroke::new(1.0f32, LINE()))
             .corner_radius(8)
             .inner_margin(6)
             .show(ui, |ui| {
@@ -398,11 +398,11 @@ fn nav_row(ui: &mut Ui, name: &str, n: usize, selected: bool) -> bool {
     let (r, resp) = ui.allocate_exact_size(vec2(w, 34.0), Sense::click());
     let p = ui.painter();
     if selected {
-        p.rect_filled(r, 4.0, Color32::WHITE);
+        p.rect_filled(r, 4.0, crate::ui::PRIMARY());
     } else if resp.hovered() {
-        p.rect_filled(r, 4.0, SURFACE_HI);
+        p.rect_filled(r, 4.0, SURFACE_HI());
     }
-    let col = if selected { crate::ui::INK } else { TEXT };
+    let col = if selected { crate::ui::INK() } else { TEXT() };
     p.text(
         r.left_center() + vec2(10.0, 0.0),
         egui::Align2::LEFT_CENTER,
@@ -416,9 +416,9 @@ fn nav_row(ui: &mut Ui, name: &str, n: usize, selected: bool) -> bool {
         n.to_string(),
         egui::FontId::monospace(11.0),
         if selected {
-            Color32::from_gray(90)
+            crate::ui::INK().gamma_multiply(0.6)
         } else {
-            MUTED
+            MUTED()
         },
     );
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
@@ -469,19 +469,24 @@ impl State {
                 r,
                 6.0,
                 if dragged || resp.hovered() {
-                    SURFACE_HI
+                    SURFACE_HI()
                 } else {
                     Color32::TRANSPARENT
                 },
             );
-            p.rect_stroke(r, 6.0, Stroke::new(1.0f32, LINE), egui::StrokeKind::Inside);
+            p.rect_stroke(
+                r,
+                6.0,
+                Stroke::new(1.0f32, LINE()),
+                egui::StrokeKind::Inside,
+            );
             // grip
             for dy in [-5.0, 0.0, 5.0] {
                 let y = r.center().y + dy;
                 p.hline(
                     r.left() + 10.0..=r.left() + 22.0,
                     y,
-                    Stroke::new(1.5f32, MUTED),
+                    Stroke::new(1.5f32, MUTED()),
                 );
             }
             p.text(
@@ -489,7 +494,7 @@ impl State {
                 egui::Align2::LEFT_CENTER,
                 format!("{}", idx + 1),
                 egui::FontId::monospace(11.0),
-                MUTED,
+                MUTED(),
             );
             let art =
                 egui::Rect::from_min_size(pos2(r.left() + 56.0, r.top() + 6.0), vec2(31.0, 46.0));
@@ -508,7 +513,7 @@ impl State {
                 egui::Align2::LEFT_CENTER,
                 title,
                 egui::FontId::proportional(14.5),
-                TEXT,
+                TEXT(),
             );
             let sub = item.map(|i| {
                 let kind = if i.kind == Kind::Movie {
@@ -524,7 +529,7 @@ impl State {
                     egui::Align2::LEFT_CENTER,
                     sub,
                     egui::FontId::monospace(10.0),
-                    MUTED,
+                    MUTED(),
                 );
             }
             // buttons on the right: remove, down, up
@@ -552,7 +557,7 @@ impl State {
                 p.rect_stroke(
                     br,
                     2.0,
-                    Stroke::new(1.0f32, crate::ui::LINE_HI),
+                    Stroke::new(1.0f32, crate::ui::LINE_HI()),
                     egui::StrokeKind::Inside,
                 );
                 match act {
@@ -562,20 +567,20 @@ impl State {
                             egui::Align2::CENTER_CENTER,
                             label.to_uppercase(),
                             egui::FontId::monospace(10.5),
-                            ERROR,
+                            ERROR(),
                         );
                     }
                     1 => crate::ui::chrome::draw_icon(
                         p,
                         br.center(),
                         crate::ui::chrome::Icon::ChevronDown,
-                        TEXT,
+                        TEXT(),
                     ),
                     _ => crate::ui::chrome::draw_icon(
                         p,
                         br.center(),
                         crate::ui::chrome::Icon::ChevronUp,
-                        TEXT,
+                        TEXT(),
                     ),
                 }
                 if b.clicked() {
@@ -605,7 +610,7 @@ impl State {
                     None => rects[rects.len() - 1].bottom() + 2.0,
                 };
                 ui.painter()
-                    .hline(rects[0].x_range(), y, Stroke::new(2.0f32, TEAL));
+                    .hline(rects[0].x_range(), y, Stroke::new(2.0f32, TEAL()));
                 if ui.input(|i| i.pointer.any_released()) {
                     shift = Some((from, to));
                     self.drag = None;

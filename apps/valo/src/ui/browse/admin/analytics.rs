@@ -71,12 +71,12 @@ impl State {
                 );
                 if self.data.loading() {
                     ui.add_space(10.0);
-                    ui.add(egui::Spinner::new().size(16.0).color(MUTED));
+                    ui.add(egui::Spinner::new().size(16.0).color(MUTED()));
                 }
             });
             ui.add_space(18.0);
             if let Some(e) = &self.data.error {
-                ui.label(RichText::new(format!("Couldn't load analytics: {e}")).color(ERROR));
+                ui.label(RichText::new(format!("Couldn't load analytics: {e}")).color(ERROR()));
             }
         });
         let Some(a) = &self.data.data else {
@@ -102,7 +102,7 @@ impl State {
             );
             ui.add_space(6.0);
             panel(ui, |ui| {
-                caps(ui, "Plays per day", TEAL);
+                caps(ui, "Plays per day", TEAL());
                 ui.add_space(12.0);
                 day_chart(ui, &a.days);
             });
@@ -116,7 +116,7 @@ impl State {
             ui,
             kind,
             |ui, kind| {
-                caps(ui, "Most watched", TEAL);
+                caps(ui, "Most watched", TEAL());
                 ui.add_space(4.0);
                 ui.horizontal(|ui| {
                     ui.label(bold("Top titles", 22.0));
@@ -135,7 +135,7 @@ impl State {
                 ui.add_space(12.0);
                 let top: Vec<_> = a.top.iter().filter(|t| fits(&t.kind, *kind)).collect();
                 if top.is_empty() {
-                    ui.label(RichText::new("Nothing watched in this range.").color(MUTED));
+                    ui.label(RichText::new("Nothing watched in this range.").color(MUTED()));
                 }
                 let max = top.iter().map(|t| t.plays).max().unwrap_or(1).max(1);
                 for t in top.iter().take(15) {
@@ -161,7 +161,7 @@ impl State {
                     .collect();
                 if !rated.is_empty() {
                     ui.add_space(20.0);
-                    caps(ui, "Users' ratings", TEAL);
+                    caps(ui, "Users' ratings", TEAL());
                     ui.add_space(4.0);
                     ui.label(bold("Top rated", 22.0));
                     ui.add_space(12.0);
@@ -179,10 +179,10 @@ impl State {
             },
             |ui, _| {
                 panel(ui, |ui| {
-                    caps(ui, "By user", TEAL);
+                    caps(ui, "By user", TEAL());
                     ui.add_space(10.0);
                     if a.users.is_empty() {
-                        ui.label(RichText::new("No one watched in this range.").color(MUTED));
+                        ui.label(RichText::new("No one watched in this range.").color(MUTED()));
                     }
                     for u in &a.users {
                         ui.horizontal(|ui| {
@@ -190,7 +190,7 @@ impl State {
                             crate::ui::chrome::avatar(ui.painter(), r.center(), 13.0, &u.name);
                             ui.vertical(|ui| {
                                 ui.spacing_mut().item_spacing.y = 1.0;
-                                ui.label(RichText::new(&u.name).color(TEXT));
+                                ui.label(RichText::new(&u.name).color(TEXT()));
                                 let mut line = format!("{} plays · {:.1} h", u.plays, u.hours);
                                 if let (Some(m), Some(e)) = (u.movies, u.episodes) {
                                     line = format!("{m} movies · {e} episodes · {:.1} h", u.hours);
@@ -198,7 +198,7 @@ impl State {
                                 if let Some(t) = u.last_active {
                                     line.push_str(&format!(" · {}", ago(t)));
                                 }
-                                ui.label(mono(line, 10.0).color(MUTED));
+                                ui.label(mono(line, 10.0).color(MUTED()));
                             });
                         });
                         ui.add_space(8.0);
@@ -222,22 +222,22 @@ fn day_chart(ui: &mut Ui, days: &[DayStat]) {
             Align2::CENTER_CENTER,
             "No plays yet",
             FontId::monospace(11.0),
-            MUTED,
+            MUTED(),
         );
         return;
     }
     let max = days.iter().map(|d| d.plays).max().unwrap_or(0).max(1);
     for f in [0.5, 1.0] {
         let y = plot.bottom() - plot.height() * f;
-        p.hline(plot.x_range(), y, Stroke::new(1.0f32, LINE));
+        p.hline(plot.x_range(), y, Stroke::new(1.0f32, LINE()));
     }
-    p.hline(plot.x_range(), plot.bottom(), Stroke::new(1.0f32, LINE));
+    p.hline(plot.x_range(), plot.bottom(), Stroke::new(1.0f32, LINE()));
     p.text(
         pos2(plot.left(), plot.top()),
         Align2::LEFT_BOTTOM,
         max.to_string(),
         FontId::monospace(9.5),
-        MUTED,
+        MUTED(),
     );
     let slot = plot.width() / days.len() as f32;
     let bw = (slot * 0.7).clamp(1.0, 24.0);
@@ -260,7 +260,7 @@ fn day_chart(ui: &mut Ui, days: &[DayStat]) {
             tip = Some(d);
         }
         if d.plays > 0 {
-            p.rect_filled(bar, 2.0, if hot { TEXT } else { GOLD });
+            p.rect_filled(bar, 2.0, if hot { TEXT() } else { GOLD() });
         }
     }
     // first and last day under the axis
@@ -274,7 +274,7 @@ fn day_chart(ui: &mut Ui, days: &[DayStat]) {
                 align,
                 &d.day,
                 FontId::monospace(9.5),
-                MUTED,
+                MUTED(),
             );
         }
     }

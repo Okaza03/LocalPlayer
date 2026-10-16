@@ -52,7 +52,7 @@ pub fn title_bar(
 ) {
     egui::TopBottomPanel::top("title_bar")
         .exact_height(BAR_H)
-        .frame(egui::Frame::new().fill(BG).inner_margin(egui::Margin {
+        .frame(egui::Frame::new().fill(BG()).inner_margin(egui::Margin {
             left: 18,
             right: 0,
             top: 0,
@@ -130,7 +130,7 @@ pub fn update_button(
         let (r, _) = ui.allocate_exact_size(vec2(BAR_H, BAR_H), Sense::hover());
         egui::Spinner::new()
             .size(16.0)
-            .color(TEXT)
+            .color(TEXT())
             .paint_at(ui, Rect::from_center_size(r.center(), vec2(16.0, 16.0)));
     } else {
         if icon_button(ui, Icon::Refresh, "Check for updates").clicked() {
@@ -155,8 +155,11 @@ pub fn update_button(
 pub fn vsep(ui: &mut Ui) {
     let h = ui.available_height().min(BAR_H);
     let (r, _) = ui.allocate_exact_size(vec2(1.0, h), Sense::hover());
+    if super::theme::skin() != super::theme::Skin::Valo {
+        return; // the streaming styles don't rule off their top bar
+    }
     ui.painter()
-        .vline(r.center().x, r.y_range(), Stroke::new(1.0f32, LINE));
+        .vline(r.center().x, r.y_range(), Stroke::new(1.0f32, LINE()));
 }
 
 /// A square bar button with a drawn icon.
@@ -171,14 +174,16 @@ pub fn icon_button(ui: &mut Ui, icon: Icon, tip: &str) -> Response {
         let fill = if matches!(icon, Icon::Close) {
             Color32::from_rgb(196, 43, 28)
         } else {
-            SURFACE_HI
+            SURFACE_HI()
         };
         p.rect_filled(r, 0.0, fill);
     }
-    let col = if hot {
+    let col = if hot && matches!(icon, Icon::Close) {
         Color32::WHITE
+    } else if hot {
+        TEXT()
     } else {
-        Color32::from_gray(200)
+        TEXT().gamma_multiply(0.82)
     };
     draw_icon(p, r.center(), icon, col);
     resp.on_hover_text(tip)
@@ -439,7 +444,7 @@ pub fn draw_icon(p: &egui::Painter, c: Pos2, icon: Icon, col: Color32) {
                 p.line_segment([c + d * 5.0, c + d * 8.5], Stroke::new(3.0f32, col));
             }
             p.circle_filled(c, 6.2, col);
-            p.circle_filled(c, 2.6, BG);
+            p.circle_filled(c, 2.6, BG());
         }
     }
 }
@@ -452,7 +457,7 @@ pub fn status_bar(ctx: &egui::Context, left: &str, right: &str, refresh: bool) -
         .exact_height(30.0)
         .frame(
             egui::Frame::new()
-                .fill(BG)
+                .fill(BG())
                 .inner_margin(egui::Margin::symmetric(18, 0)),
         )
         .show(ctx, |ui| {
@@ -460,7 +465,7 @@ pub fn status_bar(ctx: &egui::Context, left: &str, right: &str, refresh: bool) -
                 // hovered last frame: light up like a link
                 let id = ui.id().with("status_left");
                 let hovered = ui.data(|d| d.get_temp::<bool>(id)).unwrap_or(false);
-                let col = if refresh && hovered { TEXT } else { MUTED };
+                let col = if refresh && hovered { TEXT() } else { MUTED() };
                 let r = ui.add(
                     egui::Label::new(mono(left, 10.5).color(col))
                         .truncate()
@@ -476,7 +481,7 @@ pub fn status_bar(ctx: &egui::Context, left: &str, right: &str, refresh: bool) -
                         .on_hover_text("Refresh the library")
                         .clicked();
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    ui.label(mono(right, 10.5).color(MUTED));
+                    ui.label(mono(right, 10.5).color(MUTED()));
                 });
                 clicked
             })
@@ -504,7 +509,7 @@ pub fn window_frame(ctx: &egui::Context) {
     .rect_stroke(
         screen,
         0.0,
-        Stroke::new(1.0f32, LINE),
+        Stroke::new(1.0f32, LINE()),
         egui::StrokeKind::Inside,
     );
     let Some(p) = ctx.input(|i| i.pointer.hover_pos()) else {
@@ -560,7 +565,7 @@ pub fn open_url(url: &str) {
 
 /// Avatar circle with the user's initial.
 pub fn avatar(p: &egui::Painter, c: Pos2, r: f32, name: &str) {
-    p.circle_filled(c, r, super::ACCENT);
+    p.circle_filled(c, r, super::ACCENT());
     let initial = name
         .chars()
         .next()
@@ -572,6 +577,6 @@ pub fn avatar(p: &egui::Painter, c: Pos2, r: f32, name: &str) {
         egui::Align2::CENTER_CENTER,
         initial,
         super::black_font(r * 1.05),
-        TEXT,
+        TEXT(),
     );
 }

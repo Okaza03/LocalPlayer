@@ -411,6 +411,7 @@ impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.images.poll(ctx);
         self.note_window(ctx);
+        ui::set_look(ctx, self.cfg.style, self.cfg.theme);
         if (ctx.zoom_factor() - self.cfg.ui_scale).abs() > 0.001 {
             ctx.set_zoom_factor(self.cfg.ui_scale.clamp(0.5, 2.0));
         }

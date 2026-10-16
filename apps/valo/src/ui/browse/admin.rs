@@ -342,7 +342,7 @@ impl AdminState {
 pub(super) fn not_set_up(ui: &mut Ui, s: Section, server: &str) -> bool {
     let mut again = false;
     panel(ui, |ui| {
-        caps(ui, "Not set up", WARN);
+        caps(ui, "Not set up", WARN());
         ui.add_space(6.0);
         ui.label(bold(
             format!("{} isn't set up on {server}", s.label()),
@@ -355,7 +355,7 @@ pub(super) fn not_set_up(ui: &mut Ui, s: Section, server: &str) -> bool {
                  everything to add, with examples.",
                 s.needs()
             ))
-            .color(MUTED),
+            .color(MUTED()),
         );
         ui.add_space(12.0);
         ui.horizontal(|ui| {
@@ -375,7 +375,7 @@ pub(super) fn not_set_up(ui: &mut Ui, s: Section, server: &str) -> bool {
 /// A small note under a feature that needs more from the server.
 pub(super) fn needs_note(ui: &mut Ui, text: &str, s: Section) {
     ui.horizontal_wrapped(|ui| {
-        ui.label(RichText::new(text).small().color(MUTED));
+        ui.label(RichText::new(text).small().color(MUTED()));
         if crate::ui::ext_link(ui, RichText::new("Setup guide").small()) {
             chrome::open_url(s.docs());
         }
@@ -390,7 +390,7 @@ pub(super) fn status_dot(ui: &mut Ui, col: Color32) {
 
 pub(super) fn notice(ui: &mut Ui, n: &Option<(String, bool)>) {
     if let Some((msg, ok)) = n {
-        ui.label(RichText::new(msg).color(if *ok { OK } else { ERROR }));
+        ui.label(RichText::new(msg).color(if *ok { OK() } else { ERROR() }));
         ui.add_space(10.0);
     }
 }
@@ -406,14 +406,16 @@ impl Browse {
             .exact_width(220.0)
             .frame(
                 egui::Frame::new()
-                    .fill(SURFACE)
-                    .stroke(egui::Stroke::new(1.0f32, LINE))
+                    .fill(SURFACE())
+                    .stroke(egui::Stroke::new(1.0f32, LINE()))
                     .inner_margin(egui::Margin::symmetric(14, 24)),
             )
             .show(ctx, |ui| {
-                caps(ui, "Admin", TEAL);
+                caps(ui, "Admin", TEAL());
                 ui.add_space(4.0);
-                ui.add(egui::Label::new(bold(&self.client.info.name, 16.0).color(TEXT)).truncate());
+                ui.add(
+                    egui::Label::new(bold(&self.client.info.name, 16.0).color(TEXT())).truncate(),
+                );
                 ui.add_space(18.0);
                 for s in Section::ALL {
                     let badge = match s {
@@ -498,7 +500,11 @@ impl Browse {
         // header
         ui.add_space(32.0);
         padded(ui, |ui| {
-            caps(ui, &format!("Admin   ·   {}", self.client.info.name), TEAL);
+            caps(
+                ui,
+                &format!("Admin   ·   {}", self.client.info.name),
+                TEAL(),
+            );
             ui.add_space(4.0);
             ui.horizontal(|ui| {
                 ui.label(bold(section.label(), 34.0));
@@ -511,12 +517,12 @@ impl Browse {
                         refresh = true;
                     }
                     if busy {
-                        ui.add(egui::Spinner::new().size(16.0).color(MUTED));
+                        ui.add(egui::Spinner::new().size(16.0).color(MUTED()));
                     }
                 });
             });
             ui.add_space(4.0);
-            ui.label(RichText::new(section.about()).color(MUTED));
+            ui.label(RichText::new(section.about()).color(MUTED()));
             ui.add_space(14.0);
             notice(ui, &st.notice);
             if st.notice_docs && st.notice.is_some() {
@@ -610,11 +616,11 @@ fn nav_item(ui: &mut Ui, label: &str, badge: Option<&str>, selected: bool) -> bo
     let (r, resp) = ui.allocate_exact_size(vec2(w, 36.0), Sense::click());
     let p = ui.painter();
     if selected {
-        p.rect_filled(r, 4.0, Color32::WHITE);
+        p.rect_filled(r, 4.0, crate::ui::PRIMARY());
     } else if resp.hovered() {
-        p.rect_filled(r, 4.0, SURFACE_HI);
+        p.rect_filled(r, 4.0, SURFACE_HI());
     }
-    let col = if selected { crate::ui::INK } else { TEXT };
+    let col = if selected { crate::ui::INK() } else { TEXT() };
     p.text(
         r.left_center() + vec2(12.0, 0.0),
         Align2::LEFT_CENTER,
@@ -632,9 +638,9 @@ fn nav_item(ui: &mut Ui, label: &str, badge: Option<&str>, selected: bool) -> bo
             if selected {
                 Color32::from_gray(90)
             } else if warn {
-                MUTED
+                MUTED()
             } else {
-                TEAL
+                TEAL()
             },
         );
     }

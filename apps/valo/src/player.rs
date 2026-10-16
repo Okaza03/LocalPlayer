@@ -582,10 +582,30 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let clip = dir.join("late.mp4");
         let made = std::process::Command::new("ffmpeg")
-            .args(["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc=size=320x240:rate=24"])
-            .args(["-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000", "-t", "4"])
+            .args([
+                "-v",
+                "error",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc=size=320x240:rate=24",
+            ])
+            .args([
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:sample_rate=48000",
+                "-t",
+                "4",
+            ])
             .args(["-c:v", "libx264", "-bf", "3", "-c:a", "aac"])
-            .args(["-movflags", "+frag_keyframe+empty_moov", "-frag_duration", "1000000"])
+            .args([
+                "-movflags",
+                "+frag_keyframe+empty_moov",
+                "-frag_duration",
+                "1000000",
+            ])
             .arg(&clip)
             .status();
         if !made.is_ok_and(|s| s.success()) {

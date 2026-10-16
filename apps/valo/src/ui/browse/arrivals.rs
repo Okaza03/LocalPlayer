@@ -110,7 +110,7 @@ impl Browse {
             }
             if items.len() > SHOWN {
                 let more = items.len() - SHOWN;
-                ui.label(RichText::new(format!("And {more} more.")).color(MUTED));
+                ui.label(RichText::new(format!("And {more} more.")).color(MUTED()));
                 ui.add_space(12.0);
             }
             let b = ui.add_sized([ui.available_width(), 40.0], |ui: &mut Ui| {

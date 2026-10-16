@@ -8,6 +8,7 @@ use eframe::egui::{
 };
 
 use super::chrome::{self, Icon};
+use super::theme::{self, PlayerLayout, Skin, Times, TitleAt};
 use super::{gradient, mono, ERROR, MUTED, TEXT};
 use crate::audio::AudioOut;
 use crate::config::{Config, Progress};
@@ -15,19 +16,24 @@ use crate::inhibit::Inhibit;
 use crate::player::{Player, Source};
 use crate::util::{fmt_time, Task};
 
-const RED: Color32 = Color32::from_rgb(229, 9, 20);
 const TOP_H: f32 = 64.0;
 const BOTTOM_H: f32 = 120.0;
 
 /// An icon button over the video; lights up on hover and names itself.
-fn ctl_button(ui: &mut egui::Ui, r: Rect, icon: Icon, tip: &str) -> Response {
+/// `disc`: always on a frosted circle (the Apple and Prime styles).
+fn ctl_button(ui: &mut egui::Ui, r: Rect, icon: Icon, tip: &str, disc: bool) -> Response {
     let id = ui
         .id()
         .with(("ctl", r.center().x as i32, r.center().y as i32));
     let resp = ui.interact(r, id, Sense::click());
-    if resp.hovered() {
+    if resp.hovered() || disc {
+        let a = match (disc, resp.hovered()) {
+            (true, true) => 60,
+            (true, false) => 36,
+            _ => 28,
+        };
         ui.painter()
-            .circle_filled(r.center(), r.width() / 2.0, Color32::from_white_alpha(28));
+            .circle_filled(r.center(), r.width() / 2.0, Color32::from_white_alpha(a));
     }
     chrome::draw_icon(ui.painter(), r.center(), icon, Color32::WHITE);
     resp.on_hover_text(tip)
@@ -427,12 +433,15 @@ impl Watch {
                         Align2::CENTER_CENTER,
                         &self.status,
                         FontId::proportional(18.0),
-                        ERROR,
+                        ERROR(),
                     );
                 } else if self.opening.is_some() || self.player.is_some() {
                     let c = rect.center();
                     let sp = Rect::from_center_size(c - vec2(0.0, 20.0), vec2(40.0, 40.0));
-                    egui::Spinner::new().size(40.0).color(TEXT).paint_at(ui, sp);
+                    egui::Spinner::new()
+                        .size(40.0)
+                        .color(TEXT())
+                        .paint_at(ui, sp);
                     let name = self
                         .current
                         .map(|i| self.items[i].title.clone())
@@ -442,7 +451,7 @@ impl Watch {
                         Align2::CENTER_TOP,
                         name,
                         FontId::proportional(16.0),
-                        MUTED,
+                        MUTED(),
                     );
                 } else {
                     ui.painter().text(
@@ -469,39 +478,91 @@ impl Watch {
                     gradient(&p, shade_bottom, [fade, fade, dark, dark]);
                     on_controls = ui.rect_contains_pointer(top) || ui.rect_contains_pointer(bottom);
 
+                    // laid out like the chosen style's player
+                    let look = &theme::spec().player;
+                    let row = look.layout == PlayerLayout::Row;
+                    let bold = |s: f32| FontId::new(s, egui::FontFamily::Name("bold".into()));
+
                     // ---- top bar
                     chrome::drag_area(ui, top);
                     let cy = top.top() + 30.0;
                     let close_r =
                         Rect::from_center_size(pos2(top.left() + 28.0, cy), vec2(36.0, 36.0));
-                    close |= ctl_button(ui, close_r, Icon::Close, "Close").clicked();
-                    if let Some(it) = self.current.and_then(|i| self.items.get(i)) {
-                        let x = top.left() + 58.0;
-                        p.text(
-                            pos2(x, cy - 2.0),
-                            Align2::LEFT_BOTTOM,
-                            &it.title,
-                            FontId::new(15.0, egui::FontFamily::Name("bold".into())),
-                            Color32::WHITE,
-                        );
-                        if !it.subtitle.is_empty() {
+                    let (close_icon, close_tip) = if look.back_arrow {
+                        (Icon::ChevronLeft, "Back")
+                    } else {
+                        (Icon::Close, "Close")
+                    };
+                    close |= ctl_button(ui, close_r, close_icon, close_tip, look.discs).clicked();
+                    let item = self.current.and_then(|i| self.items.get(i));
+                    if let Some(it) = item {
+                        let (x, align) = match look.title {
+                            TitleAt::TopLeft => (top.left() + 58.0, 0.0),
+                            TitleAt::TopCenter => (top.center().x, 0.5),
+                            TitleAt::Bottom => (0.0, -1.0),
+                        };
+                        if align >= 0.0 {
+                            let a = |v| {
+                                if align > 0.0 {
+                                    Align2([egui::Align::Center, v])
+                                } else {
+                                    Align2([egui::Align::Min, v])
+                                }
+                            };
                             p.text(
-                                pos2(x, cy + 2.0),
-                                Align2::LEFT_TOP,
-                                &it.subtitle,
-                                FontId::proportional(12.5),
-                                Color32::from_gray(160),
+                                pos2(x, cy - 2.0),
+                                a(egui::Align::Max),
+                                &it.title,
+                                bold(15.0),
+                                Color32::WHITE,
                             );
+                            if !it.subtitle.is_empty() {
+                                p.text(
+                                    pos2(x, cy + 2.0),
+                                    a(egui::Align::Min),
+                                    &it.subtitle,
+                                    FontId::proportional(12.5),
+                                    Color32::from_gray(160),
+                                );
+                            }
                         }
                     }
+
+                    // where the rows go: the seek bar, and (Row) the buttons under it
+                    let row_cy = bottom.bottom() - 32.0;
+                    let by = if row {
+                        bottom.bottom() - 68.0
+                    } else {
+                        bottom.bottom() - 86.0
+                    };
+
+                    // ---- the other buttons: top right, or the right of the bottom row
+                    let (slot_y, step) = if row { (row_cy, 44.0) } else { (cy, 40.0) };
                     let mut x = top.right() - 28.0;
                     let mut next_slot = || {
-                        let r = Rect::from_center_size(pos2(x, cy), vec2(36.0, 36.0));
-                        x -= 40.0;
+                        let r = Rect::from_center_size(pos2(x, slot_y), vec2(36.0, 36.0));
+                        x -= step;
                         r
                     };
-                    let more_r = next_slot();
-                    if ctl_button(ui, more_r, Icon::More, "Settings").clicked() {
+                    let (more_r, fs_r, vol_r, sub_r);
+                    if row {
+                        fs_r = next_slot();
+                        more_r = next_slot();
+                        sub_r = next_slot();
+                        vol_r = Rect::from_center_size(
+                            pos2(bottom.left() + 168.0, row_cy),
+                            vec2(36.0, 36.0),
+                        );
+                    } else {
+                        more_r = next_slot();
+                        fs_r = next_slot();
+                        vol_r = next_slot();
+                        sub_r = next_slot();
+                    }
+                    let list_r = (self.items.len() > 1).then(&mut next_slot);
+                    let free_right = x + step - 22.0;
+                    let disc = look.discs && !row;
+                    if ctl_button(ui, more_r, Icon::More, "Settings", disc).clicked() {
                         self.menu = (self.menu != Some(Menu::Settings)).then_some(Menu::Settings);
                     }
                     let fs_icon = if fullscreen {
@@ -514,37 +575,42 @@ impl Watch {
                     } else {
                         "Fullscreen (F)"
                     };
-                    if ctl_button(ui, next_slot(), fs_icon, fs_tip).clicked() {
+                    if ctl_button(ui, fs_r, fs_icon, fs_tip, disc).clicked() {
                         Self::toggle_fullscreen(ctx);
                     }
-                    let vol_r = next_slot();
                     let vol_icon = if *muted || *volume <= 0.0 {
                         Icon::VolumeMuted
                     } else {
                         Icon::Volume
                     };
-                    let vb = ctl_button(ui, vol_r, vol_icon, "Volume (M to mute)");
+                    let vb = ctl_button(ui, vol_r, vol_icon, "Volume (M to mute)", disc);
                     if vb.clicked() {
                         *muted = !*muted;
                     }
                     if vb.hovered() {
                         self.vol_hover = Some(now);
                     }
-                    let sub_r = next_slot();
-                    if ctl_button(ui, sub_r, Icon::Subtitles, "Subtitles").clicked() {
+                    if ctl_button(ui, sub_r, Icon::Subtitles, "Subtitles", disc).clicked() {
                         self.menu = (self.menu != Some(Menu::Subtitles)).then_some(Menu::Subtitles);
                     }
-                    if self.items.len() > 1
-                        && ctl_button(ui, next_slot(), Icon::List, "Queue (L)").clicked()
-                    {
-                        self.show_list = !self.show_list;
+                    if let Some(lr) = list_r {
+                        if ctl_button(ui, lr, Icon::List, "Queue (L)", disc).clicked() {
+                            self.show_list = !self.show_list;
+                        }
                     }
 
                     // ---- volume slider, open while the button or the slider is hovered
-                    let pop = Rect::from_min_size(
-                        pos2(vol_r.center().x - 20.0, vol_r.bottom() + 6.0),
-                        vec2(40.0, 130.0),
-                    );
+                    let pop = if row {
+                        Rect::from_min_size(
+                            pos2(vol_r.center().x - 20.0, vol_r.top() - 6.0 - 130.0),
+                            vec2(40.0, 130.0),
+                        )
+                    } else {
+                        Rect::from_min_size(
+                            pos2(vol_r.center().x - 20.0, vol_r.bottom() + 6.0),
+                            vec2(40.0, 130.0),
+                        )
+                    };
                     if ui.rect_contains_pointer(pop.expand(4.0)) && self.vol_hover.is_some() {
                         self.vol_hover = Some(now);
                     }
@@ -587,13 +653,17 @@ impl Watch {
                         ctx.request_repaint();
                     }
 
-                    // ---- menus
+                    // ---- menus (opening upward from the bottom row)
                     if let Some(m) = self.menu {
                         let anchor = if m == Menu::Settings { more_r } else { sub_r };
                         let w = 260.0;
                         let h = if m == Menu::Settings { 150.0 } else { 78.0 };
                         let left = (anchor.right() - w).max(rect.left() + 8.0);
-                        let mr = Rect::from_min_size(pos2(left, anchor.bottom() + 8.0), vec2(w, h));
+                        let mr = if row {
+                            Rect::from_min_size(pos2(left, anchor.top() - 8.0 - h), vec2(w, h))
+                        } else {
+                            Rect::from_min_size(pos2(left, anchor.bottom() + 8.0), vec2(w, h))
+                        };
                         let lp = ui.ctx().layer_painter(egui::LayerId::new(
                             egui::Order::Foreground,
                             egui::Id::new("player_menu"),
@@ -610,7 +680,7 @@ impl Watch {
                                 pos2(mr.left() + 18.0, y),
                                 Align2::LEFT_TOP,
                                 t,
-                                FontId::new(11.5, egui::FontFamily::Name("bold".into())),
+                                bold(11.5),
                                 Color32::from_gray(150),
                             );
                         };
@@ -650,34 +720,108 @@ impl Watch {
                         }
                     }
 
-                    // ---- progress bar
-                    let by = bottom.bottom() - 86.0;
+                    // ---- seek bar and times
                     let font = FontId::proportional(12.5);
+                    let time_col = Color32::from_gray(210);
                     let shown = self.seek_drag.unwrap_or(pos);
-                    p.text(
-                        pos2(bottom.left() + 24.0, by),
-                        Align2::LEFT_CENTER,
-                        fmt_time(shown),
-                        font.clone(),
-                        Color32::from_gray(210),
-                    );
-                    // time left, counting down (while seeking: left after the drop point)
-                    p.text(
-                        pos2(bottom.right() - 16.0, by),
-                        Align2::RIGHT_CENTER,
-                        format!("-{}", fmt_time((dur - shown).max(0.0))),
-                        font,
-                        Color32::from_gray(210),
-                    );
+                    let left = (dur - shown).max(0.0);
+                    let (inset_l, inset_r) = match look.times {
+                        Times::Split => (66.0, 74.0),
+                        Times::Left => (24.0, 96.0),
+                        Times::Both => (16.0, 16.0),
+                    };
+                    match look.times {
+                        Times::Split => {
+                            p.text(
+                                pos2(bottom.left() + 24.0, by),
+                                Align2::LEFT_CENTER,
+                                fmt_time(shown),
+                                font.clone(),
+                                time_col,
+                            );
+                            // time left, counting down (while seeking: left after the drop point)
+                            p.text(
+                                pos2(bottom.right() - 16.0, by),
+                                Align2::RIGHT_CENTER,
+                                format!("-{}", fmt_time(left)),
+                                font.clone(),
+                                time_col,
+                            );
+                        }
+                        Times::Left => {
+                            p.text(
+                                pos2(bottom.right() - 24.0, by),
+                                Align2::RIGHT_CENTER,
+                                fmt_time(left),
+                                bold(14.0),
+                                Color32::WHITE,
+                            );
+                        }
+                        Times::Both => {
+                            p.text(
+                                pos2(bottom.left() + 200.0, row_cy),
+                                Align2::LEFT_CENTER,
+                                format!("{} / {}", fmt_time(shown), fmt_time(dur)),
+                                FontId::proportional(13.5),
+                                Color32::WHITE,
+                            );
+                        }
+                    }
+                    if let (TitleAt::Bottom, Some(it)) = (look.title, item) {
+                        if row {
+                            // Netflix: "Title  S1:E2 Episode" in the middle of the button row
+                            let mut job = egui::text::LayoutJob::default();
+                            let fmt = |f: FontId, c: Color32| egui::TextFormat {
+                                font_id: f,
+                                color: c,
+                                ..Default::default()
+                            };
+                            job.append(&it.title, 0.0, fmt(bold(16.0), Color32::WHITE));
+                            if !it.subtitle.is_empty() {
+                                job.append(
+                                    &it.subtitle,
+                                    12.0,
+                                    fmt(FontId::proportional(15.0), Color32::from_gray(190)),
+                                );
+                            }
+                            let g = ui.fonts(|f| f.layout_job(job));
+                            p.galley(
+                                pos2(
+                                    bottom.center().x - g.size().x / 2.0,
+                                    row_cy - g.size().y / 2.0,
+                                ),
+                                g,
+                                Color32::WHITE,
+                            );
+                        } else {
+                            // Apple: the title over the bar
+                            p.text(
+                                pos2(bottom.left() + 24.0, by - 18.0),
+                                Align2::LEFT_BOTTOM,
+                                &it.title,
+                                bold(19.0),
+                                Color32::WHITE,
+                            );
+                            if !it.subtitle.is_empty() {
+                                p.text(
+                                    pos2(bottom.left() + 24.0, by - 42.0),
+                                    Align2::LEFT_BOTTOM,
+                                    &it.subtitle,
+                                    FontId::proportional(13.0),
+                                    Color32::from_gray(190),
+                                );
+                            }
+                        }
+                    }
                     let bar = Rect::from_min_max(
-                        pos2(bottom.left() + 66.0, by - 8.0),
-                        pos2(bottom.right() - 74.0, by + 8.0),
+                        pos2(bottom.left() + inset_l, by - 8.0),
+                        pos2(bottom.right() - inset_r, by + 8.0),
                     );
                     let s = ui.interact(bar, ui.id().with("seekbar"), Sense::click_and_drag());
                     let hot = s.hovered() || s.dragged();
-                    let th = if hot { 5.0 } else { 3.0 };
+                    let th = if hot { look.bar.1 } else { look.bar.0 };
                     let track = Rect::from_center_size(bar.center(), vec2(bar.width(), th));
-                    p.rect_filled(track, 2.0, Color32::from_white_alpha(60));
+                    p.rect_filled(track, th / 2.0, Color32::from_white_alpha(60));
                     let f = if dur > 0.0 {
                         (shown / dur).clamp(0.0, 1.0) as f32
                     } else {
@@ -686,14 +830,19 @@ impl Watch {
                     let played_x = track.left() + track.width() * f;
                     p.rect_filled(
                         Rect::from_min_max(track.min, pos2(played_x, track.bottom())),
-                        2.0,
-                        RED,
+                        th / 2.0,
+                        theme::played(),
                     );
                     let at = |x: f32| {
                         (((x - track.left()) / track.width()).clamp(0.0, 1.0) as f64) * dur
                     };
+                    if let Some(k) = look.knob {
+                        if hot || row {
+                            let r = if hot { 8.0 } else { 6.5 };
+                            p.circle_filled(pos2(played_x, track.center().y), r, k);
+                        }
+                    }
                     if hot {
-                        p.circle_filled(pos2(played_x, track.center().y), 7.0, RED);
                         if let Some(hp) = s.hover_pos() {
                             p.text(
                                 pos2(hp.x, bar.top() - 6.0),
@@ -721,17 +870,26 @@ impl Watch {
                     let s = s.on_hover_cursor(CursorIcon::PointingHand);
                     let _ = s;
 
-                    // ---- transport
-                    let cy = bottom.bottom() - 40.0;
-                    let cx = bottom.center().x;
+                    // ---- transport: big in the middle, or at the start of the row
                     let secs = format!("{}", skip as u32);
-                    let back_r = Rect::from_center_size(pos2(cx - 82.0, cy), vec2(44.0, 44.0));
-                    let fwd_r = Rect::from_center_size(pos2(cx + 82.0, cy), vec2(44.0, 44.0));
+                    let (play_r, back_r, fwd_r) = if row {
+                        let at = |dx: f32, s: f32| {
+                            Rect::from_center_size(pos2(bottom.left() + dx, row_cy), vec2(s, s))
+                        };
+                        (at(34.0, 40.0), at(80.0, 40.0), at(124.0, 40.0))
+                    } else {
+                        let cy = bottom.bottom() - 40.0;
+                        let cx = bottom.center().x;
+                        let at =
+                            |dx: f32, s: f32| Rect::from_center_size(pos2(cx + dx, cy), vec2(s, s));
+                        (at(0.0, 56.0), at(-82.0, 44.0), at(82.0, 44.0))
+                    };
                     if ctl_button(
                         ui,
                         back_r,
                         Icon::SkipBack,
                         &format!("Back {secs} seconds (left arrow key)"),
+                        disc,
                     )
                     .clicked()
                     {
@@ -742,6 +900,7 @@ impl Watch {
                         fwd_r,
                         Icon::SkipForward,
                         &format!("Forward {secs} seconds (right arrow key)"),
+                        disc,
                     )
                     .clicked()
                     {
@@ -752,24 +911,34 @@ impl Watch {
                             r.center() + vec2(0.0, 1.5),
                             Align2::CENTER_CENTER,
                             &secs,
-                            FontId::new(8.5, egui::FontFamily::Name("bold".into())),
+                            bold(8.5),
                             Color32::WHITE,
                         );
                     }
-                    let play_r = Rect::from_center_size(pos2(cx, cy), vec2(56.0, 56.0));
                     let pb = ui.interact(play_r, ui.id().with("play_btn"), Sense::click());
-                    let fill = if pb.hovered() {
-                        Color32::from_gray(70)
-                    } else {
-                        Color32::from_gray(48)
-                    };
-                    p.circle_filled(play_r.center(), 28.0, fill);
                     let icon = if playing { Icon::Pause } else { Icon::Play };
+                    let mut icon_col = Color32::WHITE;
+                    if !row {
+                        let fill = match theme::skin() {
+                            // Apple and Prime: a frosted disc; Disney: just the icon
+                            _ if look.discs => {
+                                Color32::from_white_alpha(if pb.hovered() { 60 } else { 36 })
+                            }
+                            Skin::Disney => Color32::TRANSPARENT,
+                            _ if pb.hovered() => Color32::from_gray(70),
+                            _ => Color32::from_gray(48),
+                        };
+                        p.circle_filled(play_r.center(), 28.0, fill);
+                    } else if pb.hovered() {
+                        p.circle_filled(play_r.center(), 20.0, Color32::from_white_alpha(28));
+                    } else {
+                        icon_col = Color32::from_gray(235);
+                    }
                     chrome::draw_icon(
                         &p,
                         play_r.center() + vec2(if playing { 0.0 } else { 1.5 }, 0.0),
                         icon,
-                        Color32::WHITE,
+                        icon_col,
                     );
                     let tip = if playing {
                         "Pause (Space)"
@@ -789,8 +958,13 @@ impl Watch {
                             FontId::proportional(14.5),
                             Color32::WHITE,
                         );
+                        let (right, ncy) = if row {
+                            (free_right, row_cy)
+                        } else {
+                            (bottom.right() - 22.0, bottom.bottom() - 40.0)
+                        };
                         let nr = Rect::from_min_size(
-                            pos2(bottom.right() - 22.0 - g.size().x - 50.0, cy - 20.0),
+                            pos2(right - g.size().x - 50.0, ncy - 20.0),
                             vec2(g.size().x + 50.0, 40.0),
                         );
                         let nb = ui.interact(nr, ui.id().with("next_btn"), Sense::click());

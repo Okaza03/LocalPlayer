@@ -56,10 +56,10 @@ impl Setup {
             ui.label(super::bold("Connect to your media library", 20.0));
             ui.label(
                 RichText::new("Enter the IP address (and port) of the computer on your network that serves your movies and series.")
-                    .color(MUTED),
+                    .color(MUTED()),
             );
             ui.add_space(14.0);
-            ui.label(super::mono("Server address", 11.0).color(MUTED));
+            ui.label(super::mono("Server address", 11.0).color(MUTED()));
             let r = ui
                 .add_enabled_ui(!busy, |ui| {
                     text_field(ui, &mut self.address, "192.168.1.20:8080", false)
@@ -78,7 +78,7 @@ impl Setup {
                     "http:// is assumed. Include a path if the library lives in a subfolder.",
                 )
                 .small()
-                .color(MUTED),
+                .color(MUTED()),
             );
             ui.add_space(12.0);
             if busy {
@@ -100,7 +100,7 @@ impl Setup {
             }
             if let Some(e) = &self.error {
                 ui.add_space(6.0);
-                ui.label(RichText::new(e).color(ERROR));
+                ui.label(RichText::new(e).color(ERROR()));
                 if let Some(m) = self.missing {
                     super::admin_help(ui, m, &normalize(&self.address));
                 }
@@ -109,7 +109,7 @@ impl Setup {
             ui.separator();
             ui.add_space(6.0);
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Just want to watch a file?").color(MUTED));
+                ui.label(RichText::new("Just want to watch a file?").color(MUTED()));
                 if super::small_button(ui, "Open file").clicked() {
                     action = Action::OpenFiles;
                 }

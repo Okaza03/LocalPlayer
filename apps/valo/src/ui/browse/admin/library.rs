@@ -446,7 +446,7 @@ impl State {
             ui.add_space(6.0);
         }
         egui::Frame::new()
-            .stroke(Stroke::new(1.0f32, LINE))
+            .stroke(Stroke::new(1.0f32, LINE()))
             .corner_radius(8)
             .inner_margin(4)
             .show(ui, |ui| {
@@ -459,7 +459,7 @@ impl State {
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
                         if shown.is_empty() {
-                            ui.label(mono("Nothing here", 11.0).color(MUTED));
+                            ui.label(mono("Nothing here", 11.0).color(MUTED()));
                         }
                         for i in shown {
                             let sel = self.selected.as_deref() == Some(i.id.as_str());
@@ -478,14 +478,14 @@ impl State {
     fn editor(&mut self, ui: &mut Ui, cx: &mut Cx) {
         let Some(item) = self.current(cx) else {
             panel(ui, |ui| {
-                caps(ui, "Edit a title", TEAL);
+                caps(ui, "Edit a title", TEAL());
                 ui.add_space(6.0);
                 ui.label(
                     RichText::new(
                         "Pick a movie or series on the left to change its details or artwork, \
                          or to fetch them from IMDb.",
                     )
-                    .color(MUTED),
+                    .color(MUTED()),
                 );
             });
             return;
@@ -512,7 +512,7 @@ impl State {
                     } else {
                         "Series"
                     },
-                    TEAL,
+                    TEAL(),
                 );
                 ui.label(bold(&item.title, 26.0));
                 if let Some(f) = item
@@ -520,14 +520,14 @@ impl State {
                     .as_ref()
                     .and_then(|f| f.path.clone().zip(f.name.clone()))
                 {
-                    ui.label(mono(format!("{}/{}", f.0, f.1), 10.0).color(MUTED));
+                    ui.label(mono(format!("{}/{}", f.0, f.1), 10.0).color(MUTED()));
                 }
                 let g = gaps(item);
                 if !g.is_empty() {
                     ui.label(
                         RichText::new(format!("Missing: {}", g.join(", ")))
                             .small()
-                            .color(WARN),
+                            .color(WARN()),
                     );
                 }
                 ui.add_space(10.0);
@@ -546,7 +546,7 @@ impl State {
                         }));
                     }
                     if self.fetching.is_some() {
-                        ui.add(egui::Spinner::new().size(16.0).color(MUTED));
+                        ui.add(egui::Spinner::new().size(16.0).color(MUTED()));
                     }
                 });
                 if self.fetch_missing {
@@ -559,14 +559,14 @@ impl State {
                     ui.label(
                         RichText::new("Uses the IMDb ID below when set, else the title and year.")
                             .small()
-                            .color(MUTED),
+                            .color(MUTED()),
                     );
                 }
             });
         });
         ui.add_space(12.0);
         if let Some((msg, ok)) = &self.fetch_note {
-            ui.label(RichText::new(msg).color(if *ok { OK } else { ERROR }));
+            ui.label(RichText::new(msg).color(if *ok { OK() } else { ERROR() }));
             ui.add_space(8.0);
         }
 
@@ -592,7 +592,7 @@ impl State {
         let f = &mut self.form;
         if details {
             panel(ui, |ui| {
-                caps(ui, "Details", TEAL);
+                caps(ui, "Details", TEAL());
                 ui.add_space(8.0);
                 field(ui, "Title", &mut f.title, "");
                 pair(
@@ -600,7 +600,7 @@ impl State {
                     ("Year", &mut f.year, "2010"),
                     ("IMDb ID", &mut f.imdb_id, "tt1375666"),
                 );
-                ui.label(mono("Overview", 10.5).color(MUTED));
+                ui.label(mono("Overview", 10.5).color(MUTED()));
                 ui.add(
                     egui::TextEdit::multiline(&mut f.overview)
                         .desired_rows(4)
@@ -650,7 +650,7 @@ impl State {
                             item.locked.join(", ")
                         ))
                         .small()
-                        .color(MUTED),
+                        .color(MUTED()),
                     );
                 }
             });
@@ -661,7 +661,7 @@ impl State {
         let mut refetch = false;
         if !details {
             panel(ui, |ui| {
-                caps(ui, "Artwork", TEAL);
+                caps(ui, "Artwork", TEAL());
                 ui.add_space(4.0);
                 if ui
                     .add_enabled_ui(!busy, |ui| small_button(ui, "Refetch missing images"))
@@ -677,7 +677,7 @@ impl State {
                 ui.label(
                 RichText::new("Paste an image address (the server downloads it when you save), or upload a file.")
                     .small()
-                    .color(MUTED),
+                    .color(MUTED()),
             );
                 ui.add_space(8.0);
                 for (which, label, hint, url) in [
@@ -710,8 +710,8 @@ impl State {
                         art_preview(ui, cx, url.trim(), size, which == "logo");
                         ui.add_space(12.0);
                         ui.vertical(|ui| {
-                            ui.label(mono(label, 10.5).color(MUTED));
-                            ui.label(RichText::new(hint).small().color(MUTED));
+                            ui.label(mono(label, 10.5).color(MUTED()));
+                            ui.label(RichText::new(hint).small().color(MUTED()));
                             ui.add_space(4.0);
                             ui.add(
                                 egui::TextEdit::singleline(url)
@@ -741,7 +741,7 @@ impl State {
         }
 
         if let Some(e) = &self.error {
-            ui.label(RichText::new(e).color(ERROR));
+            ui.label(RichText::new(e).color(ERROR()));
             ui.add_space(6.0);
         }
         ui.horizontal(|ui| {
@@ -779,7 +779,7 @@ impl State {
                 self.error = None;
             }
             if !dirty {
-                ui.label(mono("No unsaved changes", 10.5).color(MUTED));
+                ui.label(mono("No unsaved changes", 10.5).color(MUTED()));
             }
         });
 
@@ -867,10 +867,15 @@ fn list_row(ui: &mut Ui, i: &Item, selected: bool, cx: &mut Cx) -> bool {
     }
     let p = ui.painter();
     if selected {
-        p.rect_filled(r, 4.0, SURFACE_HI);
-        p.rect_stroke(r, 4.0, Stroke::new(1.0f32, TEAL), egui::StrokeKind::Inside);
+        p.rect_filled(r, 4.0, SURFACE_HI());
+        p.rect_stroke(
+            r,
+            4.0,
+            Stroke::new(1.0f32, TEAL()),
+            egui::StrokeKind::Inside,
+        );
     } else if resp.hovered() {
-        p.rect_filled(r, 4.0, SURFACE_HI);
+        p.rect_filled(r, 4.0, SURFACE_HI());
     }
     let art = egui::Rect::from_min_size(r.min + vec2(6.0, 4.0), vec2(29.0, 44.0));
     match i.poster.as_ref().and_then(|u| cx.images.get(u)) {
@@ -883,7 +888,7 @@ fn list_row(ui: &mut Ui, i: &Item, selected: bool, cx: &mut Cx) -> bool {
         egui::Align2::LEFT_TOP,
         &i.title,
         egui::FontId::proportional(14.0),
-        TEXT,
+        TEXT(),
     );
     let g = gaps(i);
     let mut sub = i.year.map(|y| y.to_string()).unwrap_or_default();
@@ -895,10 +900,10 @@ fn list_row(ui: &mut Ui, i: &Item, selected: bool, cx: &mut Cx) -> bool {
         egui::Align2::LEFT_BOTTOM,
         sub,
         egui::FontId::monospace(10.0),
-        MUTED,
+        MUTED(),
     );
     if !g.is_empty() {
-        clip.circle_filled(egui::pos2(r.right() - 12.0, r.center().y), 4.0, WARN);
+        clip.circle_filled(egui::pos2(r.right() - 12.0, r.center().y), 4.0, WARN());
     }
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
         .clicked()
@@ -915,7 +920,7 @@ fn art_preview(ui: &mut Ui, cx: &mut Cx, url: &str, size: egui::Vec2, logo: bool
         if logo {
             Color32::from_rgb(10, 11, 14)
         } else {
-            SURFACE_HI
+            SURFACE_HI()
         },
     );
     let tex = (!url.is_empty()).then(|| cx.images.get(url)).flatten();
@@ -941,15 +946,20 @@ fn art_preview(ui: &mut Ui, cx: &mut Cx, url: &str, size: egui::Vec2, logo: bool
                 egui::Align2::CENTER_CENTER,
                 text,
                 egui::FontId::monospace(10.0),
-                MUTED,
+                MUTED(),
             );
         }
     }
-    p.rect_stroke(r, 4.0, Stroke::new(1.0f32, LINE), egui::StrokeKind::Inside);
+    p.rect_stroke(
+        r,
+        4.0,
+        Stroke::new(1.0f32, LINE()),
+        egui::StrokeKind::Inside,
+    );
 }
 
 fn field(ui: &mut Ui, label: &str, value: &mut String, hint: &str) {
-    ui.label(mono(label, 10.5).color(MUTED));
+    ui.label(mono(label, 10.5).color(MUTED()));
     text_field(ui, value, hint, false);
     ui.add_space(6.0);
 }

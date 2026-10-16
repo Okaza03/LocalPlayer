@@ -70,15 +70,15 @@ impl Login {
         card(ctx, |ui| {
             let mut action = Action::None;
             ui.label(super::bold("Sign in", 22.0));
-            ui.label(RichText::new(format!("to {}", self.client.info.name)).color(MUTED));
+            ui.label(RichText::new(format!("to {}", self.client.info.name)).color(MUTED()));
             ui.add_space(14.0);
 
-            ui.label(super::mono("Username", 11.0).color(MUTED));
+            ui.label(super::mono("Username", 11.0).color(MUTED()));
             let u = ui
                 .add_enabled_ui(!busy, |ui| text_field(ui, &mut self.username, "", false))
                 .inner;
             ui.add_space(4.0);
-            ui.label(super::mono("Password", 11.0).color(MUTED));
+            ui.label(super::mono("Password", 11.0).color(MUTED()));
             let p = ui
                 .add_enabled_ui(!busy, |ui| text_field(ui, &mut self.password, "", true))
                 .inner;
@@ -114,7 +114,7 @@ impl Login {
             }
             if let Some(e) = &self.error {
                 ui.add_space(6.0);
-                ui.label(RichText::new(e).color(ERROR));
+                ui.label(RichText::new(e).color(ERROR()));
                 if let Some(m) = self.missing {
                     super::admin_help(ui, m, &self.client.base);
                 }

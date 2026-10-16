@@ -64,7 +64,7 @@ impl State {
             let mut rows: Vec<(&str, String, Color32, f32)> = Vec::new();
             let mut add = |k: &'static str, v: Option<String>| {
                 if let Some(v) = v {
-                    rows.push((k, v, TEXT, 14.0));
+                    rows.push((k, v, TEXT(), 14.0));
                 }
             };
             add("File", f.name.clone());
@@ -83,14 +83,14 @@ impl State {
             );
             add("Size", f.size.map(bytes));
             if rows.is_empty() {
-                ui.label(RichText::new("The server doesn't describe this file.").color(MUTED));
+                ui.label(RichText::new("The server doesn't describe this file.").color(MUTED()));
             } else {
                 kv_rows(ui, &rows);
             }
         };
         if item.kind == Kind::Movie {
             panel(ui, |ui| {
-                caps(ui, "Video file", TEAL);
+                caps(ui, "Video file", TEAL());
                 ui.add_space(6.0);
                 match &item.file {
                     Some(f) => file_rows(ui, f),
@@ -105,7 +105,7 @@ impl State {
         }
         let seasons = seasons_of(item, cx);
         if seasons.is_empty() {
-            ui.label(RichText::new("No episodes.").color(MUTED));
+            ui.label(RichText::new("No episodes.").color(MUTED()));
         }
         for s in &seasons {
             egui::CollapsingHeader::new(s.label())
@@ -119,7 +119,7 @@ impl State {
                         bits.extend(f.container.clone());
                         bits.extend(f.video_codec.clone());
                         bits.extend(f.size.map(bytes));
-                        ui.label(mono(bits.join("   ·   "), 10.5).color(TEXT))
+                        ui.label(mono(bits.join("   ·   "), 10.5).color(TEXT()))
                             .on_hover_text(f.name.clone().unwrap_or_default());
                     }
                 });
@@ -146,14 +146,14 @@ impl State {
         }
         let series = item.kind == Kind::Series;
         panel(ui, |ui| {
-            caps(ui, "Subtitles", TEAL);
+            caps(ui, "Subtitles", TEAL());
             ui.add_space(8.0);
             match &x.subs.data {
                 None if x.subs.loading() => {
-                    ui.add(egui::Spinner::new().size(16.0).color(MUTED));
+                    ui.add(egui::Spinner::new().size(16.0).color(MUTED()));
                 }
                 Some(list) if list.is_empty() => {
-                    ui.label(RichText::new("None yet.").color(MUTED));
+                    ui.label(RichText::new("None yet.").color(MUTED()));
                 }
                 Some(list) => {
                     for s in list {
@@ -162,9 +162,9 @@ impl State {
                             if let Some(e) = &s.episode {
                                 text = format!("{e}   {text}");
                             }
-                            ui.label(RichText::new(text).color(TEXT));
+                            ui.label(RichText::new(text).color(TEXT()));
                             if let Some(src) = &s.source {
-                                ui.label(mono(src, 9.5).color(MUTED));
+                                ui.label(mono(src, 9.5).color(MUTED()));
                             }
                             ui.with_layout(
                                 egui::Layout::right_to_left(egui::Align::Center),
@@ -191,25 +191,25 @@ impl State {
                 }
                 None => {
                     if let Some(e) = &x.subs.error {
-                        ui.label(RichText::new(e).color(ERROR));
+                        ui.label(RichText::new(e).color(ERROR()));
                     }
                 }
             }
         });
         ui.add_space(16.0);
         panel(ui, |ui| {
-            caps(ui, "Add a subtitle", TEAL);
+            caps(ui, "Add a subtitle", TEAL());
             ui.add_space(8.0);
             ui.horizontal(|ui| {
                 ui.vertical(|ui| {
                     ui.set_width(120.0);
-                    ui.label(mono("Language", 10.5).color(MUTED));
+                    ui.label(mono("Language", 10.5).color(MUTED()));
                     text_field(ui, &mut x.lang, "en", false);
                 });
                 if series {
                     ui.vertical(|ui| {
                         ui.set_width(160.0);
-                        ui.label(mono("Episode", 10.5).color(MUTED));
+                        ui.label(mono("Episode", 10.5).color(MUTED()));
                         text_field(ui, &mut x.episode, "S01E02", false);
                     });
                 }
@@ -252,7 +252,7 @@ impl State {
                     });
                 }
                 if x.found.loading() {
-                    ui.add(egui::Spinner::new().size(14.0).color(MUTED));
+                    ui.add(egui::Spinner::new().size(14.0).color(MUTED()));
                 }
             });
             if x.found.missing {
@@ -262,12 +262,12 @@ impl State {
                     Section::Library,
                 );
             } else if let Some(e) = &x.found.error {
-                ui.label(RichText::new(e).small().color(ERROR));
+                ui.label(RichText::new(e).small().color(ERROR()));
             }
             if let Some(results) = &x.found.data {
                 ui.add_space(8.0);
                 if results.is_empty() {
-                    ui.label(RichText::new("Nothing found.").color(MUTED));
+                    ui.label(RichText::new("Nothing found.").color(MUTED()));
                 }
                 for r in results.iter().take(30) {
                     ui.horizontal(|ui| {
@@ -276,7 +276,7 @@ impl State {
                             line = format!("{e}   {line}");
                         }
                         ui.add(
-                            egui::Label::new(RichText::new(line).small().color(TEXT)).truncate(),
+                            egui::Label::new(RichText::new(line).small().color(TEXT())).truncate(),
                         );
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             if ui
@@ -295,7 +295,7 @@ impl State {
                                 });
                             }
                             if let Some(d) = r.downloads {
-                                ui.label(mono(format!("{d} downloads"), 9.5).color(MUTED));
+                                ui.label(mono(format!("{d} downloads"), 9.5).color(MUTED()));
                             }
                         });
                     });
@@ -307,7 +307,7 @@ impl State {
     pub(super) fn episodes_tab(&mut self, ui: &mut Ui, cx: &mut Cx, item: &Item) {
         let seasons = seasons_of(item, cx);
         if seasons.is_empty() {
-            ui.label(RichText::new("No episodes.").color(MUTED));
+            ui.label(RichText::new("No episodes.").color(MUTED()));
             return;
         }
         let series_path = Client::item_path(item);
@@ -354,11 +354,11 @@ impl State {
             }
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = 2.0;
-                ui.label(RichText::new(format!("{}. {}", e.number, e.title)).color(TEXT));
+                ui.label(RichText::new(format!("{}. {}", e.number, e.title)).color(TEXT()));
                 let mut bits = Vec::new();
                 bits.extend(e.aired.clone());
                 bits.extend(e.duration.map(fmt_runtime));
-                ui.label(mono(bits.join("   ·   "), 10.0).color(MUTED));
+                ui.label(mono(bits.join("   ·   "), 10.0).color(MUTED()));
             });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui
@@ -412,7 +412,7 @@ impl State {
                         field(ui, "Runtime (min)", &mut f.runtime, "42");
                     });
                 });
-                ui.label(mono("Overview", 10.5).color(MUTED));
+                ui.label(mono("Overview", 10.5).color(MUTED()));
                 ui.add(
                     egui::TextEdit::multiline(&mut f.overview)
                         .desired_rows(3)
@@ -461,7 +461,7 @@ impl State {
         x.matches.poll(&mut cx.login);
         ui.add_space(20.0);
         panel(ui, |ui| {
-            caps(ui, "TMDB match", TEAL);
+            caps(ui, "TMDB match", TEAL());
             ui.add_space(4.0);
             let now = item
                 .tmdb_id
@@ -475,7 +475,7 @@ impl State {
                     None => "Not matched to TMDB. Search and pick the right entry.".into(),
                 })
                 .small()
-                .color(MUTED),
+                .color(MUTED()),
             );
             ui.add_space(6.0);
             if x.tmdb_q.is_empty() {
@@ -511,12 +511,12 @@ impl State {
                     Section::Library,
                 );
             } else if let Some(e) = &x.matches.error {
-                ui.label(RichText::new(e).small().color(ERROR));
+                ui.label(RichText::new(e).small().color(ERROR()));
             }
             if let Some(list) = &x.matches.data {
                 ui.add_space(6.0);
                 if list.is_empty() {
-                    ui.label(RichText::new("Nothing found.").color(MUTED));
+                    ui.label(RichText::new("Nothing found.").color(MUTED()));
                 }
                 for m in list.iter().take(10) {
                     ui.horizontal(|ui| {
@@ -527,10 +527,10 @@ impl State {
                         }
                         ui.vertical(|ui| {
                             let year = m.year.map(|y| format!(" ({y})")).unwrap_or_default();
-                            ui.label(RichText::new(format!("{}{year}", m.title)).color(TEXT));
+                            ui.label(RichText::new(format!("{}{year}", m.title)).color(TEXT()));
                             if let Some(o) = &m.overview {
                                 ui.add(
-                                    egui::Label::new(RichText::new(o).small().color(MUTED))
+                                    egui::Label::new(RichText::new(o).small().color(MUTED()))
                                         .truncate(),
                                 );
                             }
@@ -562,12 +562,12 @@ impl State {
         });
         ui.add_space(20.0);
         panel(ui, |ui| {
-            caps(ui, "Delete", ERROR);
+            caps(ui, "Delete", ERROR());
             ui.add_space(4.0);
             ui.label(
                 RichText::new("Removes the title from the library and its watch progress. The video files stay on disk unless the server says otherwise.")
                     .small()
-                    .color(MUTED),
+                    .color(MUTED()),
             );
             ui.add_space(6.0);
             if x.confirm_delete {

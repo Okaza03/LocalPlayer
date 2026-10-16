@@ -1,8 +1,10 @@
 //! The Settings dialog.
 use eframe::egui::{self, vec2, Align, Color32, Layout, RichText, Sense, Stroke, Ui};
 
+use super::theme::{self, Mode, Palette, Skin};
 use super::{
-    bold, mono, primary_button, section, segmented, small_button, ACCENT, BG, LINE, MUTED,
+    bold, mono, primary_button, section, segmented, small_button, ACCENT, BG, LINE, LINE_HI, MUTED,
+    TEXT,
 };
 use crate::config::Config;
 
@@ -31,8 +33,8 @@ pub(super) fn dialog<R>(
     add: impl FnOnce(&mut Ui) -> R,
 ) -> (R, bool) {
     let frame = egui::Frame::new()
-        .fill(BG)
-        .stroke(Stroke::new(1.0f32, LINE))
+        .fill(BG())
+        .stroke(Stroke::new(1.0f32, LINE()))
         .corner_radius(4)
         // small right margin: the scrollbar lives there, in its own lane next to the content
         .inner_margin(egui::Margin {
@@ -75,7 +77,7 @@ pub(super) fn header(ui: &mut Ui, title: &str, sub: &str) {
     ui.horizontal(|ui| {
         let (r, _) = ui.allocate_exact_size(vec2(36.0, 36.0), Sense::hover());
         let p = ui.painter();
-        p.rect_filled(r, 7.0, ACCENT);
+        p.rect_filled(r, 7.0, ACCENT());
         let c = r.center() + vec2(1.5, 0.0);
         p.add(egui::Shape::convex_polygon(
             vec![
@@ -90,10 +92,63 @@ pub(super) fn header(ui: &mut Ui, title: &str, sub: &str) {
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = 2.0;
             ui.label(bold(title, 24.0));
-            ui.label(mono(sub, 11.0).color(MUTED));
+            ui.label(mono(sub, 11.0).color(MUTED()));
         });
     });
     ui.add_space(8.0);
+}
+
+/// `System` as dark or light, the way the desktop is set now.
+fn resolved(ctx: &egui::Context, m: Mode) -> Mode {
+    match (m, ctx.system_theme()) {
+        (Mode::System, Some(egui::Theme::Light)) => Mode::Light,
+        (Mode::System, _) => Mode::Dark,
+        (m, _) => m,
+    }
+}
+
+/// A small picture of a look: its background, a poster row, a button and
+/// the accent, with the name under it.
+fn swatch(ui: &mut Ui, pal: &Palette, name: &str, selected: bool) -> egui::Response {
+    let (r, resp) = ui.allocate_exact_size(vec2(108.0, 94.0), Sense::click());
+    let p = ui.painter();
+    let pic = egui::Rect::from_min_size(r.min, vec2(r.width(), 66.0));
+    p.rect_filled(pic, 6.0, pal.bg);
+    // poster row
+    for i in 0..3 {
+        let pr = egui::Rect::from_min_size(
+            pic.min + vec2(10.0 + i as f32 * 22.0, 26.0),
+            vec2(18.0, 28.0),
+        );
+        p.rect_filled(pr, 2.0, if i == 0 { pal.accent } else { pal.surface_hi });
+    }
+    // title and a button
+    p.rect_filled(
+        egui::Rect::from_min_size(pic.min + vec2(10.0, 10.0), vec2(40.0, 5.0)),
+        2.0,
+        pal.text,
+    );
+    p.rect_filled(
+        egui::Rect::from_min_size(pic.min + vec2(78.0, 8.0), vec2(20.0, 9.0)),
+        3.0,
+        pal.primary,
+    );
+    let ring = if selected {
+        Stroke::new(2.0f32, ACCENT())
+    } else if resp.hovered() {
+        Stroke::new(1.0f32, LINE_HI())
+    } else {
+        Stroke::new(1.0f32, LINE())
+    };
+    p.rect_stroke(pic, 6.0, ring, egui::StrokeKind::Outside);
+    p.text(
+        egui::pos2(r.left() + 2.0, pic.bottom() + 8.0),
+        egui::Align2::LEFT_TOP,
+        name,
+        egui::FontId::proportional(13.0),
+        if selected { TEXT() } else { MUTED() },
+    );
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
 /// Label on the left, control on the right.
@@ -141,9 +196,9 @@ pub fn settings(ctx: &egui::Context, cfg: &mut Config, conn: Option<&Conn>) -> P
                         out = Pick::ChangeServer;
                     }
                     ui.add_space(6.0);
-                    ui.label(RichText::new(&c.name).color(MUTED));
+                    ui.label(RichText::new(&c.name).color(MUTED()));
                 });
-                ui.label(mono(&c.base, 11.0).color(MUTED));
+                ui.label(mono(&c.base, 11.0).color(MUTED()));
                 ui.add_space(4.0);
                 if c.signed_in {
                     row(ui, "Signed in", |ui| {
@@ -151,7 +206,7 @@ pub fn settings(ctx: &egui::Context, cfg: &mut Config, conn: Option<&Conn>) -> P
                             out = Pick::SignOut;
                         }
                         ui.add_space(6.0);
-                        ui.label(RichText::new(c.user.as_deref().unwrap_or("")).color(MUTED));
+                        ui.label(RichText::new(c.user.as_deref().unwrap_or("")).color(MUTED()));
                     });
                 }
             }
@@ -196,7 +251,7 @@ pub fn settings(ctx: &egui::Context, cfg: &mut Config, conn: Option<&Conn>) -> P
         ui.label(
             RichText::new("Hold Shift to skip six times as far.")
                 .small()
-                .color(MUTED),
+                .color(MUTED()),
         );
         changed |= before != cfg.skip_seconds;
         row(ui, "Play a file from this computer", |ui| {
@@ -231,6 +286,37 @@ pub fn settings(ctx: &egui::Context, cfg: &mut Config, conn: Option<&Conn>) -> P
         }
 
         section(ui, "Appearance");
+        ui.label(RichText::new("App style").size(15.0));
+        ui.label(
+            RichText::new("How Valo looks, the player too.")
+                .small()
+                .color(MUTED()),
+        );
+        ui.add_space(6.0);
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = vec2(10.0, 10.0);
+            for s in Skin::ALL {
+                let pal = theme::palette(s, resolved(ctx, cfg.theme));
+                if swatch(ui, &pal, s.spec().name, cfg.style == s).clicked() && cfg.style != s {
+                    cfg.style = s;
+                    changed = true;
+                }
+            }
+        });
+        ui.add_space(12.0);
+        ui.label(RichText::new("Color theme").size(15.0));
+        ui.add_space(6.0);
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = vec2(10.0, 10.0);
+            for (m, name) in Mode::ALL {
+                let pal = theme::palette(cfg.style, resolved(ctx, m));
+                if swatch(ui, &pal, name, cfg.theme == m).clicked() && cfg.theme != m {
+                    cfg.theme = m;
+                    changed = true;
+                }
+            }
+        });
+        ui.add_space(12.0);
         ui.label(RichText::new("Interface size").size(15.0));
         ui.add_space(4.0);
         changed |= segmented(

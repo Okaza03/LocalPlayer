@@ -130,11 +130,11 @@ impl State {
                 let n = list.data.as_ref().map_or(0, Vec::len);
                 section_title(ui, "Accounts", "Users", n);
                 if let Some(e) = list.error.as_ref() {
-                    ui.label(RichText::new(format!("Couldn't load the users: {e}")).color(ERROR));
+                    ui.label(RichText::new(format!("Couldn't load the users: {e}")).color(ERROR()));
                 }
                 let Some(users) = list.data.as_ref() else {
                     if list.loading() {
-                        ui.add(egui::Spinner::new().size(20.0).color(MUTED));
+                        ui.add(egui::Spinner::new().size(20.0).color(MUTED()));
                     }
                     return;
                 };
@@ -148,15 +148,15 @@ impl State {
             },
             |ui, req| {
                 panel(ui, |ui| {
-                    caps(ui, "Add a user", TEAL);
+                    caps(ui, "Add a user", TEAL());
                     ui.add_space(10.0);
-                    ui.label(mono("Username", 11.0).color(MUTED));
+                    ui.label(mono("Username", 11.0).color(MUTED()));
                     text_field(ui, new_name, "", false);
                     ui.add_space(4.0);
-                    ui.label(mono("Display name (optional)", 11.0).color(MUTED));
+                    ui.label(mono("Display name (optional)", 11.0).color(MUTED()));
                     text_field(ui, new_display, "", false);
                     ui.add_space(4.0);
-                    ui.label(mono("Password", 11.0).color(MUTED));
+                    ui.label(mono("Password", 11.0).color(MUTED()));
                     let p = text_field(ui, new_pass, "", true);
                     ui.add_space(4.0);
                     ui.checkbox(new_admin, "Admin (can manage the server)");
@@ -200,9 +200,9 @@ fn user_line(u: &AdminUser) -> String {
 }
 
 pub(super) fn danger_button(ui: &mut Ui, text: &str) -> egui::Response {
-    let b = egui::Button::new(mono(text, 11.5).color(ERROR))
+    let b = egui::Button::new(mono(text, 11.5).color(ERROR()))
         .fill(Color32::TRANSPARENT)
-        .stroke(Stroke::new(1.0f32, ERROR.gamma_multiply(0.6)))
+        .stroke(Stroke::new(1.0f32, ERROR().gamma_multiply(0.6)))
         .min_size(vec2(0.0, 30.0))
         .corner_radius(2);
     ui.add(b)
@@ -220,7 +220,7 @@ fn user_row(
 ) -> Option<Req> {
     let mut req = None;
     egui::Frame::new()
-        .stroke(Stroke::new(1.0f32, LINE))
+        .stroke(Stroke::new(1.0f32, LINE()))
         .corner_radius(8)
         .inner_margin(egui::Margin::symmetric(14, 12))
         .show(ui, |ui| {
@@ -238,13 +238,13 @@ fn user_row(
                             .filter(|d| !d.is_empty() && *d != u.name);
                         ui.label(bold(shown.unwrap_or(&u.name), 15.0));
                         if shown.is_some() {
-                            ui.label(mono(format!("@{}", u.name), 10.0).color(MUTED));
+                            ui.label(mono(format!("@{}", u.name), 10.0).color(MUTED()));
                         }
                         if you {
-                            ui.label(mono("YOU", 10.0).color(TEAL));
+                            ui.label(mono("YOU", 10.0).color(TEAL()));
                         }
                     });
-                    ui.label(mono(user_line(u), 10.5).color(MUTED));
+                    ui.label(mono(user_line(u), 10.5).color(MUTED()));
                 });
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     ui.add_enabled_ui(!busy, |ui| {
@@ -304,7 +304,7 @@ fn user_row(
                          progress on the server is removed.",
                         u.name
                     ))
-                    .color(TEXT),
+                    .color(TEXT()),
                 );
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
@@ -324,7 +324,7 @@ fn user_row(
 
             if let Some((name, display)) = rename.as_mut().filter(|(n, _)| *n == u.name) {
                 ui.add_space(10.0);
-                ui.label(mono("Display name", 11.0).color(MUTED));
+                ui.label(mono("Display name", 11.0).color(MUTED()));
                 let f = text_field(ui, display, "", false);
                 ui.add_space(6.0);
                 let enter = f.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
@@ -346,12 +346,12 @@ fn user_row(
 
             if let Some((name, pass)) = reset.as_mut().filter(|(n, _)| *n == u.name) {
                 ui.add_space(10.0);
-                ui.label(mono("New password", 11.0).color(MUTED));
+                ui.label(mono("New password", 11.0).color(MUTED()));
                 if you {
                     ui.label(
                         RichText::new("You'll be signed out everywhere, this device included.")
                             .small()
-                            .color(MUTED),
+                            .color(MUTED()),
                     );
                 }
                 let f = text_field(ui, pass, "", true);

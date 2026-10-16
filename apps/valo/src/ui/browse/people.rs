@@ -187,11 +187,11 @@ fn credit_grid(ui: &mut Ui, credits: &[Credit], images: &mut Images) -> Option<C
 }
 
 pub(super) fn section_title(ui: &mut Ui, kicker: &str, title: &str, n: usize) {
-    caps(ui, kicker, TEAL);
+    caps(ui, kicker, TEAL());
     ui.add_space(4.0);
     ui.horizontal(|ui| {
         ui.label(bold(title, 24.0));
-        ui.label(mono(n.to_string(), 13.0).color(MUTED));
+        ui.label(mono(n.to_string(), 13.0).color(MUTED()));
     });
     ui.add_space(16.0);
 }
@@ -200,21 +200,26 @@ pub(super) fn section_title(ui: &mut Ui, kicker: &str, title: &str, n: usize) {
 pub(super) fn stat(ui: &mut Ui, w: f32, value: &str, label: &str) {
     let (r, _) = ui.allocate_exact_size(vec2(w, 92.0), Sense::hover());
     let p = ui.painter();
-    p.rect_filled(r, 10.0, Color32::from_rgb(26, 28, 34));
-    p.rect_stroke(r, 10.0, Stroke::new(1.0f32, LINE), egui::StrokeKind::Inside);
+    p.rect_filled(r, 10.0, crate::ui::CARD());
+    p.rect_stroke(
+        r,
+        10.0,
+        Stroke::new(1.0f32, LINE()),
+        egui::StrokeKind::Inside,
+    );
     p.text(
         pos2(r.left() + 18.0, r.top() + 18.0),
         Align2::LEFT_TOP,
         value,
         FontId::new(28.0, FontFamily::Name("bold".into())),
-        TEXT,
+        TEXT(),
     );
     p.text(
         pos2(r.left() + 18.0, r.bottom() - 16.0),
         Align2::LEFT_BOTTOM,
         label,
         FontId::monospace(11.0),
-        MUTED,
+        MUTED(),
     );
 }
 
@@ -247,14 +252,14 @@ pub(super) fn bar(ui: &mut Ui, label: &str, value: &str, f: f32) {
         Align2::LEFT_TOP,
         label,
         FontId::proportional(14.0),
-        TEXT,
+        TEXT(),
     );
     p.text(
         r.right_top(),
         Align2::RIGHT_TOP,
         value,
         FontId::monospace(11.0),
-        MUTED,
+        MUTED(),
     );
     let track = Rect::from_min_max(
         pos2(r.left(), r.bottom() - 9.0),
@@ -270,7 +275,7 @@ pub(super) fn bar(ui: &mut Ui, label: &str, value: &str, f: f32) {
             ),
         ),
         2.0,
-        GOLD,
+        GOLD(),
     );
 }
 
@@ -349,7 +354,7 @@ impl Browse {
                 ui,
                 "Back",
                 13.0,
-                TEXT.gamma_multiply(0.8),
+                TEXT().gamma_multiply(0.8),
                 Some((chrome::Icon::ChevronLeft, false)),
             )
             .clicked()
@@ -379,9 +384,11 @@ impl Browse {
             } else {
                 roles.join("   ·   ")
             };
-            caps(ui, &kicker, TEAL);
+            caps(ui, &kicker, TEAL());
             ui.add_space(6.0);
-            ui.add(egui::Label::new(RichText::new(name).font(black_font(50.0)).color(TEXT)).wrap());
+            ui.add(
+                egui::Label::new(RichText::new(name).font(black_font(50.0)).color(TEXT())).wrap(),
+            );
             ui.add_space(8.0);
             let mut meta = vec![format!(
                 "{} title{} in your library",
@@ -392,7 +399,7 @@ impl Browse {
             ui.label(
                 RichText::new(meta.join("   ·   "))
                     .size(15.0)
-                    .color(TEXT.gamma_multiply(0.85)),
+                    .color(TEXT().gamma_multiply(0.85)),
             );
             // their best-known part: the highest-scored title they acted in
             let known = person.movies.iter().chain(&person.shows).max_by(|a, b| {
@@ -402,12 +409,12 @@ impl Browse {
             if let Some(k) = known {
                 ui.add_space(12.0);
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("Known for").size(14.0).color(MUTED));
-                    if link(ui, &k.item.title, 14.0, GOLD, None).clicked() {
+                    ui.label(RichText::new("Known for").size(14.0).color(MUTED()));
+                    if link(ui, &k.item.title, 14.0, GOLD(), None).clicked() {
                         click = Some(Click::Open(k.item.id.clone()));
                     }
                     if let Some(ch) = k.character {
-                        ui.label(RichText::new(format!("as {ch}")).size(14.0).color(MUTED));
+                        ui.label(RichText::new(format!("as {ch}")).size(14.0).color(MUTED()));
                     }
                 });
             }
@@ -416,7 +423,7 @@ impl Browse {
         ui.add_space(28.0);
         if titles.is_empty() {
             ui.vertical_centered(|ui| {
-                ui.label(mono("Nothing in your library with them", 12.0).color(MUTED))
+                ui.label(mono("Nothing in your library with them", 12.0).color(MUTED()))
             });
             return click;
         }
@@ -441,7 +448,7 @@ impl Browse {
             8,
         );
         let mut rows: Vec<(&str, String, Color32, f32)> = Vec::new();
-        let mut row = |k, v: String| rows.push((k, v, TEXT, 14.0));
+        let mut row = |k, v: String| rows.push((k, v, TEXT(), 14.0));
         if !roles.is_empty() {
             row("Roles", roles.join(", "));
         }
@@ -495,18 +502,18 @@ impl Browse {
             },
             |ui| {
                 panel(ui, |ui| {
-                    caps(ui, "About", TEAL);
+                    caps(ui, "About", TEAL());
                     ui.add_space(6.0);
                     kv_rows(ui, &rows);
                 });
                 if !costars.is_empty() {
                     ui.add_space(20.0);
                     panel(ui, |ui| {
-                        caps(ui, "Often works with", TEAL);
+                        caps(ui, "Often works with", TEAL());
                         ui.add_space(10.0);
                         for (n, k) in &costars {
                             ui.horizontal(|ui| {
-                                if link(ui, n, 14.0, TEXT, None).clicked() {
+                                if link(ui, n, 14.0, TEXT(), None).clicked() {
                                     side_click = Some(Click::Nav(View::Person((*n).to_owned())));
                                 }
                                 ui.label(
@@ -514,7 +521,7 @@ impl Browse {
                                         format!("{k} title{}", if *k == 1 { "" } else { "s" }),
                                         11.0,
                                     )
-                                    .color(MUTED),
+                                    .color(MUTED()),
                                 );
                             });
                             ui.add_space(6.0);
@@ -599,7 +606,12 @@ impl Browse {
         gradient(
             &p,
             rect,
-            [col.gamma_multiply(0.35), col.gamma_multiply(0.15), BG, BG],
+            [
+                col.gamma_multiply(0.35),
+                col.gamma_multiply(0.15),
+                BG(),
+                BG(),
+            ],
         );
         let (m, inner) = column(ui);
         let r = 62.0;
@@ -612,10 +624,10 @@ impl Browse {
         );
         let mut open_admin = false;
         placed(ui, text_rect, "profile_hero", 0.5, |ui| {
-            caps(ui, "Profile", TEAL);
+            caps(ui, "Profile", TEAL());
             ui.add_space(4.0);
             ui.add(
-                egui::Label::new(RichText::new(&name).font(black_font(44.0)).color(TEXT)).wrap(),
+                egui::Label::new(RichText::new(&name).font(black_font(44.0)).color(TEXT())).wrap(),
             );
             ui.add_space(6.0);
             let how = if self.client.token.is_some() {
@@ -627,7 +639,7 @@ impl Browse {
             if self.client.admin {
                 line.push_str("   ·   Admin");
             }
-            ui.label(mono(line, 11.5).color(MUTED));
+            ui.label(mono(line, 11.5).color(MUTED()));
             ui.add_space(14.0);
             ui.horizontal(|ui| {
                 if small_button(ui, "Settings").clicked() {
@@ -682,7 +694,7 @@ impl Browse {
             |ui| {
                 section_title(ui, "History", "Recently watched", recent.len().min(15));
                 if recent.is_empty() {
-                    ui.label(RichText::new("Nothing watched yet.").color(MUTED));
+                    ui.label(RichText::new("Nothing watched yet.").color(MUTED()));
                 }
                 for (item, ep, sub, e) in recent.iter().take(15) {
                     let (r, resp) =
@@ -717,7 +729,7 @@ impl Browse {
                             pos2(track.left() + track.width() * f, track.bottom()),
                         ),
                         1.5,
-                        GOLD,
+                        GOLD(),
                     );
                     let x = thumb.right() + 16.0;
                     p.text(
@@ -725,7 +737,7 @@ impl Browse {
                         Align2::LEFT_TOP,
                         &item.title,
                         FontId::new(15.0, FontFamily::Name("bold".into())),
-                        TEXT,
+                        TEXT(),
                     );
                     let sub = sub.clone().unwrap_or_else(|| {
                         item.year.map_or("Movie".into(), |y| format!("Movie · {y}"))
@@ -735,7 +747,7 @@ impl Browse {
                         Align2::LEFT_TOP,
                         sub,
                         FontId::proportional(12.5),
-                        MUTED,
+                        MUTED(),
                     );
                     let state = if e.watched() {
                         "Watched".to_owned()
@@ -747,14 +759,14 @@ impl Browse {
                         Align2::RIGHT_TOP,
                         ago(e.updated),
                         FontId::monospace(11.0),
-                        MUTED,
+                        MUTED(),
                     );
                     p.text(
                         pos2(r.right() - 10.0, r.top() + 36.0),
                         Align2::RIGHT_TOP,
                         state,
                         FontId::monospace(11.0),
-                        if e.watched() { TEAL } else { GOLD },
+                        if e.watched() { TEAL() } else { GOLD() },
                     );
                     if resp.on_hover_cursor(CursorIcon::PointingHand).clicked() {
                         main_click = Some(match ep {
@@ -768,7 +780,7 @@ impl Browse {
             |ui| {
                 if !genres.is_empty() {
                     panel(ui, |ui| {
-                        caps(ui, "Favorite genres", TEAL);
+                        caps(ui, "Favorite genres", TEAL());
                         ui.add_space(12.0);
                         let max = genres[0].1.max(1.0);
                         for (g, s) in &genres {
@@ -780,11 +792,11 @@ impl Browse {
                 }
                 if !shows.is_empty() {
                     panel(ui, |ui| {
-                        caps(ui, "Most watched shows", TEAL);
+                        caps(ui, "Most watched shows", TEAL());
                         ui.add_space(10.0);
                         for (s, done, secs) in &shows {
                             let eps: usize = s.seasons.iter().map(|x| x.episodes.len()).sum();
-                            if link(ui, &s.title, 14.5, TEXT, None).clicked() {
+                            if link(ui, &s.title, 14.5, TEXT(), None).clicked() {
                                 side_click = Some(Click::Open(s.id.clone()));
                             }
                             ui.label(
@@ -792,7 +804,7 @@ impl Browse {
                                     format!("{done} of {eps} episodes · {}", fmt_runtime(*secs)),
                                     11.0,
                                 )
-                                .color(MUTED),
+                                .color(MUTED()),
                             );
                             ui.add_space(10.0);
                         }
@@ -800,17 +812,17 @@ impl Browse {
                     ui.add_space(20.0);
                 }
                 panel(ui, |ui| {
-                    caps(ui, "Watching", TEAL);
+                    caps(ui, "Watching", TEAL());
                     ui.add_space(6.0);
                     kv_rows(
                         ui,
                         &[
-                            ("Movies", time(movie_secs), TEXT, 14.0),
-                            ("TV shows", time(ep_secs), TEXT, 14.0),
+                            ("Movies", time(movie_secs), TEXT(), 14.0),
+                            ("TV shows", time(ep_secs), TEXT(), 14.0),
                             (
                                 "Movies & episodes started",
                                 entries.len().to_string(),
-                                TEXT,
+                                TEXT(),
                                 14.0,
                             ),
                         ],
@@ -819,7 +831,7 @@ impl Browse {
                     ui.label(
                         RichText::new("Counted from your watch history on this server.")
                             .small()
-                            .color(MUTED),
+                            .color(MUTED()),
                     );
                 });
             },

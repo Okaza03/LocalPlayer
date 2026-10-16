@@ -420,8 +420,8 @@ impl Updates {
             .order(egui::Order::Foreground)
             .show(ctx, |ui| {
                 egui::Frame::new()
-                    .fill(BG)
-                    .stroke(egui::Stroke::new(1.0f32, LINE))
+                    .fill(BG())
+                    .stroke(egui::Stroke::new(1.0f32, LINE()))
                     .corner_radius(4)
                     .inner_margin(egui::Margin::symmetric(16, 12))
                     .show(ui, |ui| {
@@ -462,8 +462,8 @@ impl Updates {
                                         ("Couldn't update".to_owned(), e.clone())
                                     }
                                 };
-                                ui.label(mono(&title, 11.0).color(MUTED));
-                                ui.label(RichText::new(body).color(TEXT));
+                                ui.label(mono(&title, 11.0).color(MUTED()));
+                                ui.label(RichText::new(body).color(TEXT()));
                             });
                             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                                 if matches!(toast, Toast::Installing) {

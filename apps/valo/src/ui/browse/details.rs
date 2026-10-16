@@ -14,12 +14,38 @@ use crate::config::Progress;
 use crate::images::Images;
 use crate::ui::chrome::{self, Icon};
 use crate::ui::{black_font, bold, gradient, image_cover, mono, placeholder};
-use crate::ui::{BG, INK, LINE, LINE_HI, MUTED, TEXT};
+use crate::ui::{BG, INK, LINE, LINE_HI, MUTED, PRIMARY, SURFACE_HI, TEXT};
 use crate::util::{color_for, fmt_runtime, fmt_time, percent_decode};
 
-pub(super) const GOLD: Color32 = Color32::from_rgb(232, 196, 106);
-pub(super) const TEAL: Color32 = Color32::from_rgb(110, 205, 190);
-const CARD_BG: Color32 = Color32::from_rgb(26, 28, 34);
+/// Ratings, quality and the main button on Valo's details pages.
+#[allow(non_snake_case)]
+pub(super) fn GOLD() -> Color32 {
+    if crate::ui::theme::pal().light {
+        Color32::from_rgb(168, 118, 10)
+    } else {
+        Color32::from_rgb(232, 196, 106)
+    }
+}
+
+/// Small captions ("Cast", "File · Metadata").
+#[allow(non_snake_case)]
+pub(super) fn TEAL() -> Color32 {
+    if crate::ui::theme::pal().light {
+        Color32::from_rgb(0, 128, 112)
+    } else {
+        Color32::from_rgb(110, 205, 190)
+    }
+}
+
+/// The main button: gold for Valo, the style's own button color otherwise.
+fn play_colors() -> (Color32, Color32) {
+    if crate::ui::theme::skin() == crate::ui::theme::Skin::Valo {
+        (GOLD(), INK())
+    } else {
+        (PRIMARY(), INK())
+    }
+}
+
 const MAX_W: f32 = 1420.0;
 /// Below this content width, side-by-side columns stack.
 pub(super) const NARROW: f32 = 980.0;
@@ -182,7 +208,7 @@ pub(super) fn placed(ui: &mut Ui, r: Rect, salt: &str, align: f32, add: impl FnO
 
 /// Full-width artwork, darkened, fading into the page at the bottom.
 pub(super) fn backdrop(p: &Painter, rect: Rect, art: Option<&TextureHandle>, title: &str, dim: u8) {
-    p.rect_filled(rect, 0.0, BG);
+    p.rect_filled(rect, 0.0, BG());
     match art {
         Some(t) => image_cover(p, rect, t, 0, Color32::from_gray(dim)),
         None => {
@@ -190,7 +216,7 @@ pub(super) fn backdrop(p: &Painter, rect: Rect, art: Option<&TextureHandle>, tit
             gradient(
                 p,
                 rect,
-                [c.gamma_multiply(0.45), c.gamma_multiply(0.25), BG, BG],
+                [c.gamma_multiply(0.45), c.gamma_multiply(0.25), BG(), BG()],
             );
         }
     }
@@ -210,7 +236,7 @@ pub(super) fn backdrop(p: &Painter, rect: Rect, art: Option<&TextureHandle>, tit
     gradient(
         p,
         fade,
-        [Color32::TRANSPARENT, Color32::TRANSPARENT, BG, BG],
+        [Color32::TRANSPARENT, Color32::TRANSPARENT, BG(), BG()],
     );
 }
 
@@ -238,7 +264,11 @@ fn fill_button(
     let icon_w = if icon.is_some() { 22.0 } else { 0.0 };
     let w = (galley.size().x + icon_w + 48.0).max(min_w);
     let (r, resp) = ui.allocate_exact_size(vec2(w, height), Sense::click());
-    let radius = if radius == 0.0 { height / 2.0 } else { radius };
+    let radius = match (radius, crate::ui::theme::skin()) {
+        (0.0, crate::ui::theme::Skin::Valo) => height / 2.0,
+        (0.0, _) => (crate::ui::theme::spec().button_radius as f32).min(height / 2.0),
+        (r, _) => r,
+    };
     let fill = if resp.hovered() {
         shade(fill, 0.88)
     } else {
@@ -262,12 +292,12 @@ fn fill_button(
 fn circle_button(ui: &mut Ui, icon: Icon, tip: &str) -> Response {
     let (r, resp) = ui.allocate_exact_size(vec2(42.0, 42.0), Sense::click());
     let fill = if resp.hovered() {
-        Color32::from_rgb(84, 86, 94)
+        crate::ui::theme::mix(SURFACE_HI(), TEXT(), 0.12)
     } else {
-        Color32::from_rgb(58, 60, 68)
+        SURFACE_HI()
     };
     ui.painter().circle_filled(r.center(), 21.0, fill);
-    chrome::draw_icon(ui.painter(), r.center(), icon, TEXT);
+    chrome::draw_icon(ui.painter(), r.center(), icon, TEXT());
     resp.on_hover_text(tip)
         .on_hover_cursor(CursorIcon::PointingHand)
 }
@@ -285,7 +315,7 @@ pub(super) fn link(
         .layout_no_wrap(text.to_owned(), FontId::proportional(size), col);
     let iw = if icon.is_some() { 16.0 } else { 0.0 };
     let (r, resp) = ui.allocate_exact_size(galley.size() + vec2(iw, 4.0), Sense::click());
-    let col = if resp.hovered() { TEXT } else { col };
+    let col = if resp.hovered() { TEXT() } else { col };
     let p = ui.painter();
     let (tx, ix) = match icon {
         Some((_, true)) => (r.left(), r.right() - 6.0),
@@ -308,21 +338,21 @@ pub(super) fn link(
 fn tag(ui: &mut Ui, text: &str) {
     let galley = ui
         .painter()
-        .layout_no_wrap(text.to_owned(), FontId::proportional(11.5), TEXT);
+        .layout_no_wrap(text.to_owned(), FontId::proportional(11.5), TEXT());
     let (r, _) = ui.allocate_exact_size(galley.size() + vec2(12.0, 6.0), Sense::hover());
     let p = ui.painter();
     p.rect_filled(r, 3.0, Color32::from_black_alpha(80));
     p.rect_stroke(
         r,
         3.0,
-        Stroke::new(1.0f32, LINE_HI),
+        Stroke::new(1.0f32, LINE_HI()),
         egui::StrokeKind::Inside,
     );
-    p.galley(r.min + vec2(6.0, 3.0), galley, TEXT);
+    p.galley(r.min + vec2(6.0, 3.0), galley, TEXT());
 }
 
 pub(super) fn dot(ui: &mut Ui) {
-    ui.label(RichText::new("·").color(MUTED));
+    ui.label(RichText::new("·").color(MUTED()));
 }
 
 pub(super) fn caps(ui: &mut Ui, text: &str, col: Color32) {
@@ -399,7 +429,7 @@ fn cast_grid(
                 None => chrome::avatar(p, c, r, &m.name),
             }
             if hot {
-                p.circle_stroke(c, r + 3.0, Stroke::new(2.0f32, TEXT));
+                p.circle_stroke(c, r + 3.0, Stroke::new(2.0f32, TEXT()));
             }
             // one line each, shortened with "…" to fit the cell
             let line = |text: &str, font: FontId, col: Color32, y: f32| {
@@ -411,7 +441,11 @@ fn cast_grid(
                 let g = p.layout_job(job);
                 p.galley(pos2(c.x - g.size().x / 2.0, y), g, col);
             };
-            let name_col = if hot { TEXT } else { TEXT.gamma_multiply(0.9) };
+            let name_col = if hot {
+                TEXT()
+            } else {
+                TEXT().gamma_multiply(0.9)
+            };
             line(
                 &m.name,
                 FontId::proportional(14.0),
@@ -419,7 +453,7 @@ fn cast_grid(
                 c.y + r + 12.0,
             );
             if let Some(ch) = &m.character {
-                line(ch, FontId::monospace(11.0), MUTED, c.y + r + 32.0);
+                line(ch, FontId::monospace(11.0), MUTED(), c.y + r + 32.0);
             }
             if resp
                 .on_hover_cursor(CursorIcon::PointingHand)
@@ -441,9 +475,9 @@ fn people_links(ui: &mut Ui, names: &[&str], size: f32) -> Option<Click> {
         ui.spacing_mut().item_spacing.x = 0.0;
         for (i, n) in names.iter().enumerate() {
             if i > 0 {
-                ui.label(RichText::new(", ").size(size).color(MUTED));
+                ui.label(RichText::new(", ").size(size).color(MUTED()));
             }
-            if link(ui, n, size, TEXT, None)
+            if link(ui, n, size, TEXT(), None)
                 .on_hover_text("See their movies and shows")
                 .clicked()
             {
@@ -457,8 +491,8 @@ fn people_links(ui: &mut Ui, names: &[&str], size: f32) -> Option<Click> {
 /// Rounded panel used for metadata, critics, info.
 pub(super) fn panel<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
     egui::Frame::new()
-        .fill(CARD_BG)
-        .stroke(Stroke::new(1.0f32, LINE))
+        .fill(crate::ui::CARD())
+        .stroke(Stroke::new(1.0f32, LINE()))
         .corner_radius(10)
         .inner_margin(24)
         .show(ui, |ui| {
@@ -473,7 +507,7 @@ pub(super) fn kv_rows(ui: &mut Ui, rows: &[(&str, String, Color32, f32)]) {
     for (i, (k, v, col, size)) in rows.iter().enumerate() {
         ui.add_space(10.0);
         ui.horizontal(|ui| {
-            ui.label(RichText::new(*k).size(14.0).color(MUTED));
+            ui.label(RichText::new(*k).size(14.0).color(MUTED()));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.add(egui::Label::new(RichText::new(v).size(*size).color(*col)).truncate());
             });
@@ -482,7 +516,7 @@ pub(super) fn kv_rows(ui: &mut Ui, rows: &[(&str, String, Color32, f32)]) {
         if i + 1 < rows.len() {
             let r = ui.available_rect_before_wrap();
             ui.painter()
-                .hline(r.x_range(), r.top(), Stroke::new(1.0f32, LINE));
+                .hline(r.x_range(), r.top(), Stroke::new(1.0f32, LINE()));
         }
     }
 }
@@ -497,9 +531,9 @@ fn info_rows(ui: &mut Ui, rows: &[(&str, String)], label_w: f32) {
                 Align2::LEFT_CENTER,
                 *k,
                 FontId::proportional(14.0),
-                MUTED,
+                MUTED(),
             );
-            ui.add(egui::Label::new(RichText::new(v).size(14.0).color(TEXT)).wrap());
+            ui.add(egui::Label::new(RichText::new(v).size(14.0).color(TEXT())).wrap());
         });
         ui.add_space(12.0);
     }
@@ -522,7 +556,7 @@ fn title_art(ui: &mut Ui, item: &Item, images: &mut Images, max: egui::Vec2, siz
             egui::Label::new(
                 RichText::new(&item.title)
                     .font(black_font(size))
-                    .color(TEXT),
+                    .color(TEXT()),
             )
             .wrap(),
         );
@@ -553,7 +587,7 @@ pub(super) fn poster_tile(
         p.rect_stroke(
             art,
             6.0,
-            Stroke::new(2.0f32, TEXT),
+            Stroke::new(2.0f32, TEXT()),
             egui::StrokeKind::Outside,
         );
     }
@@ -563,7 +597,7 @@ pub(super) fn poster_tile(
         Align2::LEFT_TOP,
         &item.title,
         FontId::proportional(13.5),
-        TEXT,
+        TEXT(),
     );
     if let Some(s) = sub {
         clip.text(
@@ -571,7 +605,7 @@ pub(super) fn poster_tile(
             Align2::LEFT_TOP,
             s,
             FontId::proportional(11.5),
-            MUTED,
+            MUTED(),
         );
     }
     let resp = resp.on_hover_cursor(CursorIcon::PointingHand);
@@ -603,7 +637,7 @@ fn wide_tile(ui: &mut Ui, item: &Item, size: egui::Vec2, images: &mut Images) ->
         Align2::LEFT_BOTTOM,
         &item.title,
         FontId::new(14.0, FontFamily::Name("bold".into())),
-        TEXT,
+        TEXT(),
     );
     if let Some(y) = item.year {
         p.text(
@@ -611,11 +645,16 @@ fn wide_tile(ui: &mut Ui, item: &Item, size: egui::Vec2, images: &mut Images) ->
             Align2::LEFT_BOTTOM,
             y.to_string(),
             FontId::proportional(11.5),
-            MUTED,
+            MUTED(),
         );
     }
     if resp.hovered() {
-        p.rect_stroke(r, 6.0, Stroke::new(2.0f32, TEXT), egui::StrokeKind::Outside);
+        p.rect_stroke(
+            r,
+            6.0,
+            Stroke::new(2.0f32, TEXT()),
+            egui::StrokeKind::Outside,
+        );
     }
     resp.on_hover_cursor(CursorIcon::PointingHand).clicked()
 }
@@ -717,7 +756,7 @@ impl Browse {
                 ui,
                 "Back to movies",
                 13.0,
-                TEXT.gamma_multiply(0.8),
+                TEXT().gamma_multiply(0.8),
                 Some((Icon::ChevronLeft, false)),
             );
             if r.clicked() {
@@ -757,7 +796,7 @@ impl Browse {
                     Align2::LEFT_TOP,
                     format!("A FILM BY {}", d.to_uppercase()),
                     FontId::new(11.5, FontFamily::Name("bold".into())),
-                    GOLD,
+                    GOLD(),
                 );
             }
             let low = Rect::from_min_max(pos2(pr.left(), pr.bottom() - 120.0), pr.max);
@@ -772,7 +811,7 @@ impl Browse {
                 Align2::LEFT_BOTTOM,
                 &item.title,
                 FontId::new(24.0, FontFamily::Name("bold".into())),
-                TEXT,
+                TEXT(),
             );
             if let Some(y) = item.year {
                 p.text(
@@ -780,7 +819,7 @@ impl Browse {
                     Align2::LEFT_BOTTOM,
                     y.to_string(),
                     FontId::new(14.0, FontFamily::Name("bold".into())),
-                    GOLD,
+                    GOLD(),
                 );
             }
             let f = file.as_ref();
@@ -796,7 +835,7 @@ impl Browse {
                 Align2::LEFT_TOP,
                 under.join("   ·   "),
                 FontId::proportional(12.0),
-                MUTED,
+                MUTED(),
             );
         }
 
@@ -810,7 +849,7 @@ impl Browse {
             if !item.genres.is_empty() {
                 kinds.push(item.genres.join(" · "));
             }
-            caps(ui, &kinds.join("   ·   "), TEXT.gamma_multiply(0.65));
+            caps(ui, &kinds.join("   ·   "), TEXT().gamma_multiply(0.65));
             ui.add_space(8.0);
             title_art(ui, item, images, vec2(560.0, 96.0), 54.0);
             ui.add_space(14.0);
@@ -820,7 +859,7 @@ impl Browse {
                         RichText::new(format!("“{}”", item.overview))
                             .italics()
                             .size(17.0)
-                            .color(TEXT.gamma_multiply(0.7)),
+                            .color(TEXT().gamma_multiply(0.7)),
                     )
                     .wrap(),
                 );
@@ -837,19 +876,19 @@ impl Browse {
                 if let Some(s) = item.score {
                     sep(ui);
                     let (r, _) = ui.allocate_exact_size(vec2(14.0, 14.0), Sense::hover());
-                    chrome::draw_icon(ui.painter(), r.center(), Icon::Star, GOLD);
-                    ui.label(RichText::new(format!("{s:.1}")).size(15.0).color(TEXT));
+                    chrome::draw_icon(ui.painter(), r.center(), Icon::Star, GOLD());
+                    ui.label(RichText::new(format!("{s:.1}")).size(15.0).color(TEXT()));
                     if let Some(src) = &item.score_source {
-                        ui.label(RichText::new(src).size(15.0).color(MUTED));
+                        ui.label(RichText::new(src).size(15.0).color(MUTED()));
                     }
                 }
                 if let Some(y) = item.year {
                     sep(ui);
-                    ui.label(RichText::new(y.to_string()).size(15.0).color(GOLD));
+                    ui.label(RichText::new(y.to_string()).size(15.0).color(GOLD()));
                 }
                 if let Some(d) = runtime {
                     sep(ui);
-                    ui.label(RichText::new(fmt_runtime(d)).size(15.0).color(TEXT));
+                    ui.label(RichText::new(fmt_runtime(d)).size(15.0).color(TEXT()));
                 }
                 if let Some(q) = file.as_ref().and_then(|f| f.quality.as_deref()) {
                     sep(ui);
@@ -864,7 +903,7 @@ impl Browse {
             if !directors.is_empty() {
                 ui.add_space(14.0);
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("Director").size(14.0).color(MUTED));
+                    ui.label(RichText::new("Director").size(14.0).color(MUTED()));
                     if let Some(c) = people_links(ui, &directors, 14.0) {
                         click = Some(c);
                     }
@@ -879,7 +918,8 @@ impl Browse {
                 } else {
                     label
                 };
-                if fill_button(ui, &label, Some(Icon::Play), (GOLD, INK), 42.0, 0.0, 0.0).clicked()
+                if fill_button(ui, &label, Some(Icon::Play), play_colors(), 42.0, 0.0, 0.0)
+                    .clicked()
                 {
                     click = Some(Click::Play(item.id.clone(), None, false));
                 }
@@ -888,7 +928,7 @@ impl Browse {
                         ui,
                         "Start over",
                         None,
-                        (Color32::from_rgb(38, 38, 44), TEXT),
+                        (SURFACE_HI(), TEXT()),
                         42.0,
                         0.0,
                         0.0,
@@ -908,8 +948,8 @@ impl Browse {
                     _ => "Ready to stream".to_owned(),
                 };
                 let (r, _) = ui.allocate_exact_size(vec2(8.0, 8.0), Sense::hover());
-                ui.painter().circle_filled(r.center(), 3.5, GOLD);
-                ui.label(RichText::new(status).size(12.5).color(GOLD));
+                ui.painter().circle_filled(r.center(), 3.5, GOLD());
+                ui.label(RichText::new(status).size(12.5).color(GOLD()));
             });
         });
 
@@ -927,7 +967,7 @@ impl Browse {
                 ui.spacing_mut().item_spacing.x = sp;
                 ui.set_width(lw);
                 if !item.cast.is_empty() {
-                    caps(ui, "Cast", TEAL);
+                    caps(ui, "Cast", TEAL());
                     ui.add_space(4.0);
                     ui.label(bold("Top billed", 24.0));
                     ui.add_space(16.0);
@@ -939,7 +979,7 @@ impl Browse {
                 }
                 let more = similar(lib, item, 10, &self.shuffle);
                 if !more.is_empty() {
-                    caps(ui, "From your library", TEAL);
+                    caps(ui, "From your library", TEAL());
                     ui.add_space(4.0);
                     ui.label(bold("You might also like", 24.0));
                     ui.add_space(16.0);
@@ -991,17 +1031,17 @@ impl Browse {
         let mut admin = false;
         let opt = |v: Option<String>, col: Color32, size: f32| v.map(|v| (v, col, size));
         let candidates = [
-            ("Director", opt(item.director.clone(), TEXT, 14.0)),
+            ("Director", opt(item.director.clone(), TEXT(), 14.0)),
             (
                 "Released",
-                opt(item.released.as_deref().map(date_long), TEXT, 14.0),
+                opt(item.released.as_deref().map(date_long), TEXT(), 14.0),
             ),
-            ("Runtime", opt(runtime.map(fmt_runtime), TEXT, 14.0)),
-            ("Budget", opt(item.budget.map(money), TEXT, 14.0)),
-            ("Box office", opt(item.revenue.map(money), TEXT, 14.0)),
+            ("Runtime", opt(runtime.map(fmt_runtime), TEXT(), 14.0)),
+            ("Budget", opt(item.budget.map(money), TEXT(), 14.0)),
+            ("Box office", opt(item.revenue.map(money), TEXT(), 14.0)),
             (
                 "Quality",
-                opt(f.and_then(|f| f.quality.clone()), GOLD, 14.0),
+                opt(f.and_then(|f| f.quality.clone()), GOLD(), 14.0),
             ),
             (
                 "Container",
@@ -1014,7 +1054,7 @@ impl Browse {
                             .join(" · ")
                     })
                     .filter(|s| !s.is_empty()),
-                    GOLD,
+                    GOLD(),
                     14.0,
                 ),
             ),
@@ -1028,23 +1068,23 @@ impl Browse {
                         }
                         Some(a)
                     }),
-                    GOLD,
+                    GOLD(),
                     14.0,
                 ),
             ),
             (
                 "Bitrate",
-                opt(f.and_then(|f| f.bitrate).map(bitrate), GOLD, 14.0),
+                opt(f.and_then(|f| f.bitrate).map(bitrate), GOLD(), 14.0),
             ),
             (
                 "File size",
-                opt(f.and_then(|f| f.size).map(bytes), TEXT, 14.0),
+                opt(f.and_then(|f| f.size).map(bytes), TEXT(), 14.0),
             ),
             (
                 "File",
                 opt(
                     item.stream.as_deref().and_then(|s| file_name(f, s)),
-                    TEXT.gamma_multiply(0.8),
+                    TEXT().gamma_multiply(0.8),
                     12.0,
                 ),
             ),
@@ -1052,7 +1092,7 @@ impl Browse {
                 "Path",
                 opt(
                     f.and_then(|f| f.path.clone()),
-                    TEXT.gamma_multiply(0.8),
+                    TEXT().gamma_multiply(0.8),
                     12.0,
                 ),
             ),
@@ -1062,14 +1102,14 @@ impl Browse {
             .filter_map(|(k, v)| v.map(|(v, c, s)| (k, v, c, s)))
             .collect();
         panel(ui, |ui| {
-            caps(ui, "File · Metadata", TEAL);
+            caps(ui, "File · Metadata", TEAL());
             ui.add_space(6.0);
             kv_rows(ui, &rows);
             if self.client.admin {
                 ui.add_space(12.0);
-                let b = egui::Button::new(RichText::new("Admin").size(13.0).color(TEXT))
+                let b = egui::Button::new(RichText::new("Admin").size(13.0).color(TEXT()))
                     .fill(Color32::TRANSPARENT)
-                    .stroke(Stroke::new(1.0f32, LINE_HI))
+                    .stroke(Stroke::new(1.0f32, LINE_HI()))
                     .corner_radius(8)
                     .min_size(vec2(ui.available_width(), 34.0));
                 if ui.add(b).clicked() {
@@ -1080,7 +1120,7 @@ impl Browse {
         if !item.reviews.is_empty() {
             ui.add_space(20.0);
             panel(ui, |ui| {
-                caps(ui, "From critics", MUTED);
+                caps(ui, "From critics", MUTED());
                 for r in &item.reviews {
                     ui.add_space(12.0);
                     ui.add(
@@ -1088,7 +1128,7 @@ impl Browse {
                             RichText::new(format!("“{}”", r.quote))
                                 .italics()
                                 .size(16.0)
-                                .color(TEXT.gamma_multiply(0.85)),
+                                .color(TEXT().gamma_multiply(0.85)),
                         )
                         .wrap(),
                     );
@@ -1101,7 +1141,7 @@ impl Browse {
                         ui.label(
                             RichText::new(format!("— {}", by.join(" · ")))
                                 .size(12.0)
-                                .color(MUTED),
+                                .color(MUTED()),
                         );
                     }
                 }
@@ -1154,11 +1194,11 @@ impl Browse {
             ui.label(
                 RichText::new(meta.join("   ·   "))
                     .size(14.0)
-                    .color(TEXT.gamma_multiply(0.85)),
+                    .color(TEXT().gamma_multiply(0.85)),
             );
             ui.add_space(10.0);
             if !item.overview.is_empty() {
-                clamp_text(ui, &item.overview, 15.0, TEXT.gamma_multiply(0.85), 3);
+                clamp_text(ui, &item.overview, 15.0, TEXT().gamma_multiply(0.85), 3);
                 ui.add_space(18.0);
             }
             ui.horizontal(|ui| {
@@ -1168,7 +1208,7 @@ impl Browse {
                     ui,
                     &label,
                     Some(Icon::Play),
-                    (Color32::WHITE, INK),
+                    (PRIMARY(), INK()),
                     44.0,
                     168.0,
                     4.0,
@@ -1197,7 +1237,7 @@ impl Browse {
             if !item.creators.is_empty() {
                 ui.add_space(14.0);
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("Created by").size(14.0).color(MUTED));
+                    ui.label(RichText::new("Created by").size(14.0).color(MUTED()));
                     let names: Vec<&str> = item.creators.iter().map(String::as_str).collect();
                     if let Some(c) = people_links(ui, &names, 14.0) {
                         click = Some(c);
@@ -1220,17 +1260,21 @@ impl Browse {
                     let g = ui.painter().layout_no_wrap(
                         label.to_owned(),
                         FontId::proportional(15.0),
-                        TEXT,
+                        TEXT(),
                     );
                     let (r, resp) = ui.allocate_exact_size(vec2(g.size().x, 40.0), Sense::click());
-                    let col = if on || resp.hovered() { TEXT } else { MUTED };
+                    let col = if on || resp.hovered() {
+                        TEXT()
+                    } else {
+                        MUTED()
+                    };
                     ui.painter()
                         .galley(pos2(r.left(), r.center().y - g.size().y / 2.0), g, col);
                     if on {
                         ui.painter().hline(
                             r.x_range(),
                             r.bottom() - 1.0,
-                            Stroke::new(2.0f32, TEXT),
+                            Stroke::new(2.0f32, TEXT()),
                         );
                     }
                     if resp.on_hover_cursor(CursorIcon::PointingHand).clicked() {
@@ -1241,7 +1285,7 @@ impl Browse {
         });
         let r = ui.available_rect_before_wrap();
         ui.painter()
-            .hline(r.x_range(), r.top(), Stroke::new(1.0f32, LINE));
+            .hline(r.x_range(), r.top(), Stroke::new(1.0f32, LINE()));
         ui.add_space(28.0);
 
         let c = match self.tab {
@@ -1249,7 +1293,7 @@ impl Browse {
             Tab::Related => padded(ui, |ui| {
                 let more = similar(lib, item, 20, &self.shuffle);
                 if more.is_empty() {
-                    ui.label(RichText::new("Nothing similar in your library yet.").color(MUTED));
+                    ui.label(RichText::new("Nothing similar in your library yet.").color(MUTED()));
                     return None;
                 }
                 ui.label(bold("You might also like", 20.0));
@@ -1284,7 +1328,7 @@ impl Browse {
         ui.label(
             RichText::new(format!("{n} episode{}", if n == 1 { "" } else { "s" }))
                 .size(14.0)
-                .color(MUTED),
+                .color(MUTED()),
         );
         ui.add_space(14.0);
         let w = ui.available_width();
@@ -1338,19 +1382,29 @@ impl Browse {
             p.rect_filled(
                 Rect::from_min_max(bar.min, pos2(bar.left() + bar.width() * f, bar.bottom())),
                 2.0,
-                GOLD,
+                GOLD(),
             );
         }
         let open = Click::Nav(View::Episode(series.id.clone(), ep.id.clone()));
         if resp.hovered() || resp.contains_pointer() {
-            p.rect_stroke(r, 6.0, Stroke::new(2.0f32, TEXT), egui::StrokeKind::Outside);
+            p.rect_stroke(
+                r,
+                6.0,
+                Stroke::new(2.0f32, TEXT()),
+                egui::StrokeKind::Outside,
+            );
             // the round button plays; the rest of the card opens the episode
             let pr = Rect::from_center_size(r.center(), vec2(56.0, 56.0));
             let play = ui.interact(pr, resp.id.with("play"), Sense::click());
             let a = if play.hovered() { 230 } else { 170 };
             ui.painter()
                 .circle_filled(pr.center(), 28.0, Color32::from_black_alpha(a));
-            chrome::draw_icon(ui.painter(), pr.center() + vec2(2.0, 0.0), Icon::Play, TEXT);
+            chrome::draw_icon(
+                ui.painter(),
+                pr.center() + vec2(2.0, 0.0),
+                Icon::Play,
+                TEXT(),
+            );
             if play.on_hover_text("Play").clicked() {
                 click = Some(Click::Play(series.id.clone(), Some(ep.id.clone()), false));
             }
@@ -1361,7 +1415,7 @@ impl Browse {
         ui.add_space(10.0);
         let title = format!("{}. {}", ep.number, ep.title);
         let t = ui.add(
-            egui::Label::new(bold(title, 15.0).color(TEXT))
+            egui::Label::new(bold(title, 15.0).color(TEXT()))
                 .truncate()
                 .sense(Sense::click()),
         );
@@ -1370,7 +1424,7 @@ impl Browse {
         }
         if !ep.overview.is_empty() {
             ui.add_space(2.0);
-            clamp_text(ui, &ep.overview, 12.5, MUTED, 2);
+            clamp_text(ui, &ep.overview, 12.5, MUTED(), 2);
         }
         ui.add_space(6.0);
         ui.horizontal(|ui| {
@@ -1382,11 +1436,11 @@ impl Browse {
                 ui.label(
                     RichText::new(format!("{}min", (d / 60.0).round()))
                         .size(12.0)
-                        .color(MUTED),
+                        .color(MUTED()),
                 );
             }
             if let Some(a) = &ep.aired {
-                ui.label(RichText::new(date_short(a)).size(12.0).color(MUTED));
+                ui.label(RichText::new(date_short(a)).size(12.0).color(MUTED()));
             }
         });
         click
@@ -1408,19 +1462,19 @@ impl Browse {
                     ui.label(
                         RichText::new(item.genres.join(" · "))
                             .size(14.0)
-                            .color(MUTED),
+                            .color(MUTED()),
                     );
                     ui.add_space(8.0);
                 }
                 ui.horizontal(|ui| {
                     if let Some(y) = years(item) {
-                        ui.label(RichText::new(y).size(12.0).color(MUTED));
+                        ui.label(RichText::new(y).size(12.0).color(MUTED()));
                     }
                     let n = item.seasons.len();
                     ui.label(
                         RichText::new(format!("{n} season{}", if n == 1 { "" } else { "s" }))
                             .size(12.0)
-                            .color(MUTED),
+                            .color(MUTED()),
                     );
                     if let Some(r) = &item.rating {
                         tag(ui, r);
@@ -1432,7 +1486,7 @@ impl Browse {
                         egui::Label::new(
                             RichText::new(&item.overview)
                                 .size(14.0)
-                                .color(TEXT.gamma_multiply(0.85)),
+                                .color(TEXT().gamma_multiply(0.85)),
                         )
                         .wrap(),
                     );
@@ -1495,7 +1549,7 @@ impl Browse {
             return None;
         }
         ui.add_space(30.0);
-        caps(ui, "Cast", TEAL);
+        caps(ui, "Cast", TEAL());
         ui.add_space(4.0);
         ui.label(bold("Series cast", 22.0));
         ui.add_space(16.0);
@@ -1538,7 +1592,7 @@ impl Browse {
                 ui,
                 &series.title,
                 13.0,
-                TEXT.gamma_multiply(0.8),
+                TEXT().gamma_multiply(0.8),
                 Some((Icon::ChevronLeft, false)),
             );
             if r.clicked() {
@@ -1556,9 +1610,9 @@ impl Browse {
             pc,
             41.0,
             if play.hovered() {
-                shade(GOLD, 1.08)
+                shade(GOLD(), 1.08)
             } else {
-                GOLD
+                GOLD()
             },
         );
         p.add(egui::Shape::convex_polygon(
@@ -1567,7 +1621,7 @@ impl Browse {
                 pc + vec2(15.0, 0.0),
                 pc + vec2(-9.0, 13.0),
             ],
-            INK,
+            INK(),
             Stroke::NONE,
         ));
         if play.on_hover_cursor(CursorIcon::PointingHand).clicked() {
@@ -1586,10 +1640,10 @@ impl Browse {
                     "{}  ·  S{:02}  ·  E{:02}",
                     series.title, season.number, ep.number
                 ),
-                TEXT.gamma_multiply(0.7),
+                TEXT().gamma_multiply(0.7),
             );
             ui.add_space(8.0);
-            ui.add(egui::Label::new(bold(&ep.title, 52.0).color(TEXT)).wrap());
+            ui.add(egui::Label::new(bold(&ep.title, 52.0).color(TEXT())).wrap());
         });
         if let Some((_, n)) = next {
             let nr = Rect::from_min_size(
@@ -1601,7 +1655,7 @@ impl Browse {
                     ui,
                     "Next",
                     13.0,
-                    TEXT.gamma_multiply(0.8),
+                    TEXT().gamma_multiply(0.8),
                     Some((Icon::ArrowRight, true)),
                 )
                 .on_hover_text(&n.title)
@@ -1626,14 +1680,14 @@ impl Browse {
                         season.episodes.len()
                     ))
                     .size(14.0)
-                    .color(GOLD),
+                    .color(GOLD()),
                 );
                 if let Some(d) = runtime {
                     dot(ui);
                     ui.label(
                         RichText::new(minutes(d))
                             .size(14.0)
-                            .color(TEXT.gamma_multiply(0.85)),
+                            .color(TEXT().gamma_multiply(0.85)),
                     );
                 }
                 if let Some(a) = &ep.aired {
@@ -1641,17 +1695,17 @@ impl Browse {
                     ui.label(
                         RichText::new(format!("Aired {}", date_long(a)))
                             .size(14.0)
-                            .color(TEXT.gamma_multiply(0.85)),
+                            .color(TEXT().gamma_multiply(0.85)),
                     );
                 }
                 if let Some(s) = ep.score {
                     dot(ui);
                     let (r, _) = ui.allocate_exact_size(vec2(14.0, 14.0), Sense::hover());
-                    chrome::draw_icon(ui.painter(), r.center(), Icon::Star, GOLD);
+                    chrome::draw_icon(ui.painter(), r.center(), Icon::Star, GOLD());
                     ui.label(
                         RichText::new(format!("{s:.1}"))
                             .size(14.0)
-                            .color(TEXT.gamma_multiply(0.85)),
+                            .color(TEXT().gamma_multiply(0.85)),
                     );
                 }
                 if let Some(q) = file.and_then(|f| f.quality.as_deref()) {
@@ -1678,7 +1732,7 @@ impl Browse {
                 ui,
                 &label,
                 Some(Icon::Play),
-                (GOLD, INK),
+                play_colors(),
                 48.0,
                 ui.available_width(),
                 6.0,
@@ -1690,7 +1744,7 @@ impl Browse {
             let upcoming: Vec<_> = (pos + 1..pos + 4).filter_map(ep_at).collect();
             if !upcoming.is_empty() {
                 ui.add_space(26.0);
-                caps(ui, "Up next", MUTED);
+                caps(ui, "Up next", MUTED());
                 ui.add_space(10.0);
                 for (s, e) in upcoming {
                     let (r, resp) =
@@ -1711,7 +1765,7 @@ impl Browse {
                         Align2::LEFT_TOP,
                         sxe(s.number, e.number),
                         FontId::proportional(11.0),
-                        MUTED,
+                        MUTED(),
                     );
                     p.text(
                         pos2(thumb.right() + 14.0, thumb.top() + 24.0),
@@ -1719,9 +1773,9 @@ impl Browse {
                         &e.title,
                         FontId::proportional(14.5),
                         if resp.hovered() {
-                            TEXT
+                            TEXT()
                         } else {
-                            TEXT.gamma_multiply(0.9)
+                            TEXT().gamma_multiply(0.9)
                         },
                     );
                     if resp.on_hover_cursor(CursorIcon::PointingHand).clicked() {
@@ -1732,14 +1786,14 @@ impl Browse {
             }
             ui.add_space(20.0);
             panel(ui, |ui| {
-                caps(ui, "About the series", MUTED);
+                caps(ui, "About the series", MUTED());
                 if !series.overview.is_empty() {
                     ui.add_space(10.0);
                     ui.add(
                         egui::Label::new(
                             RichText::new(&series.overview)
                                 .size(14.0)
-                                .color(TEXT.gamma_multiply(0.8)),
+                                .color(TEXT().gamma_multiply(0.8)),
                         )
                         .wrap(),
                     );
@@ -1749,7 +1803,7 @@ impl Browse {
                     ui,
                     "View all episodes",
                     12.5,
-                    GOLD,
+                    GOLD(),
                     Some((Icon::ArrowRight, true)),
                 )
                 .clicked()
@@ -1765,7 +1819,7 @@ impl Browse {
                 ui.spacing_mut().item_spacing.x = sp;
                 ui.set_width(lw);
                 if !ep.overview.is_empty() {
-                    caps(ui, "Synopsis", MUTED);
+                    caps(ui, "Synopsis", MUTED());
                     ui.add_space(6.0);
                     ui.label(bold(&ep.title, 30.0));
                     ui.add_space(12.0);
@@ -1773,28 +1827,28 @@ impl Browse {
                         egui::Label::new(
                             RichText::new(&ep.overview)
                                 .size(16.0)
-                                .color(TEXT.gamma_multiply(0.8)),
+                                .color(TEXT().gamma_multiply(0.8)),
                         )
                         .wrap(),
                     );
                     ui.add_space(30.0);
                 }
-                caps(ui, "File", MUTED);
+                caps(ui, "File", MUTED());
                 ui.add_space(10.0);
                 panel(ui, |ui| {
                     let mut cells = Vec::new();
                     if let Some(n) = file_name(file, &ep.stream) {
-                        cells.push(("Filename", n, TEXT, 12.5));
+                        cells.push(("Filename", n, TEXT(), 12.5));
                     }
                     if let Some(q) = file.and_then(|f| f.quality.clone()) {
-                        cells.push(("Resolution", q, TEAL, 14.0));
+                        cells.push(("Resolution", q, TEAL(), 14.0));
                     }
-                    cells.push(("Episode", sxe(season.number, ep.number), TEXT, 14.0));
+                    cells.push(("Episode", sxe(season.number, ep.number), TEXT(), 14.0));
                     if let Some(d) = runtime {
-                        cells.push(("Runtime", minutes(d), TEXT, 14.0));
+                        cells.push(("Runtime", minutes(d), TEXT(), 14.0));
                     }
                     if let Some(s) = file.and_then(|f| f.size) {
-                        cells.push(("File size", bytes(s), TEXT, 14.0));
+                        cells.push(("File size", bytes(s), TEXT(), 14.0));
                     }
                     let half = ui.available_width() / 2.0 - 20.0;
                     if half < 220.0 {
@@ -1823,7 +1877,7 @@ impl Browse {
                 });
                 if !series.cast.is_empty() {
                     ui.add_space(30.0);
-                    caps(ui, "Series cast", MUTED);
+                    caps(ui, "Series cast", MUTED());
                     ui.add_space(12.0);
                     let n = series.cast.len().min(10);
                     if let Some(c) = cast_grid(ui, &series.cast[..n], images, 160.0, 40.0) {

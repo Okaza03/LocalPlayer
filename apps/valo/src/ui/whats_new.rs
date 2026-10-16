@@ -86,12 +86,21 @@ const NOTES: &[(&str, &[Note])] = &[
     ),
     (
         "0.8.2",
-        &[Note {
-            title: "Bookmark from anywhere",
-            text: "Hover over a movie or series on the home page, Movies or TV shows and \
-                   click the bookmark in its corner to add it to My list.",
-            admin: false,
-        }],
+        &[
+            Note {
+                title: "Make it yours",
+                text: "Settings > Appearance has app styles inspired by Netflix, Prime \
+                       Video, Disney+, HBO Max, YouTube and Apple TV, the player included, \
+                       plus Light, Black, Dim and Midnight themes.",
+                admin: false,
+            },
+            Note {
+                title: "Bookmark from anywhere",
+                text: "Hover over a movie or series on the home page, Movies or TV shows and \
+                       click the bookmark in its corner to add it to My list.",
+                admin: false,
+            },
+        ],
     ),
 ];
 
@@ -121,14 +130,14 @@ pub fn ui(ctx: &egui::Context, seen: &str, admin: bool) -> bool {
         for n in &notes {
             ui.label(bold(n.title, 16.0));
             ui.add_space(2.0);
-            ui.label(RichText::new(n.text).size(14.5).color(MUTED));
+            ui.label(RichText::new(n.text).size(14.5).color(MUTED()));
             ui.add_space(14.0);
         }
         if notes.is_empty() {
             ui.label(
                 RichText::new("This update brings fixes and small improvements.")
                     .size(14.5)
-                    .color(MUTED),
+                    .color(MUTED()),
             );
             ui.add_space(14.0);
         }

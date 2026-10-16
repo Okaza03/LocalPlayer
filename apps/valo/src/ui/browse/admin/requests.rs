@@ -104,7 +104,7 @@ impl State {
             );
             ui.add_space(18.0);
             if let Some(e) = &self.list.error {
-                ui.label(RichText::new(format!("Couldn't load the requests: {e}")).color(ERROR));
+                ui.label(RichText::new(format!("Couldn't load the requests: {e}")).color(ERROR()));
             }
         });
 
@@ -121,10 +121,10 @@ impl State {
             |ui, (st, cx, job, delete)| {
                 if shown.is_empty() && st.list.data.is_some() {
                     ui.add_space(20.0);
-                    ui.label(mono("No requests here", 12.0).color(MUTED));
+                    ui.label(mono("No requests here", 12.0).color(MUTED()));
                 }
                 if st.list.data.is_none() && st.list.loading() {
-                    ui.add(egui::Spinner::new().size(20.0).color(MUTED));
+                    ui.add(egui::Spinner::new().size(20.0).color(MUTED()));
                 }
                 for r in shown {
                     if let Some(a) = st.row(ui, r, cx) {
@@ -138,7 +138,7 @@ impl State {
             },
             |ui, _| {
                 panel(ui, |ui| {
-                    caps(ui, "How requests work", TEAL);
+                    caps(ui, "How requests work", TEAL());
                     ui.add_space(8.0);
                     for line in [
                         "People ask for a movie or series in Discord, through the server's bot.",
@@ -146,7 +146,7 @@ impl State {
                          the library. Deny it with a reason if you won't.",
                         "Each answer goes back to the requester on Discord.",
                     ] {
-                        ui.label(RichText::new(line).color(MUTED));
+                        ui.label(RichText::new(line).color(MUTED()));
                         ui.add_space(6.0);
                     }
                     if crate::ui::ext_link(ui, "Bot setup guide") {
@@ -191,7 +191,7 @@ impl State {
         let busy = cx.busy;
         let have = in_library(cx.lib, r);
         egui::Frame::new()
-            .stroke(Stroke::new(1.0f32, LINE))
+            .stroke(Stroke::new(1.0f32, LINE()))
             .corner_radius(8)
             .inner_margin(egui::Margin::symmetric(14, 12))
             .show(ui, |ui| {
@@ -209,7 +209,7 @@ impl State {
                             let year = r.year.map(|y| format!(" ({y})")).unwrap_or_default();
                             ui.label(bold(format!("{}{year}", r.title), 16.0));
                             if let Some(k) = &r.kind {
-                                ui.label(mono(k, 9.5).color(MUTED));
+                                ui.label(mono(k, 9.5).color(MUTED()));
                             }
                         });
                         let mut who = Vec::new();
@@ -223,21 +223,21 @@ impl State {
                             who.push(ago(t));
                         }
                         if !who.is_empty() {
-                            ui.label(mono(who.join("   ·   "), 10.0).color(MUTED));
+                            ui.label(mono(who.join("   ·   "), 10.0).color(MUTED()));
                         }
                         let (col, label) = match r.status.as_str() {
-                            "approved" => (TEAL, "Approved"),
-                            "available" => (OK, "Available"),
-                            "denied" => (ERROR, "Denied"),
-                            _ => (WARN, "Pending"),
+                            "approved" => (TEAL(), "Approved"),
+                            "available" => (OK(), "Available"),
+                            "denied" => (ERROR(), "Denied"),
+                            _ => (WARN(), "Pending"),
                         };
                         ui.horizontal(|ui| {
                             ui.label(mono(label, 10.0).color(col));
                             if have && r.status != "available" {
-                                ui.label(mono("already in the library", 10.0).color(OK));
+                                ui.label(mono("already in the library", 10.0).color(OK()));
                             }
                             if r.notified == Some(false) {
-                                ui.label(mono("requester wasn't told", 10.0).color(ERROR))
+                                ui.label(mono("requester wasn't told", 10.0).color(ERROR()))
                                     .on_hover_text(
                                         "The bot couldn't message them, for example because \
                                          their Discord DMs are closed.",
@@ -245,7 +245,7 @@ impl State {
                             }
                         });
                         if let Some(n) = r.note.as_ref().filter(|n| !n.trim().is_empty()) {
-                            ui.label(RichText::new(format!("“{n}”")).italics().color(TEXT));
+                            ui.label(RichText::new(format!("“{n}”")).italics().color(TEXT()));
                         }
                     });
                     ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
@@ -299,7 +299,7 @@ impl State {
 
                 if let Some((_, reason)) = self.deny.as_mut().filter(|(id, _)| *id == r.id) {
                     ui.add_space(10.0);
-                    ui.label(mono("Reason (sent to the requester)", 11.0).color(MUTED));
+                    ui.label(mono("Reason (sent to the requester)", 11.0).color(MUTED()));
                     text_field(ui, reason, "e.g. not available in good quality yet", false);
                     ui.add_space(6.0);
                     let mut close = false;
@@ -327,7 +327,7 @@ impl State {
                             "Remove the request for {}? The requester isn't told.",
                             r.title
                         ))
-                        .color(TEXT),
+                        .color(TEXT()),
                     );
                     ui.horizontal(|ui| {
                         if ui

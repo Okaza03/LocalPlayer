@@ -58,7 +58,7 @@ impl Splash {
                 // swallows clicks meant for the page underneath
                 let (rect, _) = ui.allocate_exact_size(screen.size(), Sense::click_and_drag());
                 let p = ui.painter();
-                p.rect_filled(rect, 0.0, BG.gamma_multiply(cover));
+                p.rect_filled(rect, 0.0, BG().gamma_multiply(cover));
                 let size = self.logo.size_vec2();
                 let w = (rect.width() * 0.32).clamp(180.0, 360.0) * (0.94 + 0.06 * logo);
                 p.image(

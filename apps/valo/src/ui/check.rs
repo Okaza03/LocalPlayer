@@ -32,10 +32,10 @@ pub struct Check {
 
 fn color(l: Level) -> egui::Color32 {
     match l {
-        Level::Pass => OK,
-        Level::Later => MUTED,
-        Level::Warn => WARN,
-        Level::Fail => ERROR,
+        Level::Pass => OK(),
+        Level::Later => MUTED(),
+        Level::Warn => WARN(),
+        Level::Fail => ERROR(),
     }
 }
 
@@ -53,7 +53,7 @@ fn badge(ui: &mut Ui, level: Option<Level>) {
     let Some(l) = level else {
         let s = 14.0;
         let at = egui::Rect::from_center_size(r.center(), vec2(s, s));
-        ui.put(at, egui::Spinner::new().size(s).color(TEXT));
+        ui.put(at, egui::Spinner::new().size(s).color(TEXT()));
         return;
     };
     let c = color(l);
@@ -79,21 +79,21 @@ fn bar(ui: &mut Ui, f: &check::Field) {
         Align2::LEFT_CENTER,
         f.name,
         FontId::proportional(13.0),
-        TEXT,
+        TEXT(),
     );
     p.text(
         pos2(r.right(), r.center().y),
         Align2::RIGHT_CENTER,
         format!("{}/{}", f.have, f.total),
         FontId::monospace(11.5),
-        if f.have == f.total { MUTED } else { c },
+        if f.have == f.total { MUTED() } else { c },
     );
     let track = egui::Rect::from_min_max(
         pos2(r.left() + 110.0, r.center().y - 3.0),
         pos2(r.right() - 72.0, r.center().y + 3.0),
     );
     if track.width() > 10.0 {
-        p.rect_filled(track, 1.0, LINE);
+        p.rect_filled(track, 1.0, LINE());
         let frac = f.have as f32 / f.total.max(1) as f32;
         let mut fill = track;
         fill.set_width(track.width() * frac);
@@ -192,7 +192,7 @@ impl Check {
         card(ctx, |ui| {
             let mut action = Action::None;
             ui.label(super::bold("Checking the server", 20.0));
-            ui.label(RichText::new(normalize(&self.address)).color(MUTED));
+            ui.label(RichText::new(normalize(&self.address)).color(MUTED()));
             ui.add_space(12.0);
 
             for (i, r) in self.rows.iter().enumerate() {
@@ -204,7 +204,7 @@ impl Check {
                     ui.vertical(|ui| {
                         ui.label(RichText::new(r.title).strong());
                         if !r.detail.is_empty() {
-                            ui.label(RichText::new(&r.detail).small().color(MUTED));
+                            ui.label(RichText::new(&r.detail).small().color(MUTED()));
                         }
                     });
                 });
@@ -218,7 +218,7 @@ impl Check {
                     ui.label(
                         RichText::new(format!("{} · {} {}", g.title, g.total, g.noun))
                             .small()
-                            .color(MUTED),
+                            .color(MUTED()),
                     );
                     for f in &g.fields {
                         bar(ui, f);
@@ -251,7 +251,7 @@ impl Check {
                      Only the server's admin can do that: send them the report.",
                     if n == 1 { "problem" } else { "problems" }
                 );
-                ui.label(RichText::new(msg).color(ERROR));
+                ui.label(RichText::new(msg).color(ERROR()));
                 ui.add_space(8.0);
                 if wide(ui, "Try again") {
                     action = Action::CheckServer(self.address.clone());
@@ -266,13 +266,13 @@ impl Check {
                     },
                     if warns == 1 { "is" } else { "are" },
                 );
-                ui.label(RichText::new(msg).color(WARN));
+                ui.label(RichText::new(msg).color(WARN()));
                 ui.add_space(8.0);
                 if wide(ui, "I know this is missing, continue") {
                     action = self.proceed();
                 }
             } else {
-                ui.label(RichText::new("Everything checks out.").color(OK));
+                ui.label(RichText::new("Everything checks out.").color(OK()));
                 ui.add_space(8.0);
                 if wide(ui, &format!("Continue to {next}")) {
                     action = self.proceed();

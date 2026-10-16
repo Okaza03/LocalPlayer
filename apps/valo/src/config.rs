@@ -107,6 +107,10 @@ pub struct Config {
     pub discord_presence: bool,
     /// The window as it was last closed; `None` until then.
     pub window: Option<WindowState>,
+    /// Color theme: dark, light, …
+    pub theme: crate::ui::theme::Mode,
+    /// App style: Valo, Netflix, …
+    pub style: crate::ui::theme::Skin,
 }
 
 impl Default for Config {
@@ -128,6 +132,8 @@ impl Default for Config {
             seen_version: String::new(),
             discord_presence: true,
             window: None,
+            theme: Default::default(),
+            style: Default::default(),
         }
     }
 }

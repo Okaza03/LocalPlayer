@@ -338,7 +338,7 @@ impl Browse {
         }
         let mut click = None;
         egui::CentralPanel::default()
-            .frame(egui::Frame::new().fill(BG))
+            .frame(egui::Frame::new().fill(BG()))
             .show(ctx, |ui| {
                 let Some(lib) = self.lib.clone() else {
                     ui.add_space(ui.available_height() / 2.0 - 40.0);
@@ -346,7 +346,7 @@ impl Browse {
                         if let Some(e) = &self.error {
                             ui.label(mono("Couldn't load your library", 13.0));
                             ui.add_space(4.0);
-                            ui.label(RichText::new(e).color(ERROR));
+                            ui.label(RichText::new(e).color(ERROR()));
                             if let Some(m) = self.missing {
                                 ui.scope(|ui| {
                                     ui.set_max_width(460.0);
@@ -365,9 +365,9 @@ impl Browse {
                                 }
                             });
                         } else {
-                            ui.add(egui::Spinner::new().size(28.0).color(TEXT));
+                            ui.add(egui::Spinner::new().size(28.0).color(TEXT()));
                             ui.add_space(6.0);
-                            ui.label(mono("Loading your library", 12.0).color(MUTED));
+                            ui.label(mono("Loading your library", 12.0).color(MUTED()));
                         }
                     });
                     return;
@@ -532,20 +532,20 @@ impl Browse {
     fn profile_menu(&mut self, ui: &mut Ui, action: &mut Action, go: &mut Option<View>) {
         let name = self.user.clone().unwrap_or_else(|| "Guest".to_owned());
         let label =
-            ui.fonts(|f| f.layout_no_wrap(name.to_uppercase(), FontId::monospace(11.5), TEXT));
+            ui.fonts(|f| f.layout_no_wrap(name.to_uppercase(), FontId::monospace(11.5), TEXT()));
         let (r, resp) =
             ui.allocate_exact_size(vec2(label.size().x + 72.0, chrome::BAR_H), Sense::click());
         let id = ui.make_persistent_id("profile_menu");
         let open = ui.memory(|m| m.is_popup_open(id));
         let p = ui.painter();
         if resp.hovered() || open {
-            p.rect_filled(r, 0.0, SURFACE_HI);
+            p.rect_filled(r, 0.0, SURFACE_HI());
         }
         chrome::avatar(p, pos2(r.left() + 26.0, r.center().y), 12.0, &name);
         p.galley(
             pos2(r.left() + 46.0, r.center().y - label.size().y / 2.0),
             label,
-            TEXT,
+            TEXT(),
         );
         let c = pos2(r.right() - 15.0, r.center().y);
         p.add(egui::Shape::convex_polygon(
@@ -554,7 +554,7 @@ impl Browse {
                 c + vec2(4.0, -2.0),
                 c + vec2(0.0, 3.0),
             ],
-            MUTED,
+            MUTED(),
             Stroke::NONE,
         ));
         let resp = resp.on_hover_cursor(CursorIcon::PointingHand);
@@ -574,7 +574,7 @@ impl Browse {
                     ui.vertical(|ui| {
                         ui.spacing_mut().item_spacing.y = 0.0;
                         ui.label(bold(&name, 15.0));
-                        ui.label(mono(&self.client.info.name, 10.5).color(MUTED));
+                        ui.label(mono(&self.client.info.name, 10.5).color(MUTED()));
                     });
                 });
                 ui.separator();
@@ -661,7 +661,7 @@ impl Browse {
             ui.vertical_centered(|ui| {
                 ui.label(mono("Your library is empty", 13.0));
                 ui.label(
-                    RichText::new("No movies or series were found on this server.").color(MUTED),
+                    RichText::new("No movies or series were found on this server.").color(MUTED()),
                 );
             });
             return None;
@@ -773,24 +773,24 @@ impl Browse {
                 gradient(
                     &p,
                     fade,
-                    [BG, Color32::TRANSPARENT, Color32::TRANSPARENT, BG],
+                    [BG(), Color32::TRANSPARENT, Color32::TRANSPARENT, BG()],
                 );
                 p.rect_filled(
                     Rect::from_min_max(rect.min, pos2(ar.left() + 1.0, rect.bottom())),
                     0.0,
-                    BG,
+                    BG(),
                 );
             }
             None => {
                 let c = crate::util::color_for(&item.title);
-                gradient(&p, rect, [BG, c.gamma_multiply(0.5), c, BG]);
+                gradient(&p, rect, [BG(), c.gamma_multiply(0.5), c, BG()]);
             }
         }
         let bottom = Rect::from_min_max(pos2(rect.left(), rect.bottom() - h * 0.35), rect.max);
         gradient(
             &p,
             bottom,
-            [Color32::TRANSPARENT, Color32::TRANSPARENT, BG, BG],
+            [Color32::TRANSPARENT, Color32::TRANSPARENT, BG(), BG()],
         );
 
         let mut click = None;
@@ -824,13 +824,13 @@ impl Browse {
                 egui::Label::new(
                     RichText::new(shorten(&item.overview, max))
                         .size(15.0)
-                        .color(TEXT),
+                        .color(TEXT()),
                 )
                 .wrap(),
             );
             ui.add_space(4.0);
         }
-        ui.label(mono(meta_line(item), 11.5).color(MUTED));
+        ui.label(mono(meta_line(item), 11.5).color(MUTED()));
         ui.add_space(2.0);
         ui.add(egui::Label::new(bold(&item.title, 40.0)).wrap());
         if carousel.is_some() {
@@ -843,7 +843,7 @@ impl Browse {
                     },
                     11.0,
                 )
-                .color(ACCENT),
+                .color(ACCENT()),
             );
         }
 
@@ -859,9 +859,9 @@ impl Browse {
                     r,
                     0.0,
                     if i == cur {
-                        TEXT
+                        TEXT()
                     } else {
-                        MUTED.gamma_multiply(0.6)
+                        MUTED().gamma_multiply(0.6)
                     },
                 );
             }
@@ -869,7 +869,7 @@ impl Browse {
                 for (dir, x) in [(-1isize, rect.left() + 18.0), (1, rect.right() - 18.0)] {
                     let r = Rect::from_center_size(pos2(x, rect.center().y), vec2(32.0, 64.0));
                     let a = ui.interact(r, ui.id().with(("hero_arrow", dir)), Sense::click());
-                    let col = if a.hovered() { TEXT } else { MUTED };
+                    let col = Color32::WHITE.gamma_multiply(if a.hovered() { 1.0 } else { 0.7 });
                     pr.rect_filled(
                         r,
                         2.0,
@@ -1044,11 +1044,11 @@ impl Browse {
         ui.add_space(18.0);
         ui.horizontal(|ui| {
             ui.add_space(SIDE);
-            ui.label(mono(title, 13.0));
+            ui.label(crate::ui::heading(title));
             if let Some(v) = all {
                 ui.add_space(10.0);
                 let r = ui.add(
-                    egui::Label::new(mono("See all", 11.0).color(MUTED))
+                    egui::Label::new(mono("See all", 11.0).color(MUTED()))
                         .sense(Sense::click())
                         .selectable(false),
                 );
@@ -1109,7 +1109,7 @@ impl Browse {
                     Align2::CENTER_CENTER,
                     if dir < 0.0 { "‹" } else { "›" },
                     FontId::proportional(30.0),
-                    TEXT,
+                    Color32::WHITE,
                 );
                 if a.on_hover_cursor(CursorIcon::PointingHand).clicked() {
                     self.row_jump.insert(
@@ -1200,7 +1200,7 @@ impl Browse {
                                 ui.selectable_value(&mut self.genre, Some(g.clone()), g);
                             }
                         });
-                    ui.label(mono("Genre", 11.0).color(MUTED));
+                    ui.label(mono("Genre", 11.0).color(MUTED()));
                     ui.add_space(14.0);
                 }
                 let (icon, arrow) = if self.desc {
@@ -1238,13 +1238,13 @@ impl Browse {
                     // newest first, names A to Z
                     self.desc = matches!(self.sort, Sort::Year | Sort::Added);
                 }
-                ui.label(mono("Sort", 11.0).color(MUTED));
+                ui.label(mono("Sort", 11.0).color(MUTED()));
             });
         });
         ui.add_space(20.0);
         if items.is_empty() {
             ui.add_space(40.0);
-            ui.vertical_centered(|ui| ui.label(mono("Nothing here", 12.0).color(MUTED)));
+            ui.vertical_centered(|ui| ui.label(mono("Nothing here", 12.0).color(MUTED())));
             return None;
         }
         ui.add_space(16.0);
@@ -1311,14 +1311,14 @@ impl Browse {
         ui.horizontal(|ui| {
             ui.add_space(SIDE);
             ui.label(mono(format!("Results for “{}”", self.search.trim()), 13.0));
-            ui.label(mono(hits.len().to_string(), 13.0).color(MUTED));
+            ui.label(mono(hits.len().to_string(), 13.0).color(MUTED()));
         });
         let mut click = None;
         if !people.is_empty() {
             ui.add_space(10.0);
             ui.horizontal_wrapped(|ui| {
                 ui.add_space(SIDE);
-                ui.label(mono("Directors & creators", 11.0).color(MUTED));
+                ui.label(mono("Directors & creators", 11.0).color(MUTED()));
                 ui.add_space(6.0);
                 for d in people {
                     if secondary_button(ui, d).clicked() {
@@ -1330,7 +1330,7 @@ impl Browse {
         ui.add_space(16.0);
         if hits.is_empty() {
             ui.add_space(40.0);
-            ui.vertical_centered(|ui| ui.label(mono("Nothing matches", 12.0).color(MUTED)));
+            ui.vertical_centered(|ui| ui.label(mono("Nothing matches", 12.0).color(MUTED())));
             return None;
         }
         let cards = self.poster_cards(hits.into_iter(), progress);
@@ -1540,14 +1540,16 @@ fn card(ui: &mut Ui, c: &Card, wide: bool, marked: bool, images: &mut Images) ->
     // the buttons on it cover part of the card, so count them as hovering it
     let hot = resp.hovered() || resp.contains_pointer();
     let t = ui.ctx().animate_bool_with_time(resp.id, hot, 0.12);
-    let art = Rect::from_min_size(rect.min, size).expand(t * 4.0);
+    let spec = crate::ui::theme::spec();
+    let rad = spec.card_radius;
+    let art = Rect::from_min_size(rect.min, size).expand(t * spec.hover_grow);
     let p = ui.painter();
     match c.art.as_ref().and_then(|u| images.get(u)) {
-        Some(tex) => image_cover(p, art, &tex, 6, Color32::WHITE),
+        Some(tex) => image_cover(p, art, &tex, rad, Color32::WHITE),
         None if c.art.as_ref().is_some_and(|u| !images.failed(u)) => {
-            p.rect_filled(art, 6.0, SURFACE);
+            p.rect_filled(art, rad, SURFACE());
         }
-        None => placeholder(p, art, &c.title, 6),
+        None => placeholder(p, art, &c.title, rad),
     }
     if let Some(f) = c.progress {
         let bar = Rect::from_min_max(
@@ -1558,16 +1560,18 @@ fn card(ui: &mut Ui, c: &Card, wide: bool, marked: bool, images: &mut Images) ->
         p.rect_filled(
             Rect::from_min_max(bar.min, pos2(bar.left() + bar.width() * f, bar.bottom())),
             2.0,
-            ACCENT,
+            ACCENT(),
         );
     }
     if t > 0.0 {
-        p.rect_stroke(
-            art,
-            6.0,
-            Stroke::new(2.0f32, TEXT.gamma_multiply(t)),
-            egui::StrokeKind::Outside,
-        );
+        if spec.hover_outline > 0.0 {
+            p.rect_stroke(
+                art,
+                rad,
+                Stroke::new(spec.hover_outline, TEXT().gamma_multiply(t)),
+                egui::StrokeKind::Outside,
+            );
+        }
         if wide {
             p.circle_filled(
                 art.center(),
@@ -1597,9 +1601,9 @@ fn card(ui: &mut Ui, c: &Card, wide: bool, marked: bool, images: &mut Images) ->
         &c.title,
         FontId::proportional(14.0),
         if t > 0.0 {
-            TEXT
+            TEXT()
         } else {
-            TEXT.gamma_multiply(0.85)
+            TEXT().gamma_multiply(0.85)
         },
     );
     if let Some(s) = &c.sub {
@@ -1608,14 +1612,14 @@ fn card(ui: &mut Ui, c: &Card, wide: bool, marked: bool, images: &mut Images) ->
             Align2::LEFT_TOP,
             s,
             FontId::proportional(12.0),
-            MUTED,
+            MUTED(),
         );
     }
     if hot {
         let font = FontId::new(12.0, egui::FontFamily::Name("bold".into()));
         let g = ui
             .painter()
-            .layout_no_wrap("More info".to_owned(), font, TEXT);
+            .layout_no_wrap("More info".to_owned(), font, Color32::WHITE);
         let lift = if c.progress.is_some() { 16.0 } else { 8.0 };
         let ir = Rect::from_min_size(
             pos2(art.left() + 8.0, art.bottom() - lift - 26.0),
@@ -1630,11 +1634,11 @@ fn card(ui: &mut Ui, c: &Card, wide: bool, marked: bool, images: &mut Images) ->
             13.0,
             Stroke::new(
                 1.0f32,
-                TEXT.gamma_multiply(if info.hovered() { 0.9 } else { 0.4 }),
+                Color32::WHITE.gamma_multiply(if info.hovered() { 0.9 } else { 0.4 }),
             ),
             egui::StrokeKind::Inside,
         );
-        p.galley(ir.center() - g.size() / 2.0, g, TEXT);
+        p.galley(ir.center() - g.size() / 2.0, g, Color32::WHITE);
         if info.on_hover_cursor(CursorIcon::PointingHand).clicked() {
             return Some(Click::Open(c.item.clone()));
         }
@@ -1659,10 +1663,10 @@ fn card(ui: &mut Ui, c: &Card, wide: bool, marked: bool, images: &mut Images) ->
                 p.circle_stroke(
                     br.center(),
                     15.0,
-                    Stroke::new(1.0f32, TEXT.gamma_multiply(0.6)),
+                    Stroke::new(1.0f32, Color32::WHITE.gamma_multiply(0.6)),
                 );
             }
-            chrome::draw_icon(p, br.center(), Icon::Bookmark, TEXT);
+            chrome::draw_icon(p, br.center(), Icon::Bookmark, Color32::WHITE);
         }
         let tip = if marked {
             "Remove from My list"
@@ -1687,7 +1691,7 @@ fn card(ui: &mut Ui, c: &Card, wide: bool, marked: bool, images: &mut Images) ->
             let a = if dots.hovered() || open { 230 } else { 150 };
             ui.painter()
                 .circle_filled(dr.center(), 15.0, Color32::from_black_alpha(a));
-            chrome::draw_icon(ui.painter(), dr.center(), Icon::More, TEXT);
+            chrome::draw_icon(ui.painter(), dr.center(), Icon::More, Color32::WHITE);
             let dots = dots
                 .on_hover_text("More")
                 .on_hover_cursor(CursorIcon::PointingHand);
