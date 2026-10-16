@@ -40,7 +40,7 @@ Success, `200`:
 | `name`  | string | Display name. Defaults to the username.                                                                                                                                |
 | `admin` | bool   | `true` shows the app's Admin page (see [Admin API](admin.md)). Hiding it is only a convenience, so every admin endpoint must check permissions itself.                  |
 
-Match the username **without regard to case**, so `noah` signs in as `Noah`, and send the stored spelling back in `name`. The app keeps each user's local data (watch progress, My list) under the lowercased name, so both spellings are the same user either way. Then also refuse to create a second user whose name differs only in case.
+Match the username **without regard to case**, so `user` signs in as `User`, and send the stored spelling back in `name`. The app keeps each user's local data (watch progress, My list) under the lowercased name, so both spellings are the same user either way. Then also refuse to create a second user whose name differs only in case.
 
 A wrong username or password must get `401` (`400`, `403` and `422` work too). Don't answer `200` with an error message in it. The check sends an empty username and password and expects one of those codes, so a validation error for empty fields (Laravel's `422`) is fine.
 

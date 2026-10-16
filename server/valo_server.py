@@ -645,7 +645,7 @@ class Users:
         self.save("users.json", self.users)
 
     def find(self, name):
-        """The stored username for `name`, ignoring case ("noah" signs in as "Noah")."""
+        """The stored username for `name`, ignoring case ("user" signs in as "User")."""
         if name in self.users:
             return name
         return next((n for n in self.users if n.lower() == name.lower()), None)
