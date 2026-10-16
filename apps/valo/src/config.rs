@@ -51,6 +51,31 @@ pub fn user_prefix(base: &str, user: Option<&str>) -> String {
     format!("{base}|@{}|", user.unwrap_or("").to_lowercase())
 }
 
+/// Window size and place, in the desktop's logical pixels.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct WindowState {
+    /// The normal (not maximized) size, so un-maximizing goes back to it.
+    pub w: f32,
+    pub h: f32,
+    /// Top-left corner; unknown on Wayland, which places windows itself.
+    pub x: Option<f32>,
+    pub y: Option<f32>,
+    pub maximized: bool,
+}
+
+impl WindowState {
+    /// Something a window can be restored to (not tiny, no broken position).
+    pub fn usable(&self) -> bool {
+        let size_ok = (560.0..=20000.0).contains(&self.w) && (400.0..=20000.0).contains(&self.h);
+        let place_ok = match (self.x, self.y) {
+            // monitors left of or above the main one have negative positions
+            (Some(x), Some(y)) => x.abs() < 20000.0 && y.abs() < 20000.0,
+            _ => true,
+        };
+        size_ok && place_ok
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
@@ -80,6 +105,8 @@ pub struct Config {
     pub seen_version: String,
     /// Show what's playing on the user's Discord profile.
     pub discord_presence: bool,
+    /// The window as it was last closed; `None` until then.
+    pub window: Option<WindowState>,
 }
 
 impl Default for Config {
@@ -100,6 +127,7 @@ impl Default for Config {
             app_menu: true,
             seen_version: String::new(),
             discord_presence: true,
+            window: None,
         }
     }
 }
@@ -332,6 +360,24 @@ impl Hidden {
 
 #[cfg(test)]
 mod tests {
+    use super::WindowState;
+
+    #[test]
+    fn window_state_sanity() {
+        let w = |w, h, x, y| WindowState {
+            w,
+            h,
+            x,
+            y,
+            maximized: false,
+        };
+        assert!(w(1280.0, 780.0, Some(100.0), Some(80.0)).usable());
+        assert!(w(1280.0, 780.0, Some(-1500.0), Some(0.0)).usable()); // a monitor to the left
+        assert!(w(1280.0, 780.0, None, None).usable()); // Wayland
+        assert!(!w(200.0, 780.0, None, None).usable()); // too small
+        assert!(!w(1280.0, 780.0, Some(-32000.0), Some(-32000.0)).usable()); // Windows' "minimized" spot
+    }
+
     use super::Entry;
 
     #[test]

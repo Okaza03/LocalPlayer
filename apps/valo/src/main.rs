@@ -44,9 +44,21 @@ fn main() -> eframe::Result<()> {
     let viewport = egui::ViewportBuilder::default().with_icon(window_icon());
     #[cfg(not(windows))]
     let viewport = egui::ViewportBuilder::default();
+    // open the way it was closed: size, place, maximized
+    let viewport = match Config::load().window.filter(|w| w.usable()) {
+        Some(w) => {
+            let v = viewport
+                .with_inner_size([w.w, w.h])
+                .with_maximized(w.maximized);
+            match (w.x, w.y) {
+                (Some(x), Some(y)) => v.with_position([x, y]),
+                _ => v,
+            }
+        }
+        None => viewport.with_inner_size([1280.0, 780.0]),
+    };
     let options = eframe::NativeOptions {
         viewport: viewport
-            .with_inner_size([1280.0, 780.0])
             .with_min_inner_size([560.0, 400.0])
             .with_title("Valo")
             .with_decorations(false) // we draw our own title bar
@@ -133,6 +145,46 @@ enum Dialog {
 }
 
 impl App {
+    /// Keep track of the window's size, place and maximized state, for the next start.
+    /// Fullscreen (the player) isn't remembered, and doesn't overwrite the rest.
+    fn note_window(&mut self, ctx: &egui::Context) {
+        let (inner, outer, maximized, fullscreen, minimized) = ctx.input(|i| {
+            let v = i.viewport();
+            (
+                v.inner_rect,
+                v.outer_rect,
+                v.maximized.unwrap_or(false),
+                v.fullscreen.unwrap_or(false),
+                v.minimized.unwrap_or(false),
+            )
+        });
+        // minimized windows report odd places (Windows: -32000, -32000)
+        if fullscreen || minimized {
+            return;
+        }
+        // egui's points include the app's zoom (Settings > text size); the desktop's don't
+        let zoom = ctx.zoom_factor();
+        let mut w = self.cfg.window.unwrap_or(config::WindowState {
+            w: 1280.0,
+            h: 780.0,
+            x: None,
+            y: None,
+            maximized: false,
+        });
+        w.maximized = maximized;
+        if !maximized {
+            if let Some(r) = inner {
+                w.w = (r.width() * zoom).round();
+                w.h = (r.height() * zoom).round();
+            }
+            if let Some(r) = outer {
+                w.x = Some((r.min.x * zoom).round());
+                w.y = Some((r.min.y * zoom).round());
+            }
+        }
+        self.cfg.window = Some(w);
+    }
+
     fn new(ctx: &egui::Context, files: Vec<PathBuf>) -> Self {
         let mut cfg = Config::load();
         if cfg.server.is_empty() && cfg.seen_version.is_empty() {
@@ -350,6 +402,7 @@ impl App {
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.images.poll(ctx);
+        self.note_window(ctx);
         if (ctx.zoom_factor() - self.cfg.ui_scale).abs() > 0.001 {
             ctx.set_zoom_factor(self.cfg.ui_scale.clamp(0.5, 2.0));
         }

@@ -75,6 +75,15 @@ const NOTES: &[(&str, &[Note])] = &[
             },
         ],
     ),
+    (
+        "0.8.1",
+        &[Note {
+            title: "Remembers its window",
+            text: "Valo opens the way you closed it: maximized, or at the same size \
+                   and place.",
+            admin: false,
+        }],
+    ),
 ];
 
 /// The notes for versions after `seen`, up to `current`.
