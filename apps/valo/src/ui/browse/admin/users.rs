@@ -355,11 +355,12 @@ fn user_row(
                     );
                 }
                 let f = text_field(ui, pass, "", true);
-                if ui.memory(|m| m.focused().is_none()) {
+                // read Enter before focusing the field again, or it never counts
+                let enter = f.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                if !enter && ui.memory(|m| m.focused().is_none()) {
                     f.request_focus();
                 }
                 ui.add_space(6.0);
-                let enter = f.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
                 let mut close = false;
                 ui.horizontal(|ui| {
                     let ok = !busy && !pass.is_empty();

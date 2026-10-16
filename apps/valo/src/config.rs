@@ -78,6 +78,8 @@ pub struct Config {
     pub app_menu: bool,
     /// The last version whose "What's new" was shown; empty before 0.7.0.
     pub seen_version: String,
+    /// Show what's playing on the user's Discord profile.
+    pub discord_presence: bool,
 }
 
 impl Default for Config {
@@ -97,6 +99,7 @@ impl Default for Config {
             ui_scale: 1.0,
             app_menu: true,
             seen_version: String::new(),
+            discord_presence: true,
         }
     }
 }

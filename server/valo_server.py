@@ -644,7 +644,14 @@ class Users:
             self.users[name]["display_name"] = display_name
         self.save("users.json", self.users)
 
+    def find(self, name):
+        """The stored username for `name`, ignoring case ("noah" signs in as "Noah")."""
+        if name in self.users:
+            return name
+        return next((n for n in self.users if n.lower() == name.lower()), None)
+
     def login(self, name, password, device=None, ip=None):
+        name = self.find(name) or name
         u = self.users.get(name)
         if not u or not hmac.compare_digest(u["hash"], self.hash(password, u["salt"])):
             return None
@@ -1133,8 +1140,8 @@ def make_handler(lib, users, progress, name, cols, reqs, omdb_key=None, bot_toke
                     return self.send_json(
                         {"error": "a username and a password are required"}, 422
                     )
-                if name in users.users:
-                    return self.send_json({"error": f"{name} already exists"}, 409)
+                if users.find(name):
+                    return self.send_json({"error": f"{users.find(name)} already exists"}, 409)
                 display = str(req.get("display_name") or "").strip()[:64] or None
                 users.add(name, password, bool(req.get("admin")), display)
                 return self.send_json({"name": name}, 201)
@@ -1222,7 +1229,7 @@ def make_handler(lib, users, progress, name, cols, reqs, omdb_key=None, bot_toke
                 if not token:
                     time.sleep(1)  # slow down guessing
                     return self.send_json({"error": "wrong username or password"}, 401)
-                user = str(req["username"])
+                user = users.find(str(req["username"]))
                 return self.send_json(
                     {"token": token, "name": user, "admin": users.is_admin(user)}
                 )

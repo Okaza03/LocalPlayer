@@ -8,6 +8,7 @@ mod images;
 mod inhibit;
 mod integrate;
 mod player;
+mod presence;
 mod sync;
 mod ui;
 mod update;
@@ -122,6 +123,8 @@ struct App {
     splash: Option<Splash>,
     dialog: Option<Dialog>,
     updates: Updates,
+    /// Discord Rich Presence.
+    presence: presence::Presence,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -154,6 +157,7 @@ impl App {
             splash: None,
             cfg,
             dialog: None,
+            presence: presence::Presence::new(),
             updates: {
                 let mut u = Updates::default();
                 u.check(ctx, false); // quietly, once per start
@@ -349,6 +353,20 @@ impl eframe::App for App {
         if (ctx.zoom_factor() - self.cfg.ui_scale).abs() > 0.001 {
             ctx.set_zoom_factor(self.cfg.ui_scale.clamp(0.5, 2.0));
         }
+
+        // Discord: what's playing, else browsing, else nothing
+        let activity = if !self.cfg.discord_presence {
+            None
+        } else if let Some(w) = &self.watch {
+            w.now_playing().map(|(title, sub, pos, dur, paused)| {
+                presence::Activity::watching(title, sub, pos, dur, paused)
+            })
+        } else if matches!(self.stage, Stage::Browse(_)) {
+            Some(presence::Activity::browsing())
+        } else {
+            None
+        };
+        self.presence.set(activity);
 
         if let Stage::Browse(b) = &self.stage {
             let watching = self.watch.is_some();

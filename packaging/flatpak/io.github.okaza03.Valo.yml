@@ -17,6 +17,8 @@ finish-args:
   - --talk-name=org.freedesktop.ScreenSaver   # keep the screen awake while playing
   - --talk-name=org.gnome.SessionManager      # same, on GNOME
   - --filesystem=xdg-videos:ro   # other files come in via the file-chooser portal
+  - --filesystem=xdg-run/discord-ipc-0                    # Discord status ("Watching Valo")
+  - --filesystem=xdg-run/app/com.discordapp.Discord:ro   # same, with Discord as a Flatpak
 modules:
   - name: valo
     buildsystem: simple

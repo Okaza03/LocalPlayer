@@ -15,48 +15,67 @@ struct Note {
 
 /// Newest last. Add an entry when a release brings something users would
 /// want to know about; leave small fixes out.
-const NOTES: &[(&str, &[Note])] = &[(
-    "0.7.0",
-    &[
-        Note {
-            title: "New arrivals",
-            text: "When movies or series are added to your server, Valo shows them \
+const NOTES: &[(&str, &[Note])] = &[
+    (
+        "0.7.0",
+        &[
+            Note {
+                title: "New arrivals",
+                text: "When movies or series are added to your server, Valo shows them \
                    to you when you open the app or the library refreshes.",
-            admin: false,
-        },
-        Note {
-            title: "Refresh any time",
-            text: "Click \"Library updated …\" in the bottom-left corner to reload \
+                admin: false,
+            },
+            Note {
+                title: "Refresh any time",
+                text: "Click \"Library updated …\" in the bottom-left corner to reload \
                    the library without restarting.",
-            admin: false,
-        },
-        Note {
-            title: "A fresh home page",
-            text: "The Movies, TV shows and genre rows show a new mix each time you \
+                admin: false,
+            },
+            Note {
+                title: "A fresh home page",
+                text: "The Movies, TV shows and genre rows show a new mix each time you \
                    open Valo, and a Top rated row shows the best scored titles.",
-            admin: false,
-        },
-        Note {
-            title: "Your devices",
-            text: "Your profile lists every device you're signed in on, and you can \
+                admin: false,
+            },
+            Note {
+                title: "Your devices",
+                text: "Your profile lists every device you're signed in on, and you can \
                    sign any of them out.",
-            admin: false,
-        },
-        Note {
-            title: "Collections",
-            text: "Film series like Batman stay together in A to Z, in the order your \
+                admin: false,
+            },
+            Note {
+                title: "Collections",
+                text: "Film series like Batman stay together in A to Z, in the order your \
                    server's admin picked.",
-            admin: false,
-        },
-        Note {
-            title: "Admin page",
-            text: "Admin in the profile menu: a dashboard with syncs and the live log, \
+                admin: false,
+            },
+            Note {
+                title: "Admin page",
+                text: "Admin in the profile menu: a dashboard with syncs and the live log, \
                    analytics, Discord requests, editing titles with IMDb, collections \
                    and users. Sections your server doesn't support link to their setup guide.",
-            admin: true,
-        },
-    ],
-)];
+                admin: true,
+            },
+        ],
+    ),
+    (
+        "0.8.0",
+        &[
+            Note {
+                title: "Discord status",
+                text: "Your Discord profile shows what you're watching and how much is left. \
+                       Turn it off in Settings under Playback.",
+                admin: false,
+            },
+            Note {
+                title: "Time left",
+                text: "The player shows how long you've watched on the left and how much \
+                       is left on the right.",
+                admin: false,
+            },
+        ],
+    ),
+];
 
 /// The notes for versions after `seen`, up to `current`.
 fn between(seen: &str, current: &str, admin: bool) -> Vec<&'static Note> {
@@ -70,8 +89,9 @@ fn between(seen: &str, current: &str, admin: bool) -> Vec<&'static Note> {
 
 /// Whether there's anything to show for a user who last saw `seen`
 /// (empty: a config from before this existed).
-pub fn pending(seen: &str, admin: bool) -> bool {
-    seen != VERSION && !between(seen, VERSION, admin).is_empty()
+pub fn pending(seen: &str, _admin: bool) -> bool {
+    // every update gets the dialog: the notes, or at least a pointer to them
+    seen != VERSION
 }
 
 /// Draw the dialog; true once it's dismissed.
@@ -86,6 +106,20 @@ pub fn ui(ctx: &egui::Context, seen: &str, admin: bool) -> bool {
             ui.label(RichText::new(n.text).size(14.5).color(MUTED));
             ui.add_space(14.0);
         }
+        if notes.is_empty() {
+            ui.label(
+                RichText::new("This update brings fixes and small improvements.")
+                    .size(14.5)
+                    .color(MUTED),
+            );
+            ui.add_space(14.0);
+        }
+        if super::ext_link(ui, "Full release notes") {
+            super::chrome::open_url(&format!(
+                "https://github.com/Okaza03/Valo/releases/tag/v{VERSION}"
+            ));
+        }
+        ui.add_space(10.0);
         let b = ui.add_sized([ui.available_width(), 40.0], |ui: &mut egui::Ui| {
             primary_button(ui, "Got it", true)
         });
@@ -110,5 +144,7 @@ mod tests {
         assert!(between("0.6.1", "0.6.1", true).is_empty());
         assert!(between("0.7.0", "0.7.0", true).is_empty());
         assert_eq!(between("", "0.7.0", true).len(), all.len());
+        // an update always shows the dialog, even without notes of its own
+        assert!(pending("0.0.1", false) && !pending(VERSION, false));
     }
 }

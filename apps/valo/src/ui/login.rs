@@ -82,16 +82,20 @@ impl Login {
             let p = ui
                 .add_enabled_ui(!busy, |ui| text_field(ui, &mut self.password, "", true))
                 .inner;
-            if ui.memory(|m| m.focused().is_none()) && !busy {
+            // Enter ends a field (it loses focus); read that before anything takes focus again
+            let enter = ui.input(|i| i.key_pressed(egui::Key::Enter));
+            let user_enter = u.lost_focus() && enter;
+            let pass_enter = p.lost_focus() && enter;
+            // Enter in the username: on to the password, or sign in when it's filled in
+            let go = pass_enter || (user_enter && !self.password.is_empty());
+            if user_enter && !go {
+                p.request_focus();
+            } else if !go && !busy && ui.memory(|m| m.focused().is_none()) {
                 if self.username.is_empty() {
                     u.request_focus()
                 } else {
                     p.request_focus()
                 }
-            }
-            let enter = ui.input(|i| i.key_pressed(egui::Key::Enter));
-            if u.lost_focus() && enter {
-                p.request_focus();
             }
             ui.add_space(4.0);
             ui.checkbox(&mut self.remember, "Keep me signed in");
@@ -104,7 +108,7 @@ impl Login {
                 let b = ui.add_sized([ui.available_width(), 42.0], |ui: &mut egui::Ui| {
                     primary_button(ui, "Sign in", ok)
                 });
-                if ok && (b.clicked() || (p.lost_focus() && enter)) {
+                if ok && (b.clicked() || go) {
                     self.submit(ui.ctx());
                 }
             }

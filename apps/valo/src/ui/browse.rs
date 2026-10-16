@@ -628,13 +628,14 @@ impl Browse {
                     ""
                 };
                 format!(
-                    "{} movies  ·  {} series  ·  {eps} episodes{kind}",
+                    "{} movies  ·  {} series  ·  {eps} episodes{kind}  ·  ",
                     l.movies.len(),
                     l.series.len()
                 )
             }
             None => String::new(),
         };
+        let right = format!("{right}Valo {}", update::VERSION);
         chrome::status_bar(ctx, &left, &right, self.loading.is_none())
     }
 

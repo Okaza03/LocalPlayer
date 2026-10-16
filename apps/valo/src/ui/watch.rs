@@ -67,6 +67,9 @@ impl PlayItem {
     }
 }
 
+/// How long the volume slider stays up after ↑/↓.
+const VOL_SHOW: Duration = Duration::from_secs(3);
+
 pub struct Watch {
     items: Vec<PlayItem>,
     current: Option<usize>,
@@ -83,6 +86,8 @@ pub struct Watch {
     menu: Option<Menu>,
     /// Last time the pointer was over the volume button or its slider.
     vol_hover: Option<Instant>,
+    /// Last time ↑/↓ changed the volume: the slider shows for a while after.
+    vol_key: Option<Instant>,
     /// Keeps the screen from blanking or sleeping while playing.
     inhibit: Inhibit,
 }
@@ -104,6 +109,7 @@ impl Watch {
             last_save: Instant::now(),
             menu: None,
             vol_hover: None,
+            vol_key: None,
             inhibit: Inhibit::new(),
         }
     }
@@ -115,6 +121,19 @@ impl Watch {
             self.queued = Some(first);
             self.show_list = true;
         }
+    }
+
+    /// What's playing, for Discord: title, subtitle, position, length, paused.
+    pub fn now_playing(&self) -> Option<(&str, &str, f64, f64, bool)> {
+        let (i, p) = (self.current?, self.player.as_ref()?);
+        let item = &self.items[i];
+        Some((
+            &item.title,
+            &item.subtitle,
+            p.clock(),
+            p.meta.duration,
+            p.paused,
+        ))
     }
 
     pub fn save_progress(&mut self, progress: &mut Progress) {
@@ -239,8 +258,10 @@ impl Watch {
         let mut skip_by: Option<f64> = None;
         let mut pick: Option<usize> = None;
 
-        // keys
+        // keys. Only read them here: anything that talks back to egui (like
+        // leaving fullscreen) waits until the input lock is released, or the app freezes.
         let fullscreen = ctx.input(|i| i.viewport().fullscreen.unwrap_or(false));
+        let (mut esc, mut back, mut vol_key) = (false, false, false);
         ctx.input(|i| {
             let shift = i.modifiers.shift;
             let step = if shift { skip * 6.0 } else { skip };
@@ -256,23 +277,40 @@ impl Watch {
             }
             if i.key_pressed(Key::ArrowUp) {
                 *volume = (*volume + 0.05).min(1.0);
+                vol_key = true;
             }
             if i.key_pressed(Key::ArrowDown) {
                 *volume = (*volume - 0.05).max(0.0);
+                vol_key = true;
             }
             if i.key_pressed(Key::M) {
                 *muted = !*muted;
             }
             do_next |= i.key_pressed(Key::N);
             do_prev |= i.key_pressed(Key::P);
-            if i.key_pressed(Key::Escape) || i.key_pressed(Key::Backspace) {
-                if fullscreen {
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
-                } else {
-                    close = true;
-                }
+            esc = i.key_pressed(Key::Escape);
+            back = i.key_pressed(Key::Backspace);
+        });
+        if vol_key {
+            self.vol_key = Some(Instant::now());
+            ctx.request_repaint_after(VOL_SHOW); // to close it again, paused or not
+        }
+        // The player has no text fields, so nothing keeps keyboard focus: a clicked
+        // button or slider would otherwise also react to Space and the arrow keys
+        // (Space would press the play button too, undoing the pause).
+        ctx.memory_mut(|m| {
+            if let Some(id) = m.focused() {
+                m.surrender_focus(id);
             }
         });
+        // Esc: close a menu, else leave fullscreen. Backspace: leave fullscreen, else go back.
+        if esc && self.menu.is_some() {
+            self.menu = None;
+        } else if (esc || back) && fullscreen {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
+        } else if back {
+            close = true;
+        }
         if let Some(d) = skip_by.take() {
             self.skip(d);
         }
@@ -328,7 +366,9 @@ impl Watch {
         }
         let playing = self.player.as_ref().is_some_and(|p| !p.paused);
         self.inhibit.set(playing);
+        let vol_keyed = self.vol_key.is_some_and(|t| t.elapsed() < VOL_SHOW);
         let hide_ui = playing
+            && !vol_keyed
             && self.last_motion.elapsed()
                 > Duration::from_millis(if fullscreen { 2500 } else { 3500 });
 
@@ -508,9 +548,11 @@ impl Watch {
                     if ui.rect_contains_pointer(pop.expand(4.0)) && self.vol_hover.is_some() {
                         self.vol_hover = Some(now);
                     }
-                    if self
-                        .vol_hover
-                        .is_some_and(|t| now.duration_since(t) < Duration::from_millis(350))
+                    // open while hovered, and for a while after ↑/↓
+                    if vol_keyed
+                        || self
+                            .vol_hover
+                            .is_some_and(|t| now.duration_since(t) < Duration::from_millis(350))
                     {
                         on_controls = true;
                         let lp = ui.ctx().layer_painter(egui::LayerId::new(
@@ -619,16 +661,17 @@ impl Watch {
                         font.clone(),
                         Color32::from_gray(210),
                     );
+                    // time left, counting down (while seeking: left after the drop point)
                     p.text(
                         pos2(bottom.right() - 16.0, by),
                         Align2::RIGHT_CENTER,
-                        fmt_time(dur),
+                        format!("-{}", fmt_time((dur - shown).max(0.0))),
                         font,
                         Color32::from_gray(210),
                     );
                     let bar = Rect::from_min_max(
                         pos2(bottom.left() + 66.0, by - 8.0),
-                        pos2(bottom.right() - 66.0, by + 8.0),
+                        pos2(bottom.right() - 74.0, by + 8.0),
                     );
                     let s = ui.interact(bar, ui.id().with("seekbar"), Sense::click_and_drag());
                     let hot = s.hovered() || s.dragged();

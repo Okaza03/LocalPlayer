@@ -174,6 +174,11 @@ pub fn settings(ctx: &egui::Context, cfg: &mut Config, conn: Option<&Conn>) -> P
             &mut cfg.fullscreen_on_play,
             "Start videos in fullscreen",
         );
+        changed |= check(
+            ui,
+            &mut cfg.discord_presence,
+            "Show what I'm watching on Discord",
+        );
         let before = cfg.skip_seconds;
         row(ui, "Arrow keys skip", |ui| {
             combo(
