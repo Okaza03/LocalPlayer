@@ -22,7 +22,7 @@ The Admin page's _Library_ section lets an admin fix a title by hand (title, yea
 | `GET /api/admin/<kind>/<id>/subtitles`        |                               | `[{"id", "language", "label", "source", "episode"}]`       |
 | `PUT /api/admin/<kind>/<id>/subtitles?language=en[&episode=S01E02]` | the subtitle file | `200`                                     |
 | `DELETE /api/admin/<kind>/<id>/subtitles/<sid>` |                             | `200`                                                       |
-| `GET /api/admin/<kind>/<id>/subtitles/search?language=en[&episode=…]` |       | `[{"id", "name", "language", "downloads", "episode"}]`     |
+| `GET /api/admin/<kind>/<id>/subtitles/search?language=en[&episode=…]` |       | `[{"id", "name", "release", "language", "downloads", "episode", "moviehash_match"}]` ([picking one](#subtitle-search)) |
 | `POST /api/admin/<kind>/<id>/subtitles/download` | `{"id": "<result id>"}`    | `200`                                                       |
 | `POST /api/admin/subtitles/bulk`              | `{"type": "movies", "ids": […], "language": "en"}` | `202`; progress goes to the [live log](admin-dashboard.md#get-apiadminlogs) |
 | `PATCH /api/admin/episodes/<id>`              | `{"title", "aired", "duration", "overview"}` | `200`. `aired` as `YYYY-MM-DD`, `duration` in seconds, `null` clears |
@@ -30,6 +30,14 @@ The Admin page's _Library_ section lets an admin fix a title by hand (title, yea
 | `POST /api/admin/episodes/<id>/fetch-image`   |                               | `200`: fetch the episode's still again                      |
 
 Admins only, under the [usual rules](admin.md#rules-for-every-request). Errors with a short message (`{"error": "…"}` or `{"message": "…"}`) are shown to the admin.
+
+## Subtitle search
+
+A subtitle is timed to one release of a film: one made for a WEB or HDRip copy is often seconds off on a Blu-ray, and drifts when the frame rate differs (24 vs 23.976 fps). The most downloaded result is often not the right one. So:
+
+- Send `release`, the video release the subtitle was made for (OpenSubtitles: `attributes.release`). The app compares it with the title's `file.name` and lists the ones that fit first, marked _Matches your file_.
+- Send `moviehash_match: true` for results made for this exact file. Compute the [OpenSubtitles movie hash](https://trac.opensubtitles.org/projects/opensubtitles/wiki/HashSourceCodes) of the video and pass it as `moviehash` to their search; they flag the hits with `attributes.moviehash_match`. These go to the top.
+- `POST /api/admin/subtitles/bulk` should pick the same way: a `moviehash_match` result first, then one whose release has the same group and source (BluRay, WEB, …) as the file, and only then the most downloaded.
 
 ## `GET /api/admin/movies`, `GET /api/admin/series`
 

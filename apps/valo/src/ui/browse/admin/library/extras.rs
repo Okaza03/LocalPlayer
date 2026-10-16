@@ -53,6 +53,105 @@ impl Extras {
     }
 }
 
+/// The video file a subtitle search is for: the movie's, or for a series the
+/// episode typed in ("S01E02"), else its first episode with a file.
+fn video_name(item: &Item, episode: &str) -> String {
+    let file = |f: &Option<crate::api::FileInfo>| {
+        f.as_ref()
+            .map(|f| {
+                let name = f.name.clone().unwrap_or_default();
+                format!("{name} {}", f.quality.clone().unwrap_or_default())
+            })
+            .filter(|n| !n.trim().is_empty())
+    };
+    if item.kind != Kind::Series {
+        return file(&item.file).unwrap_or_default();
+    }
+    let code = episode.trim().to_lowercase();
+    let eps = || {
+        item.seasons
+            .iter()
+            .flat_map(|s| s.episodes.iter().map(move |e| (s.number, e)))
+    };
+    eps()
+        .find(|(s, e)| format!("s{s:02}e{:02}", e.number) == code)
+        .and_then(|(_, e)| file(&e.file))
+        .or_else(|| eps().find_map(|(_, e)| file(&e.file)))
+        .unwrap_or_default()
+}
+
+fn words(s: &str) -> Vec<String> {
+    s.to_lowercase()
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+/// "bluray", "web", … for a release name: subtitles from the same kind of
+/// source share the cut and the frame rate, others are often seconds off.
+fn source_of(words: &[String]) -> Option<&'static str> {
+    words.iter().find_map(|w| match w.as_str() {
+        "bluray" | "bdrip" | "brrip" | "bdremux" | "remux" | "uhd" | "bd" => Some("bluray"),
+        "web" | "webdl" | "webrip" | "amzn" | "nf" | "dsnp" | "hmax" | "atvp" => Some("web"),
+        "hdrip" | "fhdrip" => Some("hdrip"),
+        "dvdrip" | "dvd" => Some("dvd"),
+        "hdtv" => Some("hdtv"),
+        _ => None,
+    })
+}
+
+const EDITIONS: [&str; 7] = [
+    "bw",
+    "black",
+    "criterion",
+    "extended",
+    "directors",
+    "uncut",
+    "imax",
+];
+
+/// How well a subtitle's release fits the video file; higher is better,
+/// 4 or more counts as a match.
+fn release_score(video: &str, release: &str) -> i32 {
+    let (v, r) = (words(video), words(release));
+    if v.is_empty() || r.is_empty() {
+        return 0;
+    }
+    let mut score = 0;
+    // the release group: "…x265-YAWNTiC.mkv"
+    let stem = video.rsplit_once('.').map_or(video, |(s, _)| s);
+    if let Some((_, group)) = stem
+        .split_whitespace()
+        .next()
+        .unwrap_or(stem)
+        .rsplit_once('-')
+    {
+        let g = group.to_lowercase();
+        if g.len() > 1 && r.contains(&g) {
+            score += 8;
+        }
+    }
+    match (source_of(&v), source_of(&r)) {
+        (Some(a), Some(b)) if a == b => score += 4,
+        (Some(_), Some(_)) => score -= 4,
+        _ => {}
+    }
+    for res in ["2160p", "1080p", "720p", "480p"] {
+        let res = res.to_owned();
+        if v.contains(&res) && r.contains(&res) {
+            score += 1;
+        }
+    }
+    for e in EDITIONS {
+        let e = e.to_owned();
+        if r.contains(&e) && !v.contains(&e) {
+            score -= 3;
+        }
+    }
+    score
+}
+
 /// An episode's id as the server knows it (ours carries "episode:").
 fn episode_id(ep: &Episode) -> &str {
     ep.id.strip_prefix("episode:").unwrap_or(&ep.id)
@@ -269,11 +368,38 @@ impl State {
                 if results.is_empty() {
                     ui.label(RichText::new("Nothing found.").color(MUTED()));
                 }
-                for r in results.iter().take(30) {
+                // subtitles are timed to one release: ones made for this file
+                // first, then the server's order (most downloaded)
+                let video = video_name(item, &x.episode);
+                let mut ranked: Vec<(i32, &SubtitleResult)> = results
+                    .iter()
+                    .map(|r| {
+                        let rel = r.release.as_deref().unwrap_or(&r.name);
+                        let s = if r.moviehash_match {
+                            100
+                        } else {
+                            release_score(&video, rel)
+                        };
+                        (s, r)
+                    })
+                    .collect();
+                ranked.sort_by_key(|(s, _)| -s);
+                if !video.trim().is_empty() && !results.is_empty() {
+                    ui.label(
+                        RichText::new(format!("Your file: {}", video.trim()))
+                            .small()
+                            .color(MUTED()),
+                    );
+                    ui.add_space(4.0);
+                }
+                for (score, r) in ranked.into_iter().take(30) {
                     ui.horizontal(|ui| {
-                        let mut line = r.name.clone();
+                        let mut line = r.release.clone().unwrap_or_else(|| r.name.clone());
                         if let Some(e) = &r.episode {
                             line = format!("{e}   {line}");
+                        }
+                        if score >= 4 {
+                            ui.label(mono("MATCHES YOUR FILE", 9.5).color(TEAL()));
                         }
                         ui.add(
                             egui::Label::new(RichText::new(line).small().color(TEXT())).truncate(),
@@ -610,4 +736,30 @@ fn seasons_of(item: &Item, cx: &Cx) -> Vec<crate::api::Season> {
         .find(&item.id)
         .map(|i| i.seasons.clone())
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::release_score;
+
+    #[test]
+    fn release_matching() {
+        let video = "Parasite.2019.1080p.BluRay.x265-YAWNTiC.mkv";
+        let group = release_score(video, "Parasite.2019.1080p.BluRay.x265-YAWNTiC_eng");
+        let bluray = release_score(video, "Parasite (2019) Bluray-1080p");
+        let rip = release_score(video, "PARASITE.2019.1080p.FHDRip.H264.AAC-NonDRM");
+        let bw = release_score(video, "Parasite.2019.BW.PROPER.1080p.BluRay.x264-REGRET");
+        assert!(
+            group > bluray && bluray > rip && bluray > bw,
+            "{group} {bluray} {rip} {bw}"
+        );
+        assert!(group >= 4 && bluray >= 4 && rip < 4 && bw < 4);
+        // a file renamed without its release: only the resolution helps
+        let plain = "Parasite.2019.2160p.mkv 2160p";
+        assert!(
+            release_score(plain, "Parasite 2019 2160p UHD Bluray (4k)")
+                > release_score(plain, "PARASITE.2019.1080p.FHDRip.H264.AAC-NonDRM")
+        );
+        assert_eq!(release_score("", "anything"), 0);
+    }
 }

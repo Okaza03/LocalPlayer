@@ -788,9 +788,13 @@ pub struct SubtitleResult {
     #[serde(deserialize_with = "id_string")]
     pub id: String,
     pub name: String,
+    /// The video release it was timed for ("Parasite.2019.1080p.BluRay.x264-REGRET").
+    pub release: Option<String>,
     pub language: Option<String>,
     pub downloads: Option<u32>,
     pub episode: Option<String>,
+    /// Made for this exact file (OpenSubtitles' movie hash matched).
+    pub moviehash_match: bool,
 }
 
 /// A hand-made collection (`GET /api/admin/collections`).
