@@ -29,6 +29,8 @@
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity>
+        <!-- hears back from update installs (shows Android's confirm screen) -->
+        <receiver android:name=".InstallReceiver" android:exported="false" />
         <!-- hands downloaded updates to the installer -->
         <provider
             android:name="androidx.core.content.FileProvider"

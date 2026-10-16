@@ -20,6 +20,11 @@ class Prefs(context: Context) {
     var user: String?
         get() = p.getString("user", null)
         set(v) = p.edit().putString("user", v).apply()
+
+    /** The last version whose "What's new" was shown. */
+    var seenVersion: String?
+        get() = p.getString("seen_version", null)
+        set(v) = p.edit().putString("seen_version", v).apply()
 }
 
 @Serializable

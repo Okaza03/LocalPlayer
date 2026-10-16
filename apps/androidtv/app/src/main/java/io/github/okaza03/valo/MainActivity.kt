@@ -20,6 +20,7 @@ import io.github.okaza03.valo.ui.LoginScreen
 import io.github.okaza03.valo.ui.PlayerScreen
 import io.github.okaza03.valo.ui.SetupScreen
 import io.github.okaza03.valo.ui.Splash
+import io.github.okaza03.valo.ui.WhatsNew
 
 class MainActivity : ComponentActivity() {
     private val model: AppModel by viewModels()
@@ -43,6 +44,10 @@ class MainActivity : ComponentActivity() {
                 BackHandler { if (!model.back()) finish() }
                 Box {
                     App(model)
+                    val notes = model.whatsNew
+                    if (notes != null && !model.splash && model.screen == Screen.Home) {
+                        WhatsNew(notes, model::closeWhatsNew)
+                    }
                     if (model.splash) Splash(
                         ready = model.screen !is Screen.Loading,
                         hold = model.screen == Screen.Home,
@@ -50,6 +55,11 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        model.resumed()
     }
 
     override fun onStop() {

@@ -87,12 +87,21 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     var update: UpdateState by mutableStateOf(UpdateState.Idle)
         private set
 
+    /** "What's new" after an update; null when there's nothing to show. */
+    var whatsNew: List<io.github.okaza03.valo.ui.Note>? by mutableStateOf(null)
+        private set
+
     // sync state for the current session
     private var syncOff = false
     private var lastPull = 0L
     private val wake = Channel<Unit>(Channel.CONFLATED)
 
     init {
+        // a fresh install has no server yet and nothing to tell; versions before
+        // 0.8.2 didn't keep seenVersion, so an existing setup counts as updated
+        val seen = prefs.seenVersion ?: if (prefs.server == null) Updates.VERSION else "0.8.1"
+        if (Updates.newer(Updates.VERSION, seen)) whatsNew = io.github.okaza03.valo.ui.notesSince(seen)
+        else prefs.seenVersion = Updates.VERSION
         val saved = prefs.server
         if (saved == null) replace(Screen.Setup()) else {
             splash = prefs.token != null
@@ -270,12 +279,37 @@ class AppModel(app: Application) : AndroidViewModel(app) {
             }
             update = UpdateState.Available(rel)
             res.onFailure { toast("Couldn't download the update: ${it.message}") }
-            res.onSuccess { apk ->
-                if (!Updates.install(app, apk)) {
-                    toast("Allow Valo to install apps, then choose Update again.")
-                }
-            }
+            res.onSuccess { apk -> install(apk) }
         }
+    }
+
+    /** Downloaded, waiting for the user to allow Valo to install apps. */
+    private var waitingApk: File? = null
+
+    private fun install(apk: File) {
+        val app = getApplication<Application>()
+        if (!Updates.mayInstall(app)) {
+            waitingApk = apk
+            toast("Allow Valo to install apps, then press Back. The update starts by itself.")
+            Updates.askToInstall(app)
+            return
+        }
+        waitingApk = null
+        viewModelScope.launch {
+            runCatching { withContext(Dispatchers.IO) { Updates.install(app, apk) } }
+                .onFailure { toast("Couldn't install the update: ${it.message}") }
+        }
+    }
+
+    fun closeWhatsNew() {
+        whatsNew = null
+        prefs.seenVersion = Updates.VERSION
+    }
+
+    /** Back in Valo: carry on with an update that was waiting for permission. */
+    fun resumed() {
+        val apk = waitingApk ?: return
+        if (Updates.mayInstall(getApplication())) install(apk) else waitingApk = null
     }
 
     private fun toast(msg: String) {
