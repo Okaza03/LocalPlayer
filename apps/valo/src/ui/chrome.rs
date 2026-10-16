@@ -41,6 +41,12 @@ pub enum Icon {
     ArrowDown,
     /// Opens outside the app (a web page): an arrow out of a corner.
     External,
+    /// Sidebar: a house.
+    Home,
+    /// Sidebar: a film frame with a play mark.
+    Film,
+    /// Sidebar: a screen on a stand.
+    Tv,
 }
 
 /// Top bar: word mark, `left` (tabs), `right` (search, buttons), window buttons.
@@ -405,6 +411,33 @@ pub fn draw_icon(p: &egui::Painter, c: Pos2, icon: Icon, col: Color32) {
             p.line_segment([c + vec2(-0.5, 0.5), c + vec2(4.5, -4.5)], s);
             p.line_segment([c + vec2(1.0, -4.5), c + vec2(4.5, -4.5)], s);
             p.line_segment([c + vec2(4.5, -4.5), c + vec2(4.5, -1.0)], s);
+        }
+        Icon::Home => {
+            let s = Stroke::new(1.6f32, col);
+            p.line_segment([c + vec2(-8.0, -0.5), c + vec2(0.0, -8.0)], s);
+            p.line_segment([c + vec2(0.0, -8.0), c + vec2(8.0, -0.5)], s);
+            let body = Rect::from_min_max(c + vec2(-5.5, -2.5), c + vec2(5.5, 7.0));
+            p.rect_stroke(body, 1.0, s, egui::StrokeKind::Middle);
+        }
+        Icon::Film => {
+            let s = Stroke::new(1.6f32, col);
+            let r = Rect::from_center_size(c, vec2(16.0, 13.0));
+            p.rect_stroke(r, 2.5, s, egui::StrokeKind::Middle);
+            p.add(egui::Shape::convex_polygon(
+                vec![
+                    c + vec2(-2.5, -3.5),
+                    c + vec2(4.0, 0.0),
+                    c + vec2(-2.5, 3.5),
+                ],
+                col,
+                Stroke::NONE,
+            ));
+        }
+        Icon::Tv => {
+            let s = Stroke::new(1.6f32, col);
+            let r = Rect::from_center_size(c + vec2(0.0, -1.5), vec2(17.0, 12.0));
+            p.rect_stroke(r, 2.0, s, egui::StrokeKind::Middle);
+            p.hline(c.x - 4.0..=c.x + 4.0, c.y + 7.5, s);
         }
         Icon::List => {
             for dy in [-5.0, 0.0, 5.0] {

@@ -151,6 +151,146 @@ fn swatch(ui: &mut Ui, pal: &Palette, name: &str, selected: bool) -> egui::Respo
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
+/// A small drawing of a style's layout: sidebar or top tabs, the kind of
+/// banner, and poster or landscape cards.
+fn layout_swatch(ui: &mut Ui, skin: Skin, pal: &Palette, selected: bool) -> egui::Response {
+    use theme::{Hero, Nav, Tiles};
+    let spec = skin.spec();
+    let lay = &spec.layout;
+    let (r, resp) = ui.allocate_exact_size(vec2(108.0, 94.0), Sense::click());
+    let p = ui.painter();
+    let pic = egui::Rect::from_min_size(r.min, vec2(r.width(), 66.0));
+    p.rect_filled(pic, 6.0, pal.bg);
+    let mut body = pic.shrink(6.0);
+    if lay.nav == Nav::Side {
+        let side = egui::Rect::from_min_size(body.min, vec2(16.0, body.height()));
+        for i in 0..3 {
+            p.rect_filled(
+                egui::Rect::from_min_size(
+                    side.min + vec2(2.0, 2.0 + i as f32 * 6.0),
+                    vec2(11.0, 3.0),
+                ),
+                1.0,
+                if i == 0 { pal.text } else { pal.muted },
+            );
+        }
+        body.min.x += 20.0;
+    } else {
+        for i in 0..3 {
+            p.rect_filled(
+                egui::Rect::from_min_size(body.min + vec2(i as f32 * 12.0, 0.0), vec2(9.0, 3.0)),
+                1.0,
+                if i == 0 { pal.text } else { pal.muted },
+            );
+        }
+        body.min.y += 7.0;
+    }
+    let art = pal.surface_hi.gamma_multiply(1.6);
+    let banner_h = 22.0;
+    match lay.hero {
+        Hero::Banner => {
+            let b = egui::Rect::from_min_size(body.min, vec2(body.width(), banner_h));
+            p.rect_filled(egui::Rect::from_min_max(b.center_top(), b.max), 2.0, art);
+            p.rect_filled(
+                egui::Rect::from_min_size(b.min + vec2(2.0, 12.0), vec2(26.0, 4.0)),
+                1.0,
+                pal.text,
+            );
+        }
+        Hero::FullBleed => {
+            let b = egui::Rect::from_min_size(body.min, vec2(body.width(), banner_h));
+            p.rect_filled(b, 1.0, art);
+            p.rect_filled(
+                egui::Rect::from_min_size(b.min + vec2(3.0, 12.0), vec2(26.0, 4.0)),
+                1.0,
+                pal.text,
+            );
+        }
+        Hero::Carousel => {
+            let b = egui::Rect::from_min_max(
+                body.min + vec2(8.0, 0.0),
+                pos(body.right() - 8.0, body.top() + banner_h),
+            );
+            p.rect_filled(
+                egui::Rect::from_min_max(
+                    pos(body.left(), b.top() + 3.0),
+                    pos(b.left() - 2.0, b.bottom() - 3.0),
+                ),
+                2.0,
+                art.gamma_multiply(0.6),
+            );
+            p.rect_filled(
+                egui::Rect::from_min_max(
+                    pos(b.right() + 2.0, b.top() + 3.0),
+                    pos(body.right(), b.bottom() - 3.0),
+                ),
+                2.0,
+                art.gamma_multiply(0.6),
+            );
+            p.rect_filled(b, 3.0, art);
+            p.rect_filled(
+                egui::Rect::from_min_size(b.min + vec2(3.0, 12.0), vec2(22.0, 4.0)),
+                1.0,
+                pal.text,
+            );
+        }
+        Hero::None => {
+            for i in 0..4 {
+                p.rect_filled(
+                    egui::Rect::from_min_size(
+                        body.min + vec2(i as f32 * 13.0, 0.0),
+                        vec2(11.0, 4.0),
+                    ),
+                    2.0,
+                    if i == 0 { pal.text } else { pal.surface_hi },
+                );
+            }
+        }
+    }
+    let top = if lay.hero == Hero::None {
+        body.top() + 8.0
+    } else {
+        body.top() + banner_h + 4.0
+    };
+    let (tw, th) = if lay.tiles == Tiles::Landscape {
+        (20.0, 11.0)
+    } else {
+        (12.0, 17.0)
+    };
+    let rows = if lay.hero == Hero::None { 3 } else { 1 };
+    for row in 0..rows {
+        let mut x = body.left();
+        let y = top + row as f32 * (th + 3.0);
+        let mut i = 0;
+        while x + tw <= body.right() + 0.5 {
+            let c = if i == 0 && row == 0 { pal.accent } else { art };
+            p.rect_filled(egui::Rect::from_min_size(pos(x, y), vec2(tw, th)), 1.5, c);
+            x += tw + 3.0;
+            i += 1;
+        }
+    }
+    let ring = if selected {
+        Stroke::new(2.0f32, ACCENT())
+    } else if resp.hovered() {
+        Stroke::new(1.0f32, LINE_HI())
+    } else {
+        Stroke::new(1.0f32, LINE())
+    };
+    p.rect_stroke(pic, 6.0, ring, egui::StrokeKind::Outside);
+    p.text(
+        egui::pos2(r.left() + 2.0, pic.bottom() + 8.0),
+        egui::Align2::LEFT_TOP,
+        spec.name,
+        egui::FontId::proportional(13.0),
+        if selected { TEXT() } else { MUTED() },
+    );
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
+fn pos(x: f32, y: f32) -> egui::Pos2 {
+    egui::pos2(x, y)
+}
+
 /// Label on the left, control on the right.
 fn row(ui: &mut Ui, label: &str, control: impl FnOnce(&mut Ui)) {
     ui.horizontal(|ui| {
@@ -288,16 +428,18 @@ pub fn settings(ctx: &egui::Context, cfg: &mut Config, conn: Option<&Conn>) -> P
         section(ui, "Appearance");
         ui.label(RichText::new("App style").size(15.0));
         ui.label(
-            RichText::new("How Valo looks, the player too.")
-                .small()
-                .color(MUTED()),
+            RichText::new(
+                "How the pages and the player are laid out, like the service it's named after.",
+            )
+            .small()
+            .color(MUTED()),
         );
         ui.add_space(6.0);
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing = vec2(10.0, 10.0);
             for s in Skin::ALL {
                 let pal = theme::palette(s, resolved(ctx, cfg.theme));
-                if swatch(ui, &pal, s.spec().name, cfg.style == s).clicked() && cfg.style != s {
+                if layout_swatch(ui, s, &pal, cfg.style == s).clicked() && cfg.style != s {
                     cfg.style = s;
                     changed = true;
                 }

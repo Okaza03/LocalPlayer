@@ -1,5 +1,7 @@
 //! The details pages: movie, series (Episodes / Related / Details tabs) and
 //! a single episode. Sections the server sends no data for are left out.
+mod styled;
+
 use eframe::egui::{
     self, epaint::Vertex, pos2, text::LayoutJob, vec2, Align, Align2, Color32, CursorIcon,
     FontFamily, FontId, Layout, Mesh, Painter, Rect, Response, RichText, ScrollArea, Sense, Stroke,
@@ -13,6 +15,7 @@ use crate::api::{CastMember, Episode, FileInfo, Item, Library};
 use crate::config::Progress;
 use crate::images::Images;
 use crate::ui::chrome::{self, Icon};
+use crate::ui::theme::Details;
 use crate::ui::{black_font, bold, gradient, image_cover, mono, placeholder};
 use crate::ui::{BG, INK, LINE, LINE_HI, MUTED, PRIMARY, SURFACE_HI, TEXT};
 use crate::util::{color_for, fmt_runtime, fmt_time, percent_decode};
@@ -540,7 +543,7 @@ fn info_rows(ui: &mut Ui, rows: &[(&str, String)], label_w: f32) {
 }
 
 /// The title as artwork (logo) when the server has one, else big text.
-fn title_art(ui: &mut Ui, item: &Item, images: &mut Images, max: egui::Vec2, size: f32) {
+pub(super) fn title_art(ui: &mut Ui, item: &Item, images: &mut Images, max: egui::Vec2, size: f32) {
     if let Some(t) = item.logo.as_ref().and_then(|u| images.get(u)) {
         let sz = t.size_vec2();
         let s = (max.x / sz.x).min(max.y / sz.y);
@@ -560,6 +563,7 @@ fn title_art(ui: &mut Ui, item: &Item, images: &mut Images, max: egui::Vec2, siz
             )
             .wrap(),
         );
+        // (over artwork the caller sets the text color)
     }
 }
 
@@ -743,215 +747,223 @@ impl Browse {
             None => (item.file.clone(), None),
         };
         let runtime = item.duration.filter(|d| *d > 0.0).or(probed);
-        let w = ui.available_width();
-        let h = (w * 0.5).clamp(520.0, 700.0);
-        let (rect, _) = ui.allocate_exact_size(vec2(w, h), Sense::hover());
-        let art = item.backdrop.as_ref().or(item.poster.as_ref());
-        let tex = art.and_then(|u| images.get(u));
-        backdrop(&ui.painter_at(rect), rect, tex.as_ref(), &item.title, 125);
-
-        let back = Rect::from_min_size(rect.min + vec2(28.0, 22.0), vec2(300.0, 24.0));
-        placed(ui, back, "movie_back", 0.0, |ui| {
-            let r = link(
-                ui,
-                "Back to movies",
-                13.0,
-                TEXT().gamma_multiply(0.8),
-                Some((Icon::ChevronLeft, false)),
-            );
-            if r.clicked() {
-                click = Some(Click::Back);
-            }
-        });
-
-        let (m, inner) = column(ui);
-        let left = rect.left() + m;
-        let show_poster = inner >= 860.0;
-        let poster_w = if show_poster {
-            (inner * 0.22).clamp(220.0, 320.0)
+        let details = crate::ui::theme::spec().layout.details;
+        if details == Details::Watch {
+            return self.watch_page(ui, lib, item, images, progress, file.as_ref(), runtime);
+        }
+        if details != Details::Valo {
+            click = self.styled_header(ui, item, images, progress, file.as_ref(), runtime);
         } else {
-            0.0
-        };
-        if show_poster {
-            let poster_h = poster_w * 1.5;
-            let pr = Rect::from_min_size(
-                pos2(left, rect.center().y - poster_h / 2.0),
-                vec2(poster_w, poster_h),
-            );
-            let p = ui.painter_at(rect);
-            match item.poster.as_ref().and_then(|u| images.get(u)) {
-                Some(t) => image_cover(&p, pr, &t, 8, Color32::WHITE),
-                None => placeholder(&p, pr, &item.title, 8),
-            }
-            if let Some(d) = &item.director {
-                let top = Rect::from_min_size(pr.min, vec2(pr.width(), 70.0));
-                let dark = Color32::from_black_alpha(150);
+            let w = ui.available_width();
+            let h = (w * 0.5).clamp(520.0, 700.0);
+            let (rect, _) = ui.allocate_exact_size(vec2(w, h), Sense::hover());
+            let art = item.backdrop.as_ref().or(item.poster.as_ref());
+            let tex = art.and_then(|u| images.get(u));
+            backdrop(&ui.painter_at(rect), rect, tex.as_ref(), &item.title, 125);
+
+            let back = Rect::from_min_size(rect.min + vec2(28.0, 22.0), vec2(300.0, 24.0));
+            placed(ui, back, "movie_back", 0.0, |ui| {
+                let r = link(
+                    ui,
+                    "Back to movies",
+                    13.0,
+                    TEXT().gamma_multiply(0.8),
+                    Some((Icon::ChevronLeft, false)),
+                );
+                if r.clicked() {
+                    click = Some(Click::Back);
+                }
+            });
+
+            let (m, inner) = column(ui);
+            let left = rect.left() + m;
+            let show_poster = inner >= 860.0;
+            let poster_w = if show_poster {
+                (inner * 0.22).clamp(220.0, 320.0)
+            } else {
+                0.0
+            };
+            if show_poster {
+                let poster_h = poster_w * 1.5;
+                let pr = Rect::from_min_size(
+                    pos2(left, rect.center().y - poster_h / 2.0),
+                    vec2(poster_w, poster_h),
+                );
+                let p = ui.painter_at(rect);
+                match item.poster.as_ref().and_then(|u| images.get(u)) {
+                    Some(t) => image_cover(&p, pr, &t, 8, Color32::WHITE),
+                    None => placeholder(&p, pr, &item.title, 8),
+                }
+                if let Some(d) = &item.director {
+                    let top = Rect::from_min_size(pr.min, vec2(pr.width(), 70.0));
+                    let dark = Color32::from_black_alpha(150);
+                    gradient(
+                        &p,
+                        top,
+                        [dark, dark, Color32::TRANSPARENT, Color32::TRANSPARENT],
+                    );
+                    p.text(
+                        pr.min + vec2(20.0, 22.0),
+                        Align2::LEFT_TOP,
+                        format!("A FILM BY {}", d.to_uppercase()),
+                        FontId::new(11.5, FontFamily::Name("bold".into())),
+                        GOLD(),
+                    );
+                }
+                let low = Rect::from_min_max(pos2(pr.left(), pr.bottom() - 120.0), pr.max);
+                let dark = Color32::from_black_alpha(200);
                 gradient(
                     &p,
-                    top,
-                    [dark, dark, Color32::TRANSPARENT, Color32::TRANSPARENT],
+                    low,
+                    [Color32::TRANSPARENT, Color32::TRANSPARENT, dark, dark],
                 );
                 p.text(
-                    pr.min + vec2(20.0, 22.0),
-                    Align2::LEFT_TOP,
-                    format!("A FILM BY {}", d.to_uppercase()),
-                    FontId::new(11.5, FontFamily::Name("bold".into())),
-                    GOLD(),
-                );
-            }
-            let low = Rect::from_min_max(pos2(pr.left(), pr.bottom() - 120.0), pr.max);
-            let dark = Color32::from_black_alpha(200);
-            gradient(
-                &p,
-                low,
-                [Color32::TRANSPARENT, Color32::TRANSPARENT, dark, dark],
-            );
-            p.text(
-                pos2(pr.left() + 20.0, pr.bottom() - 46.0),
-                Align2::LEFT_BOTTOM,
-                &item.title,
-                FontId::new(24.0, FontFamily::Name("bold".into())),
-                TEXT(),
-            );
-            if let Some(y) = item.year {
-                p.text(
-                    pos2(pr.left() + 20.0, pr.bottom() - 20.0),
+                    pos2(pr.left() + 20.0, pr.bottom() - 46.0),
                     Align2::LEFT_BOTTOM,
-                    y.to_string(),
-                    FontId::new(14.0, FontFamily::Name("bold".into())),
-                    GOLD(),
+                    &item.title,
+                    FontId::new(24.0, FontFamily::Name("bold".into())),
+                    TEXT(),
                 );
-            }
-            let f = file.as_ref();
-            let under: Vec<String> = [
-                f.and_then(|f| f.quality.clone()),
-                f.and_then(|f| f.size).map(bytes),
-            ]
-            .into_iter()
-            .flatten()
-            .collect();
-            p.text(
-                pos2(pr.left(), pr.bottom() + 14.0),
-                Align2::LEFT_TOP,
-                under.join("   ·   "),
-                FontId::proportional(12.0),
-                MUTED(),
-            );
-        }
-
-        let tx = left + if show_poster { poster_w + 40.0 } else { 0.0 };
-        let text_rect = Rect::from_min_max(
-            pos2(tx, rect.top() + 60.0),
-            pos2(left + inner, rect.bottom() - 30.0),
-        );
-        placed(ui, text_rect, "movie_hero", 0.5, |ui| {
-            let mut kinds = vec!["Movie".to_owned()];
-            if !item.genres.is_empty() {
-                kinds.push(item.genres.join(" · "));
-            }
-            caps(ui, &kinds.join("   ·   "), TEXT().gamma_multiply(0.65));
-            ui.add_space(8.0);
-            title_art(ui, item, images, vec2(560.0, 96.0), 54.0);
-            ui.add_space(14.0);
-            if !item.overview.is_empty() {
-                ui.add(
-                    egui::Label::new(
-                        RichText::new(format!("“{}”", item.overview))
-                            .italics()
-                            .size(17.0)
-                            .color(TEXT().gamma_multiply(0.7)),
-                    )
-                    .wrap(),
-                );
-                ui.add_space(16.0);
-            }
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 10.0;
-                let mut first = true;
-                let mut sep = |ui: &mut Ui| {
-                    if !std::mem::take(&mut first) {
-                        dot(ui);
-                    }
-                };
-                if let Some(s) = item.score {
-                    sep(ui);
-                    let (r, _) = ui.allocate_exact_size(vec2(14.0, 14.0), Sense::hover());
-                    chrome::draw_icon(ui.painter(), r.center(), Icon::Star, GOLD());
-                    ui.label(RichText::new(format!("{s:.1}")).size(15.0).color(TEXT()));
-                    if let Some(src) = &item.score_source {
-                        ui.label(RichText::new(src).size(15.0).color(MUTED()));
-                    }
-                }
                 if let Some(y) = item.year {
-                    sep(ui);
-                    ui.label(RichText::new(y.to_string()).size(15.0).color(GOLD()));
+                    p.text(
+                        pos2(pr.left() + 20.0, pr.bottom() - 20.0),
+                        Align2::LEFT_BOTTOM,
+                        y.to_string(),
+                        FontId::new(14.0, FontFamily::Name("bold".into())),
+                        GOLD(),
+                    );
                 }
-                if let Some(d) = runtime {
-                    sep(ui);
-                    ui.label(RichText::new(fmt_runtime(d)).size(15.0).color(TEXT()));
+                let f = file.as_ref();
+                let under: Vec<String> = [
+                    f.and_then(|f| f.quality.clone()),
+                    f.and_then(|f| f.size).map(bytes),
+                ]
+                .into_iter()
+                .flatten()
+                .collect();
+                p.text(
+                    pos2(pr.left(), pr.bottom() + 14.0),
+                    Align2::LEFT_TOP,
+                    under.join("   ·   "),
+                    FontId::proportional(12.0),
+                    MUTED(),
+                );
+            }
+
+            let tx = left + if show_poster { poster_w + 40.0 } else { 0.0 };
+            let text_rect = Rect::from_min_max(
+                pos2(tx, rect.top() + 60.0),
+                pos2(left + inner, rect.bottom() - 30.0),
+            );
+            placed(ui, text_rect, "movie_hero", 0.5, |ui| {
+                let mut kinds = vec!["Movie".to_owned()];
+                if !item.genres.is_empty() {
+                    kinds.push(item.genres.join(" · "));
                 }
-                if let Some(q) = file.as_ref().and_then(|f| f.quality.as_deref()) {
-                    sep(ui);
-                    tag(ui, q);
-                }
-                if let Some(r) = &item.rating {
-                    sep(ui);
-                    tag(ui, r);
-                }
-            });
-            let directors: Vec<&str> = super::makers(item).collect();
-            if !directors.is_empty() {
+                caps(ui, &kinds.join("   ·   "), TEXT().gamma_multiply(0.65));
+                ui.add_space(8.0);
+                title_art(ui, item, images, vec2(560.0, 96.0), 54.0);
                 ui.add_space(14.0);
+                if !item.overview.is_empty() {
+                    ui.add(
+                        egui::Label::new(
+                            RichText::new(format!("“{}”", item.overview))
+                                .italics()
+                                .size(17.0)
+                                .color(TEXT().gamma_multiply(0.7)),
+                        )
+                        .wrap(),
+                    );
+                    ui.add_space(16.0);
+                }
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("Director").size(14.0).color(MUTED()));
-                    if let Some(c) = people_links(ui, &directors, 14.0) {
-                        click = Some(c);
+                    ui.spacing_mut().item_spacing.x = 10.0;
+                    let mut first = true;
+                    let mut sep = |ui: &mut Ui| {
+                        if !std::mem::take(&mut first) {
+                            dot(ui);
+                        }
+                    };
+                    if let Some(s) = item.score {
+                        sep(ui);
+                        let (r, _) = ui.allocate_exact_size(vec2(14.0, 14.0), Sense::hover());
+                        chrome::draw_icon(ui.painter(), r.center(), Icon::Star, GOLD());
+                        ui.label(RichText::new(format!("{s:.1}")).size(15.0).color(TEXT()));
+                        if let Some(src) = &item.score_source {
+                            ui.label(RichText::new(src).size(15.0).color(MUTED()));
+                        }
+                    }
+                    if let Some(y) = item.year {
+                        sep(ui);
+                        ui.label(RichText::new(y.to_string()).size(15.0).color(GOLD()));
+                    }
+                    if let Some(d) = runtime {
+                        sep(ui);
+                        ui.label(RichText::new(fmt_runtime(d)).size(15.0).color(TEXT()));
+                    }
+                    if let Some(q) = file.as_ref().and_then(|f| f.quality.as_deref()) {
+                        sep(ui);
+                        tag(ui, q);
+                    }
+                    if let Some(r) = &item.rating {
+                        sep(ui);
+                        tag(ui, r);
                     }
                 });
-            }
-            ui.add_space(24.0);
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 12.0;
-                let (label, resume) = self.play_label(item, progress);
-                let label = if label == "Play" {
-                    "Play movie".into()
-                } else {
-                    label
-                };
-                if fill_button(ui, &label, Some(Icon::Play), play_colors(), 42.0, 0.0, 0.0)
-                    .clicked()
-                {
-                    click = Some(Click::Play(item.id.clone(), None, false));
+                let directors: Vec<&str> = super::makers(item).collect();
+                if !directors.is_empty() {
+                    ui.add_space(14.0);
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("Director").size(14.0).color(MUTED()));
+                        if let Some(c) = people_links(ui, &directors, 14.0) {
+                            click = Some(c);
+                        }
+                    });
                 }
-                if resume
-                    && fill_button(
-                        ui,
-                        "Start over",
-                        None,
-                        (SURFACE_HI(), TEXT()),
-                        42.0,
-                        0.0,
-                        0.0,
-                    )
-                    .clicked()
-                {
-                    click = Some(Click::Play(item.id.clone(), None, true));
-                }
-                self.bookmark(ui, item);
-                ui.add_space(6.0);
-                let entry = progress.get(&self.key(&item.id));
-                let status = match entry {
-                    Some(e) if e.watched() => "Watched".to_owned(),
-                    Some(e) if e.in_progress() => {
-                        format!("Ready to stream · {:.0}% watched", e.fraction() * 100.0)
+                ui.add_space(24.0);
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 12.0;
+                    let (label, resume) = self.play_label(item, progress);
+                    let label = if label == "Play" {
+                        "Play movie".into()
+                    } else {
+                        label
+                    };
+                    if fill_button(ui, &label, Some(Icon::Play), play_colors(), 42.0, 0.0, 0.0)
+                        .clicked()
+                    {
+                        click = Some(Click::Play(item.id.clone(), None, false));
                     }
-                    _ => "Ready to stream".to_owned(),
-                };
-                let (r, _) = ui.allocate_exact_size(vec2(8.0, 8.0), Sense::hover());
-                ui.painter().circle_filled(r.center(), 3.5, GOLD());
-                ui.label(RichText::new(status).size(12.5).color(GOLD()));
+                    if resume
+                        && fill_button(
+                            ui,
+                            "Start over",
+                            None,
+                            (SURFACE_HI(), TEXT()),
+                            42.0,
+                            0.0,
+                            0.0,
+                        )
+                        .clicked()
+                    {
+                        click = Some(Click::Play(item.id.clone(), None, true));
+                    }
+                    self.bookmark(ui, item);
+                    ui.add_space(6.0);
+                    let entry = progress.get(&self.key(&item.id));
+                    let status = match entry {
+                        Some(e) if e.watched() => "Watched".to_owned(),
+                        Some(e) if e.in_progress() => {
+                            format!("Ready to stream · {:.0}% watched", e.fraction() * 100.0)
+                        }
+                        _ => "Ready to stream".to_owned(),
+                    };
+                    let (r, _) = ui.allocate_exact_size(vec2(8.0, 8.0), Sense::hover());
+                    ui.painter().circle_filled(r.center(), 3.5, GOLD());
+                    ui.label(RichText::new(status).size(12.5).color(GOLD()));
+                });
             });
-        });
+        }
 
         ui.add_space(28.0);
         let (m, inner) = column(ui);
@@ -1162,89 +1174,97 @@ impl Browse {
         if self.season >= item.seasons.len() {
             self.season = self.next_up(item, progress).map_or(0, |n| n.si);
         }
-        let w = ui.available_width();
-        let h = (w * 0.42).clamp(460.0, 640.0);
-        let (rect, _) = ui.allocate_exact_size(vec2(w, h), Sense::hover());
-        let art = item.backdrop.as_ref().or(item.poster.as_ref());
-        let tex = art.and_then(|u| images.get(u));
-        backdrop(&ui.painter_at(rect), rect, tex.as_ref(), &item.title, 120);
+        let details = crate::ui::theme::spec().layout.details;
+        if details == Details::Watch {
+            return self.watch_page(ui, lib, item, images, progress, None, None);
+        }
+        if details != Details::Valo {
+            click = self.styled_header(ui, item, images, progress, None, None);
+        } else {
+            let w = ui.available_width();
+            let h = (w * 0.42).clamp(460.0, 640.0);
+            let (rect, _) = ui.allocate_exact_size(vec2(w, h), Sense::hover());
+            let art = item.backdrop.as_ref().or(item.poster.as_ref());
+            let tex = art.and_then(|u| images.get(u));
+            backdrop(&ui.painter_at(rect), rect, tex.as_ref(), &item.title, 120);
 
-        let (m, inner) = column(ui);
-        let text_rect = Rect::from_min_max(
-            pos2(rect.left() + m, rect.top() + 40.0),
-            pos2(rect.left() + m + inner.min(600.0), rect.bottom() - 24.0),
-        );
-        placed(ui, text_rect, "series_hero", 1.0, |ui| {
-            title_art(ui, item, images, vec2(380.0, 90.0), 54.0);
-            ui.add_space(10.0);
-            let mut meta = Vec::new();
-            if !item.genres.is_empty() {
-                meta.push(
-                    item.genres
-                        .iter()
-                        .take(2)
-                        .cloned()
-                        .collect::<Vec<_>>()
-                        .join(" · "),
-                );
-            }
-            meta.extend(years(item));
-            let n = item.seasons.len();
-            meta.push(format!("{n} Season{}", if n == 1 { "" } else { "s" }));
-            ui.label(
-                RichText::new(meta.join("   ·   "))
-                    .size(14.0)
-                    .color(TEXT().gamma_multiply(0.85)),
+            let (m, inner) = column(ui);
+            let text_rect = Rect::from_min_max(
+                pos2(rect.left() + m, rect.top() + 40.0),
+                pos2(rect.left() + m + inner.min(600.0), rect.bottom() - 24.0),
             );
-            ui.add_space(10.0);
-            if !item.overview.is_empty() {
-                clamp_text(ui, &item.overview, 15.0, TEXT().gamma_multiply(0.85), 3);
-                ui.add_space(18.0);
-            }
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 12.0;
-                let (label, _) = self.play_label(item, progress);
-                if fill_button(
-                    ui,
-                    &label,
-                    Some(Icon::Play),
-                    (PRIMARY(), INK()),
-                    44.0,
-                    168.0,
-                    4.0,
-                )
-                .clicked()
-                {
-                    click = Some(Click::Play(item.id.clone(), None, false));
+            placed(ui, text_rect, "series_hero", 1.0, |ui| {
+                title_art(ui, item, images, vec2(380.0, 90.0), 54.0);
+                ui.add_space(10.0);
+                let mut meta = Vec::new();
+                if !item.genres.is_empty() {
+                    meta.push(
+                        item.genres
+                            .iter()
+                            .take(2)
+                            .cloned()
+                            .collect::<Vec<_>>()
+                            .join(" · "),
+                    );
                 }
-                self.bookmark(ui, item);
-                if item.seasons.len() > 1 {
-                    let mut pick = self.season;
-                    egui::ComboBox::from_id_salt("season_pick")
-                        .selected_text(format!("Season {:02}", item.seasons[pick].number))
-                        .width(120.0)
-                        .show_ui(ui, |ui| {
-                            for (i, s) in item.seasons.iter().enumerate() {
-                                ui.selectable_value(&mut pick, i, s.label());
-                            }
-                        });
-                    if pick != self.season {
-                        self.season = pick;
-                        self.tab = Tab::Episodes;
-                    }
+                meta.extend(years(item));
+                let n = item.seasons.len();
+                meta.push(format!("{n} Season{}", if n == 1 { "" } else { "s" }));
+                ui.label(
+                    RichText::new(meta.join("   ·   "))
+                        .size(14.0)
+                        .color(TEXT().gamma_multiply(0.85)),
+                );
+                ui.add_space(10.0);
+                if !item.overview.is_empty() {
+                    clamp_text(ui, &item.overview, 15.0, TEXT().gamma_multiply(0.85), 3);
+                    ui.add_space(18.0);
                 }
-            });
-            if !item.creators.is_empty() {
-                ui.add_space(14.0);
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("Created by").size(14.0).color(MUTED()));
-                    let names: Vec<&str> = item.creators.iter().map(String::as_str).collect();
-                    if let Some(c) = people_links(ui, &names, 14.0) {
-                        click = Some(c);
+                    ui.spacing_mut().item_spacing.x = 12.0;
+                    let (label, _) = self.play_label(item, progress);
+                    if fill_button(
+                        ui,
+                        &label,
+                        Some(Icon::Play),
+                        (PRIMARY(), INK()),
+                        44.0,
+                        168.0,
+                        4.0,
+                    )
+                    .clicked()
+                    {
+                        click = Some(Click::Play(item.id.clone(), None, false));
+                    }
+                    self.bookmark(ui, item);
+                    if item.seasons.len() > 1 {
+                        let mut pick = self.season;
+                        egui::ComboBox::from_id_salt("season_pick")
+                            .selected_text(format!("Season {:02}", item.seasons[pick].number))
+                            .width(120.0)
+                            .show_ui(ui, |ui| {
+                                for (i, s) in item.seasons.iter().enumerate() {
+                                    ui.selectable_value(&mut pick, i, s.label());
+                                }
+                            });
+                        if pick != self.season {
+                            self.season = pick;
+                            self.tab = Tab::Episodes;
+                        }
                     }
                 });
-            }
-        });
+                if !item.creators.is_empty() {
+                    ui.add_space(14.0);
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("Created by").size(14.0).color(MUTED()));
+                        let names: Vec<&str> = item.creators.iter().map(String::as_str).collect();
+                        if let Some(c) = people_links(ui, &names, 14.0) {
+                            click = Some(c);
+                        }
+                    });
+                }
+            });
+        }
 
         // tabs
         ui.add_space(18.0);
@@ -1289,7 +1309,27 @@ impl Browse {
         ui.add_space(28.0);
 
         let c = match self.tab {
-            Tab::Episodes => padded(ui, |ui| self.episodes_tab(ui, item, images, progress)),
+            Tab::Episodes => padded(ui, |ui| {
+                if details != Details::Valo && item.seasons.len() > 1 {
+                    // the Valo header has the season picker; the styled ones don't
+                    let mut pick = self.season;
+                    egui::ComboBox::from_id_salt("season_pick_styled")
+                        .selected_text(item.seasons[pick].label())
+                        .width(160.0)
+                        .show_ui(ui, |ui| {
+                            for (i, s) in item.seasons.iter().enumerate() {
+                                ui.selectable_value(&mut pick, i, s.label());
+                            }
+                        });
+                    self.season = pick;
+                    ui.add_space(14.0);
+                }
+                if crate::ui::theme::spec().layout.episode_list {
+                    self.episode_list(ui, item, images, progress)
+                } else {
+                    self.episodes_tab(ui, item, images, progress)
+                }
+            }),
             Tab::Related => padded(ui, |ui| {
                 let more = similar(lib, item, 20, &self.shuffle);
                 if more.is_empty() {

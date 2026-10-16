@@ -3,6 +3,7 @@ mod admin;
 mod arrivals;
 mod details;
 mod devices;
+mod layouts;
 mod people;
 
 use std::collections::HashMap;
@@ -26,6 +27,7 @@ use crate::api::{Client, Item, Kind, Library, Me, Missing, Mode, Unauthorized};
 use crate::config::{Config, Entry, Hidden, Known, Progress, Watchlist};
 use crate::images::Images;
 use crate::player::Source;
+use crate::ui::theme::{self, TileText, Tiles};
 use crate::ui::watch::PlayItem;
 use crate::ui::Action;
 use crate::update::{self, Updates};
@@ -111,6 +113,10 @@ struct Card {
     title: String,
     sub: Option<String>,
     art: Option<String>,
+    /// 16:9 artwork, for the styles with landscape cards.
+    wide_art: Option<String>,
+    /// "Movie · 2014 · 1h 26m", under the title on YouTube-style cards.
+    meta: Option<String>,
     progress: Option<f32>,
     /// Has a "⋮" menu to remove it from Continue watching.
     removable: bool,
@@ -135,6 +141,8 @@ pub struct Browse {
     season: usize,
     hero_idx: usize,
     hero_since: Instant,
+    /// The selected filter chip on the YouTube-style home page.
+    chip: usize,
     row_jump: HashMap<String, f32>,
     filter: Filter,
     loaded_at: Option<Instant>,
@@ -175,6 +183,7 @@ impl Browse {
             season: 0,
             hero_idx: 0,
             hero_since: Instant::now(),
+            chip: 0,
             row_jump: HashMap::new(),
             filter: Filter::All,
             loaded_at: None,
@@ -333,6 +342,9 @@ impl Browse {
             action = Action::Refresh;
         }
 
+        if theme::spec().layout.nav == theme::Nav::Side {
+            self.nav_sidebar(ctx, images);
+        }
         if self.view == View::Admin && self.search.trim().is_empty() && self.lib.is_some() {
             self.admin_sidebar(ctx);
         }
@@ -477,11 +489,16 @@ impl Browse {
                 {
                     back = true;
                 }
-                for (label, v) in [
-                    ("Home", View::Home),
-                    ("Movies", View::Movies),
-                    ("TV Shows", View::Series),
-                ] {
+                let tabs: &[(&str, View)] = if theme::spec().layout.nav == theme::Nav::Top {
+                    &[
+                        ("Home", View::Home),
+                        ("Movies", View::Movies),
+                        ("TV Shows", View::Series),
+                    ]
+                } else {
+                    &[] // they're in the sidebar
+                };
+                for (label, v) in tabs.iter().cloned() {
                     let selected = !searching && current == v;
                     if tab(ui, label, selected).clicked() {
                         nav = Some(v);
@@ -667,21 +684,26 @@ impl Browse {
             return None;
         }
 
+        let lay = &theme::spec().layout;
+        if lay.home_grid {
+            return self.home_grid(ui, lib, images, progress);
+        }
         let featured = featured(lib, &self.shuffle);
-        if !featured.is_empty() {
+        if !featured.is_empty() && lay.hero != theme::Hero::None {
             if self.hero_since.elapsed() > HERO_ROTATE {
                 self.hero_idx = (self.hero_idx + 1) % featured.len();
                 self.hero_since = Instant::now();
             }
             self.hero_idx %= featured.len();
             let item = featured[self.hero_idx];
-            let (c, nav) = self.hero(
-                ui,
-                item,
-                images,
-                progress,
-                Some((self.hero_idx, featured.len())),
-            );
+            let at = (self.hero_idx, featured.len());
+            let (c, nav) = match lay.hero {
+                theme::Hero::FullBleed => self.hero_full(ui, item, images, progress, at),
+                theme::Hero::Carousel => {
+                    self.hero_carousel(ui, &featured, self.hero_idx, images, progress)
+                }
+                _ => self.hero(ui, item, images, progress, Some(at)),
+            };
             click = click.or(c);
             if let Some(d) = nav {
                 self.hero_idx =
@@ -690,6 +712,9 @@ impl Browse {
             }
         }
 
+        if lay.genre_tiles {
+            click = click.or(self.genre_tiles(ui, lib));
+        }
         let cont = self.continue_cards(lib, progress);
         if !cont.is_empty() {
             click = click.or(self.row(ui, "Continue watching", &cont, true, None, images));
@@ -715,8 +740,12 @@ impl Browse {
         if rated.len() >= 5 {
             rated = shuffled(rated.into_iter(), "top", &self.shuffle); // ties in a random order
             rated.sort_by(|a, b| b.score.unwrap_or(0.0).total_cmp(&a.score.unwrap_or(0.0)));
-            let cards = self.poster_cards(rated.into_iter().take(24), progress);
-            click = click.or(self.row(ui, "Top rated", &cards, false, None, images));
+            if lay.top10 {
+                click = click.or(self.top10_row(ui, &rated, images));
+            } else {
+                let cards = self.poster_cards(rated.into_iter().take(24), progress);
+                click = click.or(self.row(ui, "Top rated", &cards, false, None, images));
+            }
         }
         // the rest in a random order (the same all session), so the home page isn't A to Z
         if !lib.movies.is_empty() {
@@ -969,6 +998,8 @@ impl Browse {
                         title: m.title.clone(),
                         sub: Some(format!("{} left", fmt_runtime(e.dur - e.pos))),
                         art: m.thumb.clone().or(m.backdrop.clone()).or(m.poster.clone()),
+                        wide_art: None,
+                        meta: Some(short_meta(m)),
                         progress: Some(e.fraction()),
                         removable: true,
                     });
@@ -996,6 +1027,8 @@ impl Browse {
                             .or(s.thumb.clone())
                             .or(s.backdrop.clone())
                             .or(s.poster.clone()),
+                        wide_art: None,
+                        meta: Some(format!("{} · S{} E{}", s.title, season.number, ep.number)),
                         progress: Some(n.resume.map_or(0.0, Entry::fraction)),
                         removable: true,
                     });
@@ -1017,6 +1050,8 @@ impl Browse {
                 title: i.title.clone(),
                 sub: i.year.map(|y| y.to_string()),
                 art: i.poster.clone(),
+                wide_art: i.thumb.clone().or(i.backdrop.clone()),
+                meta: Some(short_meta(i)),
                 progress: (i.kind == Kind::Movie)
                     .then(|| {
                         progress
@@ -1521,6 +1556,25 @@ fn meta_line(item: &Item) -> String {
     parts.join("  ·  ")
 }
 
+/// "Movie · 2014 · 1h 26m", "Series · 2019 · 3 seasons".
+fn short_meta(i: &Item) -> String {
+    let mut parts = vec![if i.kind == Kind::Movie {
+        "Movie"
+    } else {
+        "Series"
+    }
+    .to_owned()];
+    parts.extend(i.year.map(|y| y.to_string()));
+    match i.kind {
+        Kind::Movie => parts.extend(i.duration.filter(|d| *d > 0.0).map(fmt_runtime)),
+        Kind::Series => {
+            let n = i.seasons.len();
+            parts.push(format!("{n} season{}", if n == 1 { "" } else { "s" }));
+        }
+    }
+    parts.join(" · ")
+}
+
 fn shorten(s: &str, max: usize) -> String {
     if s.chars().count() <= max {
         return s.to_owned();
@@ -1529,38 +1583,152 @@ fn shorten(s: &str, max: usize) -> String {
     format!("{}…", cut.rsplit_once(' ').map_or(cut.as_str(), |(a, _)| a))
 }
 
-/// One artwork card; returns what to do when clicked. `marked`: it's on
-/// My list.
+/// One card in a row, shaped by the style; returns what to do when clicked.
+/// `wide`: a Continue watching card (16:9, plays when clicked). `marked`:
+/// it's on My list.
 fn card(ui: &mut Ui, c: &Card, wide: bool, marked: bool, images: &mut Images) -> Option<Click> {
-    let size = if wide { WIDE } else { POSTER };
-    let (rect, resp) = ui.allocate_exact_size(size + vec2(0.0, 40.0), Sense::click());
+    let landscape = wide || theme::spec().layout.tiles == Tiles::Landscape;
+    let size = if landscape { WIDE } else { POSTER };
+    card_at(ui, c, size, landscape, wide, marked, images)
+}
+
+/// The room a card's text takes under its artwork.
+fn text_room(text: TileText) -> f32 {
+    match text {
+        TileText::Below => 40.0,
+        TileText::Rich => 78.0,
+        TileText::Over | TileText::Hover => 0.0,
+    }
+}
+
+/// [`card`] at any size (the YouTube-style grid sizes its cards to the width).
+fn card_at(
+    ui: &mut Ui,
+    c: &Card,
+    size: egui::Vec2,
+    landscape: bool,
+    wide: bool,
+    marked: bool,
+    images: &mut Images,
+) -> Option<Click> {
+    let spec = theme::spec();
+    let text = spec.layout.text;
+    let (rect, resp) = ui.allocate_exact_size(size + vec2(0.0, text_room(text)), Sense::click());
     if !ui.is_rect_visible(rect) {
         return None;
     }
     // the buttons on it cover part of the card, so count them as hovering it
     let hot = resp.hovered() || resp.contains_pointer();
     let t = ui.ctx().animate_bool_with_time(resp.id, hot, 0.12);
-    let spec = crate::ui::theme::spec();
     let rad = spec.card_radius;
     let art = Rect::from_min_size(rect.min, size).expand(t * spec.hover_grow);
     let p = ui.painter();
-    match c.art.as_ref().and_then(|u| images.get(u)) {
+    let url = if landscape {
+        c.wide_art.as_ref().or(c.art.as_ref())
+    } else {
+        c.art.as_ref()
+    };
+    match url.and_then(|u| images.get(u)) {
         Some(tex) => image_cover(p, art, &tex, rad, Color32::WHITE),
-        None if c.art.as_ref().is_some_and(|u| !images.failed(u)) => {
+        None if url.is_some_and(|u| !images.failed(u)) => {
             p.rect_filled(art, rad, SURFACE());
+        }
+        // the title goes over the art anyway: don't print it twice
+        None if text == TileText::Over => {
+            p.rect_filled(art, rad, crate::util::color_for(&c.title));
         }
         None => placeholder(p, art, &c.title, rad),
     }
-    if let Some(f) = c.progress {
-        let bar = Rect::from_min_max(
-            pos2(art.left() + 8.0, art.bottom() - 9.0),
-            pos2(art.right() - 8.0, art.bottom() - 5.0),
+    let shade = |p: &egui::Painter, frac: f32, a: f32| {
+        let r = Rect::from_min_max(
+            pos2(art.left(), art.bottom() - art.height() * frac),
+            art.max,
         );
+        let dark = Color32::from_black_alpha((a * 255.0) as u8);
+        crate::ui::gradient(
+            p,
+            r,
+            [Color32::TRANSPARENT, Color32::TRANSPARENT, dark, dark],
+        );
+    };
+    let lift = if c.progress.is_some() { 10.0 } else { 0.0 };
+    match text {
+        TileText::Over => {
+            shade(p, 0.6, 0.75);
+            let wrap = art.width() - 24.0;
+            let title = p.layout(
+                c.title.clone(),
+                FontId::new(
+                    if landscape { 17.0 } else { 15.0 },
+                    egui::FontFamily::Name("black".into()),
+                ),
+                Color32::WHITE,
+                wrap,
+            );
+            let sub_h = if wide && c.sub.is_some() { 17.0 } else { 0.0 };
+            let y = art.bottom() - 12.0 - lift - sub_h;
+            p.galley(
+                pos2(art.left() + 12.0, y - title.size().y),
+                title,
+                Color32::WHITE,
+            );
+            if let (true, Some(s)) = (sub_h > 0.0, &c.sub) {
+                p.with_clip_rect(art).text(
+                    pos2(art.left() + 12.0, y + 2.0),
+                    Align2::LEFT_TOP,
+                    s,
+                    FontId::proportional(12.5),
+                    Color32::from_white_alpha(200),
+                );
+            }
+        }
+        TileText::Hover if t > 0.0 => {
+            shade(p, 0.7, 0.85 * t);
+            let cy = art.bottom() - 28.0 - lift;
+            let disc = pos2(art.left() + 26.0, cy);
+            p.circle_filled(disc, 15.0, ACCENT().gamma_multiply(t));
+            chrome::draw_icon(
+                p,
+                disc + vec2(1.5, 0.0),
+                Icon::Play,
+                Color32::WHITE.gamma_multiply(t),
+            );
+            let clip = p.with_clip_rect(art.shrink(4.0));
+            clip.text(
+                pos2(art.left() + 50.0, cy - 2.0),
+                Align2::LEFT_BOTTOM,
+                &c.title,
+                FontId::new(15.0, egui::FontFamily::Name("bold".into())),
+                Color32::WHITE.gamma_multiply(t),
+            );
+            if let Some(m) = c.sub.as_ref().filter(|_| wide).or(c.meta.as_ref()) {
+                clip.text(
+                    pos2(art.left() + 50.0, cy + 2.0),
+                    Align2::LEFT_TOP,
+                    m,
+                    FontId::proportional(12.5),
+                    Color32::from_white_alpha((200.0 * t) as u8),
+                );
+            }
+        }
+        _ => {}
+    }
+    if let Some(f) = c.progress {
+        let bar = if text == TileText::Rich {
+            // YouTube: a red line along the bottom edge
+            Rect::from_min_max(pos2(art.left(), art.bottom() - 4.0), art.max)
+        } else {
+            Rect::from_min_max(
+                pos2(art.left() + 8.0, art.bottom() - 9.0),
+                pos2(art.right() - 8.0, art.bottom() - 5.0),
+            )
+        };
+        let p = p.with_clip_rect(art);
         p.rect_filled(bar, 2.0, Color32::from_white_alpha(70));
         p.rect_filled(
             Rect::from_min_max(bar.min, pos2(bar.left() + bar.width() * f, bar.bottom())),
             2.0,
-            ACCENT(),
+            theme::played(),
         );
     }
     if t > 0.0 {
@@ -1572,7 +1740,7 @@ fn card(ui: &mut Ui, c: &Card, wide: bool, marked: bool, images: &mut Images) ->
                 egui::StrokeKind::Outside,
             );
         }
-        if wide {
+        if wide && text != TileText::Hover {
             p.circle_filled(
                 art.center(),
                 24.0,
@@ -1590,32 +1758,76 @@ fn card(ui: &mut Ui, c: &Card, wide: bool, marked: bool, images: &mut Images) ->
             ));
         }
     }
-    let tp = pos2(rect.left() + 2.0, rect.top() + size.y + 8.0);
-    let clip = p.with_clip_rect(Rect::from_min_size(
-        pos2(rect.left(), tp.y),
-        vec2(size.x, 40.0),
-    ));
-    clip.text(
-        tp,
-        Align2::LEFT_TOP,
-        &c.title,
-        FontId::proportional(14.0),
-        if t > 0.0 {
-            TEXT()
-        } else {
-            TEXT().gamma_multiply(0.85)
-        },
-    );
-    if let Some(s) = &c.sub {
-        clip.text(
-            tp + vec2(0.0, 18.0),
-            Align2::LEFT_TOP,
-            s,
-            FontId::proportional(12.0),
-            MUTED(),
-        );
+    let under = rect.top() + size.y;
+    match text {
+        TileText::Below => {
+            let tp = pos2(rect.left() + 2.0, under + 8.0);
+            let clip = p.with_clip_rect(Rect::from_min_size(
+                pos2(rect.left(), tp.y),
+                vec2(size.x, 40.0),
+            ));
+            clip.text(
+                tp,
+                Align2::LEFT_TOP,
+                &c.title,
+                FontId::proportional(14.0),
+                if t > 0.0 {
+                    TEXT()
+                } else {
+                    TEXT().gamma_multiply(0.85)
+                },
+            );
+            if let Some(s) = &c.sub {
+                clip.text(
+                    tp + vec2(0.0, 18.0),
+                    Align2::LEFT_TOP,
+                    s,
+                    FontId::proportional(12.0),
+                    MUTED(),
+                );
+            }
+        }
+        TileText::Rich => {
+            // a round "channel" badge, a two-line title, then the details
+            let ac = pos2(rect.left() + 18.0, under + 12.0 + 18.0);
+            p.circle_filled(ac, 18.0, crate::util::color_for(&c.title));
+            let initial: String = c.title.chars().take(1).collect::<String>().to_uppercase();
+            p.text(
+                ac,
+                Align2::CENTER_CENTER,
+                initial,
+                crate::ui::black_font(16.0),
+                Color32::WHITE,
+            );
+            let x = rect.left() + 48.0;
+            let mut job = egui::text::LayoutJob::simple(
+                c.title.clone(),
+                FontId::new(15.5, egui::FontFamily::Name("bold".into())),
+                TEXT(),
+                size.x - 52.0,
+            );
+            job.wrap.max_rows = 2;
+            let g = ui.fonts(|f| f.layout_job(job));
+            let gh = g.size().y;
+            p.galley(pos2(x, under + 12.0), g, TEXT());
+            let meta = if wide {
+                c.sub.as_ref()
+            } else {
+                c.meta.as_ref()
+            };
+            if let Some(m) = meta {
+                p.with_clip_rect(rect).text(
+                    pos2(x, under + 16.0 + gh),
+                    Align2::LEFT_TOP,
+                    m,
+                    FontId::proportional(13.5),
+                    MUTED(),
+                );
+            }
+        }
+        _ => {}
     }
-    if hot {
+    if hot && text == TileText::Below {
         let font = FontId::new(12.0, egui::FontFamily::Name("bold".into()));
         let g = ui
             .painter()
@@ -1719,7 +1931,7 @@ fn card(ui: &mut Ui, c: &Card, wide: bool, marked: bool, images: &mut Images) ->
         }
     }
     let resp = resp.on_hover_cursor(CursorIcon::PointingHand);
-    if !wide {
+    if !wide && text == TileText::Below {
         resp.clone().on_hover_text_at_pointer(&c.title);
     }
     resp.clicked().then(|| match &c.episode {
@@ -1735,20 +1947,45 @@ fn grid(
     marked: &dyn Fn(&str) -> bool,
     images: &mut Images,
 ) -> Option<Click> {
+    grid_cards(ui, cards, false, marked, images)
+}
+
+/// [`grid`]; `wide`: Continue watching cards (16:9, play when clicked).
+fn grid_cards(
+    ui: &mut Ui,
+    cards: &[Card],
+    wide: bool,
+    marked: &dyn Fn(&str) -> bool,
+    images: &mut Images,
+) -> Option<Click> {
     let mut click = None;
+    let lay = &theme::spec().layout;
+    let landscape = wide || lay.tiles == Tiles::Landscape;
+    let base = if landscape { WIDE } else { POSTER };
     let avail = ui.available_width() - 2.0 * SIDE;
-    let cols = (((avail + GAP) / (POSTER.x + GAP)).floor() as usize).max(1);
-    for chunk in cards.chunks(cols) {
+    let cols = ((avail + GAP) / (base.x + GAP)).floor().max(1.0);
+    // landscape cards stretch to fill the row, like a video grid
+    let size = if landscape {
+        let w = (avail - GAP * (cols - 1.0)) / cols;
+        vec2(w, w * 9.0 / 16.0)
+    } else {
+        base
+    };
+    for chunk in cards.chunks(cols as usize) {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = GAP;
             ui.add_space(SIDE);
             for c in chunk {
-                if let Some(k) = card(ui, c, false, marked(&c.item), images) {
+                if let Some(k) = card_at(ui, c, size, landscape, wide, marked(&c.item), images) {
                     click = Some(k);
                 }
             }
         });
-        ui.add_space(12.0);
+        ui.add_space(if lay.text == TileText::Rich {
+            22.0
+        } else {
+            12.0
+        });
     }
     click
 }

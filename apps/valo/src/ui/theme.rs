@@ -1,7 +1,8 @@
 //! Color themes (dark, light, …) and app styles (Valo, Netflix, …).
 //!
-//! The style decides the shapes, type, buttons, player and brand colors; the
-//! color theme decides the backgrounds and text. Everything reads the current
+//! The style decides the layout: how the home page, cards, details pages,
+//! navigation and player are arranged, plus an accent color. The color
+//! theme decides every other color. Everything reads the current
 //! colors through the `BG()`, `TEXT()`, … functions, so a change in Settings
 //! shows on the next frame.
 use std::sync::RwLock;
@@ -15,7 +16,7 @@ use serde::{Deserialize, Serialize};
 pub enum Mode {
     /// Dark or light, following the desktop.
     System,
-    /// The style's own dark colors.
+    /// Dark gray, the default.
     #[default]
     Dark,
     Light,
@@ -157,6 +158,76 @@ pub enum TitleAt {
     Bottom,
 }
 
+/// The home page's big banner.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Hero {
+    /// Artwork on the right, text on the left (Valo).
+    Banner,
+    /// Artwork across the whole width, text over its bottom left.
+    FullBleed,
+    /// A rounded banner with the next ones peeking in at the sides.
+    Carousel,
+    /// No banner (YouTube).
+    None,
+}
+
+/// The shape of the cards in rows and grids.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Tiles {
+    Poster,
+    /// 16:9, from the backdrop.
+    Landscape,
+}
+
+/// Where a card's title goes.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum TileText {
+    /// Under the artwork.
+    Below,
+    /// Over the bottom of the artwork.
+    Over,
+    /// Only while hovered, over the artwork (Prime Video).
+    Hover,
+    /// A channel-style line under the artwork: avatar, title, details (YouTube).
+    Rich,
+}
+
+/// Home, Movies and TV shows: tabs in the top bar, or a sidebar.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Nav {
+    Top,
+    Side,
+}
+
+/// The movie and series pages.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Details {
+    /// Poster beside the text over a dimmed backdrop (Valo).
+    Valo,
+    /// The backdrop across the top, title and buttons over its bottom left.
+    Hero,
+    /// Text on the left, the backdrop fading in on the right (Prime Video).
+    Split,
+    /// A watch page: big picture and description, a list beside it (YouTube).
+    Watch,
+}
+
+pub struct Layout {
+    pub hero: Hero,
+    pub tiles: Tiles,
+    pub text: TileText,
+    pub nav: Nav,
+    pub details: Details,
+    /// A "Top 10" row with big numbers (Netflix).
+    pub top10: bool,
+    /// A row of genre tiles under the banner (Disney+).
+    pub genre_tiles: bool,
+    /// The home page is one grid with filter chips, not rows (YouTube).
+    pub home_grid: bool,
+    /// Episodes as a numbered list instead of cards.
+    pub episode_list: bool,
+}
+
 pub struct PlayerLook {
     pub layout: PlayerLayout,
     /// The played part of the seek bar; `None`: the accent.
@@ -175,8 +246,10 @@ pub struct PlayerLook {
 
 pub struct Spec {
     pub name: &'static str,
-    /// The style's own dark colors.
-    pub dark: Palette,
+    pub layout: Layout,
+    /// Buttons, progress bars and highlights; everything else comes from
+    /// the color theme.
+    pub accent: Color32,
     pub labels: Labels,
     pub tabs: Tabs,
     /// Corner radius of artwork cards and of buttons.
@@ -275,7 +348,18 @@ const NETFLIX_RED: Color32 = rgb(229, 9, 20);
 
 const VALO: Spec = Spec {
     name: "Valo",
-    dark: VALO_DARK,
+    layout: Layout {
+        hero: Hero::Banner,
+        tiles: Tiles::Poster,
+        text: TileText::Below,
+        nav: Nav::Top,
+        details: Details::Valo,
+        top10: false,
+        genre_tiles: false,
+        home_grid: false,
+        episode_list: false,
+    },
+    accent: rgb(74, 124, 247),
     labels: Labels::Mono,
     tabs: Tabs::Block,
     card_radius: 6,
@@ -301,20 +385,18 @@ const VALO: Spec = Spec {
 
 const NETFLIX: Spec = Spec {
     name: "Netflix",
-    dark: Palette {
-        card: rgb(24, 24, 24),
-        field: rgb(22, 22, 22),
-        ..dark(
-            rgb(20, 20, 20),
-            rgb(24, 24, 24),
-            rgb(47, 47, 47),
-            rgb(51, 51, 51),
-            rgb(128, 128, 128),
-            NETFLIX_RED,
-            Color32::WHITE,
-            rgb(163, 163, 163),
-        )
+    layout: Layout {
+        hero: Hero::FullBleed,
+        tiles: Tiles::Landscape,
+        text: TileText::Over,
+        nav: Nav::Top,
+        details: Details::Hero,
+        top10: true,
+        genre_tiles: false,
+        home_grid: false,
+        episode_list: true,
     },
+    accent: NETFLIX_RED,
     labels: Labels::Sans,
     tabs: Tabs::Plain,
     card_radius: 4,
@@ -342,20 +424,18 @@ const PRIME_BLUE: Color32 = rgb(0, 168, 225);
 
 const PRIME: Spec = Spec {
     name: "Prime Video",
-    dark: Palette {
-        card: rgb(26, 36, 47),
-        field: rgb(22, 31, 41),
-        ..dark(
-            rgb(15, 23, 30),
-            rgb(26, 36, 47),
-            rgb(37, 50, 64),
-            rgb(43, 56, 70),
-            rgb(90, 108, 124),
-            PRIME_BLUE,
-            Color32::WHITE,
-            rgb(138, 155, 168),
-        )
+    layout: Layout {
+        hero: Hero::Carousel,
+        tiles: Tiles::Landscape,
+        text: TileText::Hover,
+        nav: Nav::Top,
+        details: Details::Split,
+        top10: false,
+        genre_tiles: false,
+        home_grid: false,
+        episode_list: true,
     },
+    accent: PRIME_BLUE,
     labels: Labels::Sans,
     tabs: Tabs::Pill,
     card_radius: 8,
@@ -381,20 +461,18 @@ const PRIME: Spec = Spec {
 
 const DISNEY: Spec = Spec {
     name: "Disney+",
-    dark: Palette {
-        card: rgb(37, 40, 51),
-        field: rgb(32, 35, 46),
-        ..dark(
-            rgb(26, 29, 41),
-            rgb(37, 40, 51),
-            rgb(49, 52, 66),
-            rgb(58, 61, 76),
-            rgb(110, 113, 130),
-            rgb(0, 99, 229),
-            rgb(249, 249, 249),
-            rgb(202, 202, 202),
-        )
+    layout: Layout {
+        hero: Hero::Carousel,
+        tiles: Tiles::Landscape,
+        text: TileText::Over,
+        nav: Nav::Top,
+        details: Details::Hero,
+        top10: false,
+        genre_tiles: true,
+        home_grid: false,
+        episode_list: true,
     },
+    accent: rgb(0, 99, 229),
     labels: Labels::Caps,
     tabs: Tabs::Underline,
     card_radius: 10,
@@ -420,20 +498,18 @@ const DISNEY: Spec = Spec {
 
 const HBO: Spec = Spec {
     name: "HBO Max",
-    dark: Palette {
-        card: rgb(24, 20, 42),
-        field: rgb(18, 15, 33),
-        ..dark(
-            rgb(10, 8, 22),
-            rgb(22, 18, 40),
-            rgb(34, 29, 58),
-            rgb(44, 38, 70),
-            rgb(98, 90, 130),
-            rgb(153, 30, 235),
-            Color32::WHITE,
-            rgb(170, 165, 190),
-        )
+    layout: Layout {
+        hero: Hero::FullBleed,
+        tiles: Tiles::Landscape,
+        text: TileText::Below,
+        nav: Nav::Top,
+        details: Details::Hero,
+        top10: false,
+        genre_tiles: false,
+        home_grid: false,
+        episode_list: true,
     },
+    accent: rgb(153, 30, 235),
     labels: Labels::Sans,
     tabs: Tabs::Underline,
     card_radius: 8,
@@ -461,20 +537,18 @@ const YT_RED: Color32 = rgb(255, 0, 0);
 
 const YOUTUBE: Spec = Spec {
     name: "YouTube",
-    dark: Palette {
-        card: rgb(33, 33, 33),
-        field: rgb(18, 18, 18),
-        ..dark(
-            rgb(15, 15, 15),
-            rgb(33, 33, 33),
-            rgb(63, 63, 63),
-            rgb(48, 48, 48),
-            rgb(96, 96, 96),
-            YT_RED,
-            rgb(241, 241, 241),
-            rgb(170, 170, 170),
-        )
+    layout: Layout {
+        hero: Hero::None,
+        tiles: Tiles::Landscape,
+        text: TileText::Rich,
+        nav: Nav::Side,
+        details: Details::Watch,
+        top10: false,
+        genre_tiles: false,
+        home_grid: true,
+        episode_list: false,
     },
+    accent: YT_RED,
     labels: Labels::Sans,
     tabs: Tabs::Pill,
     card_radius: 12,
@@ -500,20 +574,18 @@ const YOUTUBE: Spec = Spec {
 
 const APPLE: Spec = Spec {
     name: "Apple TV",
-    dark: Palette {
-        card: rgb(28, 28, 30),
-        field: rgb(28, 28, 30),
-        ..dark(
-            rgb(0, 0, 0),
-            rgb(28, 28, 30),
-            rgb(44, 44, 46),
-            rgb(44, 44, 46),
-            rgb(99, 99, 102),
-            rgb(10, 132, 255),
-            Color32::WHITE,
-            rgb(152, 152, 157),
-        )
+    layout: Layout {
+        hero: Hero::FullBleed,
+        tiles: Tiles::Landscape,
+        text: TileText::Below,
+        nav: Nav::Side,
+        details: Details::Hero,
+        top10: false,
+        genre_tiles: false,
+        home_grid: false,
+        episode_list: false,
     },
+    accent: rgb(10, 132, 255),
     labels: Labels::Sans,
     tabs: Tabs::Pill,
     card_radius: 12,
@@ -539,8 +611,12 @@ const APPLE: Spec = Spec {
 
 /// The colors for `skin` in `mode` (`System` already resolved).
 pub fn palette(skin: Skin, mode: Mode) -> Palette {
-    let base = skin.spec().dark;
     let spec = skin.spec();
+    // the color theme decides the colors; a style brings only its accent
+    let base = Palette {
+        accent: spec.accent,
+        ..VALO_DARK
+    };
     let mut p = match mode {
         Mode::System | Mode::Dark => base,
         Mode::Black => Palette {

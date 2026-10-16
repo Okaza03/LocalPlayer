@@ -89,9 +89,9 @@ const NOTES: &[(&str, &[Note])] = &[
         &[
             Note {
                 title: "Make it yours",
-                text: "Settings > Appearance has app styles inspired by Netflix, Prime \
-                       Video, Disney+, HBO Max, YouTube and Apple TV, the player included, \
-                       plus Light, Black, Dim and Midnight themes.",
+                text: "Settings > Appearance has app styles that lay Valo out like Netflix, \
+                       Prime Video, Disney+, HBO Max, YouTube or Apple TV (home page, cards, \
+                       details pages and player), and Light, Black, Dim and Midnight themes.",
                 admin: false,
             },
             Note {
