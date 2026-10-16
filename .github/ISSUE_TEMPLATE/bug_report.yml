@@ -1,0 +1,93 @@
+name: Bug report
+description: Something in Valo doesn't work as it should
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Please check the [open issues](https://github.com/Okaza03/Valo/issues) first to see if it's already known.
+        For security problems, use the [Security Policy](https://github.com/Okaza03/Valo/security/policy) instead.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What went wrong, and what did you expect instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open ...
+        2. Click ...
+        3. See ...
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Valo version
+      description: Shown in Settings, or the release you downloaded.
+      placeholder: v0.8.3
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install
+    attributes:
+      label: How did you install Valo?
+      options:
+        - AppImage
+        - Flatpak
+        - .deb
+        - .tar.gz
+        - Windows installer
+        - Windows zip
+        - Android TV APK
+        - Built from source
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: Fedora 42 (Wayland), Windows 11 ARM64, Chromecast with Google TV...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: server
+    attributes:
+      label: Which server are you using?
+      options:
+        - Bundled server (server/valo_server.py)
+        - My own app with the Valo API
+        - Playing local files only
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: media
+    attributes:
+      label: Media details
+      description: For playback problems, the file's container, video/audio codecs and subtitle format if you know them (for example from `ffprobe`).
+      render: text
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or server check report
+      description: Terminal output, or the result of _Copy report_ from the server check.
+      render: text
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Screenshots, recordings, or other context.

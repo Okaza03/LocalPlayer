@@ -1,0 +1,45 @@
+name: Feature request
+description: Suggest an idea or improvement for Valo
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What would you like to do?
+      description: Describe the problem or the thing you're missing, not just the solution.
+      placeholder: When I'm watching a series, I'd like to ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: How could Valo help?
+      description: What you'd like to see. Mockups or examples from other apps are welcome.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part of Valo?
+      multiple: true
+      options:
+        - Desktop app
+        - Android TV app
+        - Bundled server
+        - Server API
+        - Installing and updates
+        - Other
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you've considered
+
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Contributing
+      options:
+        - label: I'd like to work on this myself

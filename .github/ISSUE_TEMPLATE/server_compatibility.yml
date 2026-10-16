@@ -1,0 +1,49 @@
+name: Server compatibility
+description: Valo doesn't work with your media server, or the server check fails
+labels: ["server"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The [server guide](https://github.com/Okaza03/Valo/blob/main/docs/api/README.md) and its [troubleshooting page](https://github.com/Okaza03/Valo/blob/main/docs/api/troubleshooting.md) answer most questions. Please check them first.
+        Remove passwords, tokens and private addresses from anything you paste.
+
+  - type: input
+    id: server
+    attributes:
+      label: Server software
+      placeholder: Bundled server, my own Laravel app, ...
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Valo version
+      placeholder: v0.8.3
+    validations:
+      required: true
+
+  - type: textarea
+    id: report
+    attributes:
+      label: Server check report
+      description: Use _Copy report_ on the server check screen and paste it here.
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What's wrong?
+      description: What fails, and what you expected.
+    validations:
+      required: true
+
+  - type: textarea
+    id: responses
+    attributes:
+      label: Example responses
+      description: The JSON your server returns for the failing route (for example `curl http://your-server/api/info`).
+      render: json
