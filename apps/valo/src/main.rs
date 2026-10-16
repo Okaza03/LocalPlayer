@@ -62,6 +62,7 @@ fn main() -> eframe::Result<()> {
             .with_min_inner_size([560.0, 400.0])
             .with_title("Valo")
             .with_decorations(false) // we draw our own title bar
+            .with_transparent(false)
             .with_app_id(app_id()),
         ..Default::default()
     };
@@ -400,6 +401,13 @@ impl App {
 }
 
 impl eframe::App for App {
+    /// Solid black, not eframe's see-through default: with a half-transparent
+    /// clear, desktops can show what's behind the window (or the taskbar's
+    /// previews) through it while the player redraws.
+    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
+        [0.0, 0.0, 0.0, 1.0]
+    }
+
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.images.poll(ctx);
         self.note_window(ctx);
