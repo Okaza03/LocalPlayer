@@ -84,6 +84,15 @@ const NOTES: &[(&str, &[Note])] = &[
             admin: false,
         }],
     ),
+    (
+        "0.8.2",
+        &[Note {
+            title: "Bookmark from anywhere",
+            text: "Hover over a movie or series on the home page, Movies or TV shows and \
+                   click the bookmark in its corner to add it to My list.",
+            admin: false,
+        }],
+    ),
 ];
 
 /// The notes for versions after `seen`, up to `current`.

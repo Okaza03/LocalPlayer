@@ -94,6 +94,8 @@ enum Click {
     Back,
     /// Remove an item from Continue watching.
     Hide(String),
+    /// Add an item to My list, or take it off.
+    Bookmark(String),
 }
 
 struct NextUp<'a> {
@@ -430,6 +432,10 @@ impl Browse {
             Some(Click::Hide(id)) => {
                 let key = self.key(&id);
                 self.hidden.hide(&key);
+            }
+            Some(Click::Bookmark(id)) => {
+                let key = self.key(&id);
+                self.watchlist.toggle(&key);
             }
             Some(Click::Play(id, ep, restart)) => {
                 if let Some(lib) = self.lib.clone() {
@@ -1063,7 +1069,8 @@ impl Browse {
                 ui.spacing_mut().item_spacing.x = GAP;
                 ui.add_space(SIDE);
                 for c in cards {
-                    if let Some(k) = card(ui, c, wide, images) {
+                    let marked = self.watchlist.contains(&self.key(&c.item));
+                    if let Some(k) = card(ui, c, wide, marked, images) {
                         click = Some(k);
                     }
                 }
@@ -1247,7 +1254,8 @@ impl Browse {
                 c.sub = maker(i).map(str::to_owned);
             }
         }
-        grid(ui, &cards, images)
+        let marked = |id: &str| self.watchlist.contains(&self.key(id));
+        grid(ui, &cards, &marked, images)
     }
 
     fn status(&self, i: &Item, progress: &Progress) -> Filter {
@@ -1326,7 +1334,8 @@ impl Browse {
             return None;
         }
         let cards = self.poster_cards(hits.into_iter(), progress);
-        grid(ui, &cards, images).or(click)
+        let marked = |id: &str| self.watchlist.contains(&self.key(id));
+        grid(ui, &cards, &marked, images).or(click)
     }
 
     // -------------------------------------------------------------- details
@@ -1520,8 +1529,9 @@ fn shorten(s: &str, max: usize) -> String {
     format!("{}…", cut.rsplit_once(' ').map_or(cut.as_str(), |(a, _)| a))
 }
 
-/// One artwork card; returns what to do when clicked.
-fn card(ui: &mut Ui, c: &Card, wide: bool, images: &mut Images) -> Option<Click> {
+/// One artwork card; returns what to do when clicked. `marked`: it's on
+/// My list.
+fn card(ui: &mut Ui, c: &Card, wide: bool, marked: bool, images: &mut Images) -> Option<Click> {
     let size = if wide { WIDE } else { POSTER };
     let (rect, resp) = ui.allocate_exact_size(size + vec2(0.0, 40.0), Sense::click());
     if !ui.is_rect_visible(rect) {
@@ -1629,12 +1639,50 @@ fn card(ui: &mut Ui, c: &Card, wide: bool, images: &mut Images) -> Option<Click>
             return Some(Click::Open(c.item.clone()));
         }
     }
+    if hot {
+        // bookmark, top right: white once the title is on My list
+        let br = Rect::from_min_size(pos2(art.right() - 38.0, art.top() + 8.0), vec2(30.0, 30.0));
+        let b = ui.interact(br, resp.id.with("bookmark"), Sense::click());
+        let p = ui.painter();
+        if marked {
+            p.circle_filled(br.center(), 15.0, Color32::WHITE);
+            chrome::draw_icon(
+                p,
+                br.center(),
+                Icon::BookmarkOn,
+                Color32::from_rgb(20, 20, 24),
+            );
+        } else {
+            let a = if b.hovered() { 230 } else { 150 };
+            p.circle_filled(br.center(), 15.0, Color32::from_black_alpha(a));
+            if b.hovered() {
+                p.circle_stroke(
+                    br.center(),
+                    15.0,
+                    Stroke::new(1.0f32, TEXT.gamma_multiply(0.6)),
+                );
+            }
+            chrome::draw_icon(p, br.center(), Icon::Bookmark, TEXT);
+        }
+        let tip = if marked {
+            "Remove from My list"
+        } else {
+            "Add to My list"
+        };
+        if b.on_hover_text(tip)
+            .on_hover_cursor(CursorIcon::PointingHand)
+            .clicked()
+        {
+            return Some(Click::Bookmark(c.item.clone()));
+        }
+    }
     if c.removable {
         let menu = resp.id.with("menu");
         let open = ui.memory(|m| m.is_popup_open(menu));
         if hot || open {
+            // left of the bookmark
             let dr =
-                Rect::from_min_size(pos2(art.right() - 38.0, art.top() + 8.0), vec2(30.0, 30.0));
+                Rect::from_min_size(pos2(art.right() - 74.0, art.top() + 8.0), vec2(30.0, 30.0));
             let dots = ui.interact(dr, menu.with("button"), Sense::click());
             let a = if dots.hovered() || open { 230 } else { 150 };
             ui.painter()
@@ -1677,7 +1725,12 @@ fn card(ui: &mut Ui, c: &Card, wide: bool, images: &mut Images) -> Option<Click>
     })
 }
 
-fn grid(ui: &mut Ui, cards: &[Card], images: &mut Images) -> Option<Click> {
+fn grid(
+    ui: &mut Ui,
+    cards: &[Card],
+    marked: &dyn Fn(&str) -> bool,
+    images: &mut Images,
+) -> Option<Click> {
     let mut click = None;
     let avail = ui.available_width() - 2.0 * SIDE;
     let cols = (((avail + GAP) / (POSTER.x + GAP)).floor() as usize).max(1);
@@ -1686,7 +1739,7 @@ fn grid(ui: &mut Ui, cards: &[Card], images: &mut Images) -> Option<Click> {
             ui.spacing_mut().item_spacing.x = GAP;
             ui.add_space(SIDE);
             for c in chunk {
-                if let Some(k) = card(ui, c, false, images) {
+                if let Some(k) = card(ui, c, false, marked(&c.item), images) {
                     click = Some(k);
                 }
             }
