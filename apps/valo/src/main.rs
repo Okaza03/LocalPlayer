@@ -538,7 +538,7 @@ impl eframe::App for App {
                 self.splash = None;
             }
         }
-        self.updates.ui(ctx);
+        self.updates.ui(ctx, popups);
         self.dialogs(ctx);
         if let Stage::Browse(b) = &self.stage {
             let quiet = self.splash.is_none() && self.dialog.is_none() && b.settled();

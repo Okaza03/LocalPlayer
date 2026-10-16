@@ -4,7 +4,7 @@ use eframe::egui::{self, RichText};
 
 use super::settings::{dialog, header};
 use super::{bold, primary_button, MUTED};
-use crate::update::{newer, VERSION};
+use crate::update::{newer, Release, VERSION};
 
 struct Note {
     title: &'static str,
@@ -162,6 +162,86 @@ pub fn ui(ctx: &egui::Context, seen: &str, admin: bool) -> bool {
         b.clicked()
     });
     done || close
+}
+
+/// What the "update available" popup asked for.
+pub enum UpdateChoice {
+    Update,
+    Download,
+    /// Closed: "Later", a click outside or Escape.
+    Later,
+}
+
+/// The popup shown when a newer Valo is out: its release notes and a way to
+/// get it. `in_place`: the button installs and restarts; else it downloads.
+pub fn update_available(
+    ctx: &egui::Context,
+    rel: &Release,
+    in_place: bool,
+    flatpak: bool,
+) -> Option<UpdateChoice> {
+    let (choice, close) = dialog(ctx, "update-available", 460.0, |ui| {
+        header(
+            ui,
+            "Update available",
+            &format!("Valo {}  ·  you have {VERSION}", rel.version),
+        );
+        ui.add_space(6.0);
+        if !rel.summary.is_empty() {
+            ui.label(RichText::new(&rel.summary).size(15.0));
+            ui.add_space(14.0);
+        }
+        for (title, text) in &rel.notes {
+            if !title.is_empty() {
+                ui.label(bold(title, 16.0));
+                ui.add_space(2.0);
+            }
+            ui.label(RichText::new(text).size(14.5).color(MUTED()));
+            ui.add_space(14.0);
+        }
+        if rel.summary.is_empty() && rel.notes.is_empty() {
+            ui.label(
+                RichText::new("This update brings fixes and small improvements.")
+                    .size(14.5)
+                    .color(MUTED()),
+            );
+            ui.add_space(14.0);
+        }
+        if flatpak {
+            ui.label(
+                RichText::new("Download the new .flatpak and open it to update.")
+                    .size(14.5)
+                    .color(MUTED()),
+            );
+            ui.add_space(14.0);
+        }
+        if super::ext_link(ui, "Full release notes") {
+            super::chrome::open_url(&rel.url);
+        }
+        ui.add_space(10.0);
+        let label = if in_place { "Update now" } else { "Download" };
+        let full = [ui.available_width(), 40.0];
+        let mut choice = None;
+        if ui
+            .add_sized(full, |ui: &mut egui::Ui| primary_button(ui, label, true))
+            .clicked()
+        {
+            choice = Some(if in_place {
+                UpdateChoice::Update
+            } else {
+                UpdateChoice::Download
+            });
+        }
+        ui.add_space(6.0);
+        if ui
+            .add_sized(full, |ui: &mut egui::Ui| super::small_button(ui, "Later"))
+            .clicked()
+        {
+            choice = Some(UpdateChoice::Later);
+        }
+        choice
+    });
+    choice.or(close.then_some(UpdateChoice::Later))
 }
 
 #[cfg(test)]

@@ -31,12 +31,18 @@ pub struct Release {
     package: Option<(String, String)>,
     /// Download URL of SHA256SUMS.txt.
     sums: Option<String>,
+    /// The release notes' one-line summary.
+    pub summary: String,
+    /// Its "New"/"Fixed" points as (title, text); the title may be empty.
+    pub notes: Vec<(String, String)>,
 }
 
 #[derive(Deserialize)]
 struct GhRelease {
     tag_name: String,
     html_url: String,
+    #[serde(default)]
+    body: Option<String>,
     #[serde(default)]
     assets: Vec<GhAsset>,
 }
@@ -142,12 +148,42 @@ fn latest() -> Result<Option<Release>> {
     };
     let package = asset(&|n| n.ends_with(&suffix));
     let sums = asset(&|n| n == "SHA256SUMS.txt").map(|(_, u)| u);
+    let (summary, notes) = release_notes(r.body.as_deref().unwrap_or_default());
     Ok(newer(&version, VERSION).then_some(Release {
         version,
         url: r.html_url,
         package,
         sums,
+        summary,
+        notes,
     }))
+}
+
+/// The summary line and the points of a release's notes (notes.md: "# Valo
+/// v1.2.3", a summary, "### New" / "### Fixed" lists, "### Downloads").
+fn release_notes(body: &str) -> (String, Vec<(String, String)>) {
+    let plain = |s: &str| s.replace("**", "").replace('`', "").trim().to_owned();
+    let (mut summary, mut notes) = (String::new(), Vec::new());
+    let mut in_list = false;
+    for line in body.lines().map(str::trim) {
+        if let Some(h) = line.strip_prefix("### ") {
+            if h.trim().eq_ignore_ascii_case("downloads") {
+                break;
+            }
+            in_list = true;
+        } else if line.starts_with('#') || line.is_empty() {
+        } else if let Some(point) = line.strip_prefix("- ").filter(|_| in_list) {
+            // "- **Subtitles:** pick subtitles from …"
+            let (title, text) = match point.strip_prefix("**").and_then(|p| p.split_once("**")) {
+                Some((t, rest)) => (t.trim_end_matches(':'), rest.trim_start_matches(':')),
+                None => ("", point),
+            };
+            notes.push((plain(title), plain(text)));
+        } else if !in_list && summary.is_empty() {
+            summary = plain(line);
+        }
+    }
+    (summary, notes)
 }
 
 /// The hash `sha256sum` printed for `name` (paths in the file may have folders).
@@ -285,7 +321,6 @@ fn relaunch(appimage: &Path) -> Result<()> {
 enum Toast {
     UpToDate,
     Failed(String),
-    Available,
     Installing,
     InstallFailed(String),
 }
@@ -301,6 +336,8 @@ pub struct Updates {
     pub available: Option<Release>,
     pub checked_at: Option<Instant>,
     toast: Option<(Toast, Instant)>,
+    /// The "update available" popup is up (or waiting for other dialogs).
+    popup: bool,
     install: Install,
     installing: Option<(Task<Result<()>>, Arc<AtomicU32>)>,
 }
@@ -312,6 +349,7 @@ impl Default for Updates {
             available: None,
             checked_at: None,
             toast: None,
+            popup: false,
             install: Install::detect(),
             installing: None,
         }
@@ -330,10 +368,10 @@ impl Updates {
         self.task.is_some()
     }
 
-    /// Bring the "update available" notice back.
+    /// Bring the "update available" popup back.
     pub fn show(&mut self) {
         if self.available.is_some() && self.installing.is_none() {
-            self.toast = Some((Toast::Available, Instant::now()));
+            self.popup = true;
         }
     }
 
@@ -365,8 +403,9 @@ impl Updates {
         self.toast = Some((Toast::Installing, Instant::now()));
     }
 
-    /// Poll the check and draw its result (a notice in the bottom-right corner).
-    pub fn ui(&mut self, ctx: &egui::Context) {
+    /// Poll the check and draw its result: a popup with the release notes
+    /// once `quiet` (no splash or other dialog up), notices in the corner.
+    pub fn ui(&mut self, ctx: &egui::Context, quiet: bool) {
         if let Some((manual, mut t)) = self.task.take() {
             match t.poll() {
                 None => self.task = Some((manual, t)),
@@ -375,7 +414,8 @@ impl Updates {
                     let toast = match r {
                         Ok(Some(rel)) => {
                             self.available = Some(rel);
-                            Some(Toast::Available)
+                            self.popup = self.installing.is_none();
+                            None
                         }
                         Ok(None) => {
                             self.available = None;
@@ -402,19 +442,39 @@ impl Updates {
             }
         }
 
+        if self.popup && quiet && self.installing.is_none() {
+            if let Some(r) = &self.available {
+                let choice = crate::ui::whats_new::update_available(
+                    ctx,
+                    r,
+                    self.in_place(r),
+                    self.install == Install::Flatpak,
+                );
+                match choice {
+                    Some(crate::ui::whats_new::UpdateChoice::Update) => {
+                        self.popup = false;
+                        self.start_install(ctx);
+                    }
+                    Some(crate::ui::whats_new::UpdateChoice::Download) => {
+                        chrome::open_url(&r.url);
+                        self.popup = false;
+                    }
+                    Some(crate::ui::whats_new::UpdateChoice::Later) => self.popup = false,
+                    None => {}
+                }
+            }
+        }
+
         let Some((toast, since)) = &self.toast else {
             return;
         };
-        let keep = matches!(
-            toast,
-            Toast::Available | Toast::Installing | Toast::InstallFailed(_)
-        ) || since.elapsed() < Duration::from_secs(6);
+        let keep = matches!(toast, Toast::Installing | Toast::InstallFailed(_))
+            || since.elapsed() < Duration::from_secs(6);
         if !keep {
             self.toast = None;
             return;
         }
         let mut close = false;
-        let mut update = false;
         egui::Area::new(egui::Id::new("update_toast"))
             .anchor(Align2::RIGHT_BOTTOM, [-16.0, -46.0])
             .order(egui::Order::Foreground)
@@ -431,16 +491,6 @@ impl Updates {
                                 ui.spacing_mut().item_spacing.y = 2.0;
                                 let v = self.available.as_ref().map_or("", |r| r.version.as_str());
                                 let (title, body) = match toast {
-                                    Toast::Available => (
-                                        "Update available".to_owned(),
-                                        match self.install {
-                                            Install::Flatpak => format!(
-                                                "Valo {v} is out (you have {VERSION}). \
-                                                 Download the new .flatpak and open it to update."
-                                            ),
-                                            _ => format!("Valo {v} is out (you have {VERSION})."),
-                                        },
-                                    ),
                                     Toast::Installing => {
                                         let p = self
                                             .installing
@@ -480,20 +530,11 @@ impl Updates {
                                     close = true;
                                 }
                                 let Some(r) = &self.available else { return };
-                                let button = match toast {
-                                    Toast::Available if self.in_place(r) => Some("Update now"),
-                                    Toast::Available | Toast::InstallFailed(_) => Some("Download"),
-                                    _ => None,
-                                };
-                                if let Some(label) = button {
-                                    if small_button(ui, label).clicked() {
-                                        if label == "Update now" {
-                                            update = true;
-                                        } else {
-                                            chrome::open_url(&r.url);
-                                            close = true;
-                                        }
-                                    }
+                                if matches!(toast, Toast::InstallFailed(_))
+                                    && small_button(ui, "Download").clicked()
+                                {
+                                    chrome::open_url(&r.url);
+                                    close = true;
                                 }
                             });
                         });
@@ -501,9 +542,6 @@ impl Updates {
             });
         if close {
             self.toast = None;
-        }
-        if update {
-            self.start_install(ctx);
         }
         let every = if self.installing.is_some() { 100 } else { 500 };
         ctx.request_repaint_after(Duration::from_millis(every));
@@ -545,6 +583,28 @@ mod tests {
         assert!(!newer("0.1.0", "0.1.0"));
         assert!(!newer("v0.1.0-beta", "0.1.0"));
         assert!(!newer("0.0.9", "0.1.0"));
+    }
+
+    #[test]
+    fn notes() {
+        let body = "# Valo v0.8.3\n\nSubtitles in the player, and more.\n\n### New\n\
+            - **Subtitles:** pick them from the `subtitle` button.\n\
+            - **Click the banner:** opens it.\n\n### Fixed\n- Volume is kept.\n\n\
+            ### Downloads\n| File | For |\n- not a note\n";
+        let (summary, notes) = release_notes(body);
+        assert_eq!(summary, "Subtitles in the player, and more.");
+        assert_eq!(
+            notes,
+            [
+                (
+                    "Subtitles".into(),
+                    "pick them from the subtitle button.".into()
+                ),
+                ("Click the banner".into(), "opens it.".into()),
+                (String::new(), "Volume is kept.".into()),
+            ]
+        );
+        assert_eq!(release_notes(""), (String::new(), vec![]));
     }
 
     #[test]
