@@ -234,7 +234,7 @@ class Client(val base: String, val info: ServerInfo, @Volatile var token: String
         val req = request("/api/login").post(body.toString().toRequestBody(JSON)).build()
         return call(req, "Sign-in failed") { r ->
             when (r.code) {
-                200 -> runCatching { json.decodeFromString<Session>(r.body!!.string()) }
+                200 -> runCatching { json.decodeFromString<Session>(r.body.string()) }
                     .getOrElse { throw ServerError("This server has no sign-in API (/api/login).") }
                 400, 401, 403, 422 -> throw ServerError("Wrong username or password")
                 404, 405, 501 -> throw ServerError("This server has no sign-in API (/api/login).")
@@ -254,7 +254,7 @@ class Client(val base: String, val info: ServerInfo, @Volatile var token: String
             throw ServerError("This server has a Valo API but no library (/api/library).")
         }
         if (!r.isSuccessful) r.fail("Can't load the library")
-        runCatching { json.decodeFromString<Library>(r.body!!.string()) }
+        runCatching { json.decodeFromString<Library>(r.body.string()) }
             .getOrElse { throw ServerError("The server sent a library this app doesn't understand: ${it.message}") }
             .finish(base)
     }
@@ -265,7 +265,7 @@ class Client(val base: String, val info: ServerInfo, @Volatile var token: String
             // 401 also covers servers without sign-in, which have no user to keep it for
             r.code in listOf(401, 404, 405, 501) -> null
             !r.isSuccessful -> r.fail("Can't load watch progress")
-            else -> json.decodeFromString<List<Watched>>(r.body!!.string())
+            else -> json.decodeFromString<List<Watched>>(r.body.string())
         }
     }
 
@@ -289,7 +289,7 @@ class Client(val base: String, val info: ServerInfo, @Volatile var token: String
             when {
                 r.code == 404 || r.code == 422 -> null
                 !r.isSuccessful -> r.fail("Can't save watch progress")
-                else -> runCatching { json.decodeFromString<Watched>(r.body!!.string()) }.getOrNull()
+                else -> runCatching { json.decodeFromString<Watched>(r.body.string()) }.getOrNull()
             }
         }
     }
@@ -316,7 +316,7 @@ class Client(val base: String, val info: ServerInfo, @Volatile var token: String
                 val req = Request.Builder().url("$base/api/info").header("Accept", "application/json").build()
                 http.newCall(req).execute().use { r ->
                     if (!r.isSuccessful) null
-                    else runCatching { json.decodeFromString<ServerInfo>(r.body!!.string()) }.getOrNull()
+                    else runCatching { json.decodeFromString<ServerInfo>(r.body.string()) }.getOrNull()
                 }
             } catch (e: IllegalArgumentException) {
                 throw ServerError("That isn't a valid address.")

@@ -59,7 +59,7 @@ object Updates {
                 when {
                     res.code == 404 -> throw IOException("no releases published yet")
                     !res.isSuccessful -> throw IOException("GitHub answered ${res.code}")
-                    else -> json.decodeFromString<GhRelease>(res.body!!.string())
+                    else -> json.decodeFromString<GhRelease>(res.body.string())
                 }
             }
         } catch (e: IOException) {
@@ -81,7 +81,7 @@ object Updates {
         val expected = rel.sums?.let { url ->
             val text = Client.http.newCall(Request.Builder().url(url).build()).execute().use { r ->
                 if (!r.isSuccessful) throw IOException("can't download SHA256SUMS.txt (${r.code})")
-                r.body!!.string()
+                r.body.string()
             }
             // "<hash>  target/dist/valo-v0.5.0-androidtv.apk"
             text.lines().map { it.trim().split(Regex("\\s+"), 2) }
@@ -95,7 +95,7 @@ object Updates {
         val sha = MessageDigest.getInstance("SHA-256")
         Client.http.newCall(Request.Builder().url(rel.apk).build()).execute().use { r ->
             if (!r.isSuccessful) throw IOException("the download failed (${r.code})")
-            val body = r.body!!
+            val body = r.body
             val total = body.contentLength()
             var done = 0L
             var shown = -1
