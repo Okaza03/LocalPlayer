@@ -1,9 +1,6 @@
 <div align="center">
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="packaging/valo-text-white.svg">
-  <img src="packaging/valo-text-black.svg" alt="" width="96">
-</picture>
+<img src="packaging/valo.svg" alt="Valo" width="96">
 
 **A small, fast video player for your own media library.**
 
