@@ -12,6 +12,13 @@ updates:
     groups:
       cargo-patch:
         update-types: [patch]
+    # big rewrites, upgraded by hand: ureq 3 drops the body from error
+    # statuses, and every eframe 0.x minor reworks panels, popups and App
+    ignore:
+      - dependency-name: ureq
+        update-types: [version-update:semver-major]
+      - dependency-name: eframe
+        update-types: [version-update:semver-major, version-update:semver-minor]
 
   - package-ecosystem: github-actions
     directory: /
