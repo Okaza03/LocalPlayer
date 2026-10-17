@@ -111,6 +111,29 @@ const NOTES: &[(&str, &[Note])] = &[
             admin: false,
         }],
     ),
+    (
+        "0.8.4",
+        &[
+            Note {
+                title: "Updates show what's new",
+                text: "When a new version is out, a popup shows what it brings and updates \
+                       Valo in one click. Click Later or outside it to update another time.",
+                admin: false,
+            },
+            Note {
+                title: "Subtitles in sync",
+                text: "With Bluetooth headphones, the picture and subtitles now wait for the \
+                       sound instead of running a little ahead of it.",
+                admin: false,
+            },
+            Note {
+                title: "Subtitles that fit your file",
+                text: "Searching for subtitles online lists the ones made for your copy of \
+                       the movie first, marked Matches your file.",
+                admin: true,
+            },
+        ],
+    ),
 ];
 
 /// The notes for versions after `seen`, up to `current`.
