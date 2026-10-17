@@ -1,0 +1,35 @@
+version: 2
+updates:
+  # Patch bumps come as one PR. Minor and major bumps come one per crate:
+  # most of ours are 0.x (eframe, cpal, rfd, image), where a minor bump breaks.
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: build
+    groups:
+      cargo-patch:
+        update-types: [patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: ci
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # the Compose BOM, media3 and the Kotlin plugins move together
+  - package-ecosystem: gradle
+    directory: /apps/androidtv
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: build
+    groups:
+      android-minor:
+        update-types: [minor, patch]

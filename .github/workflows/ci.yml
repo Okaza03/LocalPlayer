@@ -1,0 +1,47 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  rust:
+    runs-on: ubuntu-24.04
+    steps:
+      # same as the release build, minus the packaging tools; dav1d can be
+      # the distro's shared one here since nothing is shipped
+      - name: System deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config clang libclang-dev nasm libdav1d-dev \
+            libasound2-dev libxkbcommon-dev libwayland-dev libx11-dev \
+            libxcursor-dev libxrandr-dev libxi-dev libgl1-mesa-dev
+
+      - uses: actions/checkout@v7
+
+      - name: Rust
+        run: |
+          rustup update stable --no-self-update
+          rustup component add rustfmt clippy
+
+      # FFmpeg is built from source, so caching target/ saves most of the time
+      - uses: Swatinem/rust-cache@v2
+
+      - run: cargo xtask ci
+
+  android:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      # debug build: no keystore needed
+      - name: APK
+        env:
+          JAVA_HOME: ${{ env.JAVA_HOME_17_X64 }}
+        working-directory: apps/androidtv
+        run: ./gradlew --no-daemon assembleDebug
